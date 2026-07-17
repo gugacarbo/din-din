@@ -1,0 +1,31 @@
+{
+  "projectName": "din-din",
+  "mode": "file-router",
+  "typescript": true,
+  "packageManager": "pnpm",
+  "includeExamples": false,
+  "tailwind": true,
+  "addOnOptions": {
+    "drizzle": {
+      "database": "sqlite"
+    }
+  },
+  "envVarValues": {},
+  "git": false,
+  "install": false,
+  "routerOnly": false,
+  "version": 1,
+  "framework": "react",
+  "chosenAddOns": [
+    "biome",
+    "cloudflare",
+    "ai",
+    "drizzle",
+    "form",
+    "t3env",
+    "shadcn",
+    "table",
+    "tanstack-query",
+    "store"
+  ]
+}

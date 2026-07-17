@@ -6,6 +6,3 @@ allowBuilds:
   esbuild: true
   workerd: true
   sharp: true
-  '@google/genai': true
-  better-sqlite3: true
-  protobufjs: true

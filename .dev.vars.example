@@ -1,0 +1,6 @@
+# Variáveis de ambiente injetadas no runtime do Worker durante o `wrangler dev`.
+# O binding D1 (DB) é configurado em wrangler.jsonc, não aqui.
+# Use este arquivo apenas para segredos/secrets que precisam estar disponíveis
+# no código do Worker em desenvolvimento local.
+
+SERVER_URL=

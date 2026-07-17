@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+pnpm lint-staged
+pnpm test-staged
+exec "$(git rev-parse --show-toplevel)/scripts/pre-commit"

@@ -22,7 +22,7 @@ App de finanças pessoais (din-din) rodando em Cloudflare Workers com React (Tan
 - **Runtime**: Cloudflare Workers (wrangler)
 - **Database**: Cloudflare D1 (SQLite) — binding `DB` em `wrangler.jsonc`
 - **ORM**: Drizzle com driver `d1-http` — NUNCA usar `better-sqlite3` (removido)
-- **Credenciais D1**: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_DATABASE_ID`, `CLOUDFLARE_D1_TOKEN` em `.dev.vars` (local) e secrets do Worker (prod)
+- **Auth**: Better Auth com Google; use `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` em `.dev.vars` e como secrets do Worker. `BETTER_AUTH_URL` é a URL pública do ambiente.
 - **CI**: GitHub Actions — `casa-update-check.yml`, `docs-check.yml`
 - **Hooks**: Husky — `pre-commit` (lint-staged + format), `pre-push` (typecheck + test)
 
@@ -30,20 +30,23 @@ App de finanças pessoais (din-din) rodando em Cloudflare Workers com React (Tan
 
 ```bash
 pnpm install
-cp .dev.vars.example .dev.vars   # preencha as credenciais Cloudflare
+cp .dev.vars.example .dev.vars   # preencha os secrets de Auth Google
+pnpm run db:migrate:local
 pnpm run dev                      # wrangler dev + vite
 ```
 
 ## Como validar (DoD global do repo)
 
 ```bash
-pnpm run typecheck        # exit 0
-pnpm test                 # tudo verde
+pnpm run release:verify
 ```
 
 ## Como deployar
 
-<!-- Ferramenta/script oficial, ordem, e o que NÃO fazer. -->
+Configure o `database_id` real do D1 e os secrets do Worker antes do primeiro
+deploy. Use `pnpm run deploy`: ele aplica as migrations remotas, faz build e
+publica o Worker nessa ordem. Nunca execute migration remota apontando para o
+placeholder `YOUR_DATABASE_ID`.
 
 ## Git & PRs
 
@@ -54,7 +57,8 @@ pnpm test                 # tudo verde
 <!-- Conhecimento NÃO-INFERÍVEL que já custou tentativas falhas. Todo gotcha
      descoberto pelo agente DEVE ser registrado aqui. -->
 
--
+- `transactions` possui FK composta para `categories` que garante usuário e tipo
+  compatíveis; não contorne essa regra com SQL manual.
 
 ## Mapa de contexto
 

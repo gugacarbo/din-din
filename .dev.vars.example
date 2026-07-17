@@ -3,4 +3,7 @@
 # Use este arquivo apenas para segredos/secrets que precisam estar disponíveis
 # no código do Worker em desenvolvimento local.
 
-SERVER_URL=
+BETTER_AUTH_URL=http://localhost:3000
+BETTER_AUTH_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=

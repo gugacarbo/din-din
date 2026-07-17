@@ -1,9 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-
 import { FinancePage } from "#/components/finance/finance-page.tsx";
 import { getSessionUser } from "#/server/finance.ts";
-
-export const Route = createFileRoute("/")({
+export const Route = createFileRoute("/transactions")({
 	beforeLoad: async () => {
 		try {
 			await getSessionUser();
@@ -11,5 +9,5 @@ export const Route = createFileRoute("/")({
 			throw redirect({ to: "/login" });
 		}
 	},
-	component: () => <FinancePage kind="dashboard" />,
+	component: () => <FinancePage kind="transactions" />,
 });

@@ -13,6 +13,13 @@
 			"custom_domain": true
 		}
 	],
+	"secrets": {
+		"required": [
+"GOOGLE_CLIENT_ID",
+"GOOGLE_CLIENT_SECRET",
+"BETTER_AUTH_SECRET",
+		]
+	},
 	"vars": {
 		"BETTER_AUTH_URL": "https://dindin.gugacarbo.space"
 	},

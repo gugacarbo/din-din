@@ -1,3 +1,8 @@
+# This is a single-package workspace. pnpm 10 requires this field whenever
+# pnpm-workspace.yaml is present, including on Cloudflare's build image.
+packages:
+  - "."
+
 # Pre-approve build scripts for the packages C3 itself installs that need
 # them: `workerd` downloads the platform binary, `esbuild` and `sharp`
 # (via miniflare) download/build native bindings. Without these, pnpm 11+

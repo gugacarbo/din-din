@@ -1,34 +1,24 @@
-import { env } from "cloudflare:workers";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { betterAuth } from "better-auth";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 
 import { createDb } from "#/db";
 import * as schema from "#/db/schema";
-
-type AuthEnv = {
-	DB: D1Database;
-	BETTER_AUTH_SECRET: string;
-	BETTER_AUTH_URL?: string;
-	GOOGLE_CLIENT_ID: string;
-	GOOGLE_CLIENT_SECRET: string;
-};
+import { database, env } from "#/env";
 
 /** Creates an auth instance from the current Worker request's D1 binding. */
-export function createAuth(database: D1Database) {
-	const runtime = env as unknown as AuthEnv;
-
+export function createAuth(d1 = database) {
 	return betterAuth({
-		baseURL: runtime.BETTER_AUTH_URL,
-		secret: runtime.BETTER_AUTH_SECRET,
-		database: drizzleAdapter(createDb(database), {
+		baseURL: env.BETTER_AUTH_URL,
+		secret: env.BETTER_AUTH_SECRET,
+		database: drizzleAdapter(createDb(d1), {
 			provider: "sqlite",
 			schema,
 		}),
 		socialProviders: {
 			google: {
-				clientId: runtime.GOOGLE_CLIENT_ID,
-				clientSecret: runtime.GOOGLE_CLIENT_SECRET,
+				clientId: env.GOOGLE_CLIENT_ID,
+				clientSecret: env.GOOGLE_CLIENT_SECRET,
 			},
 		},
 		plugins: [tanstackStartCookies()],
@@ -37,5 +27,5 @@ export function createAuth(database: D1Database) {
 
 /** Convenience factory for route handlers running in the Worker runtime. */
 export function getAuth() {
-	return createAuth((env as unknown as AuthEnv).DB);
+	return createAuth();
 }

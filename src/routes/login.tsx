@@ -37,10 +37,10 @@ function Login() {
 		<main className="page-wrap grid min-h-dvh place-items-center py-8">
 			<section className="island-shell w-full max-w-md rounded-3xl p-8 text-center">
 				<p className="island-kicker">finanças pessoais</p>
-				<h1 className="display-title mt-2 text-5xl font-bold text-[color:var(--sea-ink)]">
+				<h1 className="display-title mt-2 text-5xl font-bold text-foreground">
 					din din
 				</h1>
-				<p className="mt-4 text-[color:var(--sea-ink-soft)]">
+				<p className="mt-4 text-muted-foreground">
 					Clareza para cuidar do seu dinheiro, um lançamento de cada vez.
 				</p>
 				<Button
@@ -51,9 +51,7 @@ function Login() {
 				>
 					{loading ? "Redirecionando…" : "Entrar com Google"}
 				</Button>
-				{error && (
-					<p className="mt-4 text-sm text-red-700 dark:text-red-300">{error}</p>
-				)}
+				{error && <p className="mt-4 text-sm text-destructive">{error}</p>}
 			</section>
 		</main>
 	);

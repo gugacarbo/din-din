@@ -35,6 +35,14 @@ export function ThemeToggle() {
 		applyTheme(initial);
 	}, []);
 
+	useEffect(() => {
+		if (theme !== "system") return;
+		const media = window.matchMedia("(prefers-color-scheme: dark)");
+		const syncSystemTheme = () => applyTheme("system");
+		media.addEventListener("change", syncSystemTheme);
+		return () => media.removeEventListener("change", syncSystemTheme);
+	}, [theme]);
+
 	function updateTheme(nextTheme: Theme) {
 		setTheme(nextTheme);
 		window.localStorage.setItem(storageKey, nextTheme);

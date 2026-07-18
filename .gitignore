@@ -48,3 +48,5 @@ coverage/
 # Misc
 todos.json
 .code-toolbox
+
+google-oauth-credentials.json

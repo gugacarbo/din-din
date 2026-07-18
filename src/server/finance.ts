@@ -1,4 +1,3 @@
-import { env } from "cloudflare:workers";
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 import { and, desc, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
@@ -6,6 +5,7 @@ import { z } from "zod";
 
 import { createDb } from "#/db";
 import { categories, transactions, userBootstrap } from "#/db/schema";
+import { database } from "#/env";
 import { createAuth } from "#/lib/auth";
 import {
 	CATEGORY_COLORS,
@@ -32,7 +32,6 @@ const transactionInput = z.object({
 	description: z.string().trim().max(280).nullable().optional(),
 });
 
-type RuntimeEnv = { DB: D1Database };
 type Database = ReturnType<typeof createDb>;
 type CategoryType = z.infer<typeof categoryType>;
 type Cursor = { occurredAt: string; createdAt: number; id: string };
@@ -74,9 +73,6 @@ export class FinanceError extends Error {
 	}
 }
 
-function runtime() {
-	return env as unknown as RuntimeEnv;
-}
 function now() {
 	return Date.now();
 }
@@ -115,8 +111,8 @@ function decodeCursor(value?: string): Cursor | undefined {
 }
 
 async function context() {
-	const db = createDb(runtime().DB);
-	const session = await createAuth(runtime().DB).api.getSession({
+	const db = createDb(database);
+	const session = await createAuth().api.getSession({
 		headers: getRequestHeaders(),
 	});
 	if (!session?.user)
@@ -164,8 +160,8 @@ async function bootstrap(db: Database, userId: string) {
 	];
 	const timestamp = now();
 	const statements = defaults.map((item) =>
-		runtime()
-			.DB.prepare(
+		database
+			.prepare(
 				"insert or ignore into categories (id, user_id, type, name, normalized_name, color_key, icon_key, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			)
 			.bind(
@@ -181,13 +177,13 @@ async function bootstrap(db: Database, userId: string) {
 			),
 	);
 	statements.push(
-		runtime()
-			.DB.prepare(
+		database
+			.prepare(
 				"insert or ignore into user_bootstrap (user_id, seeded_at) values (?, ?)",
 			)
 			.bind(userId, timestamp),
 	);
-	await runtime().DB.batch(statements);
+	await database.batch(statements);
 }
 
 async function ownedCategory(

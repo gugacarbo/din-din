@@ -43,6 +43,8 @@ const money = new Intl.NumberFormat("pt-BR", {
 });
 const moneyFromCents = (value: number) => money.format(value / 100);
 const kindLabel = (kind: Kind) => (kind === "income" ? "Receita" : "Despesa");
+const selectClassName =
+	"h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 function useAsyncData<T>(load: () => Promise<T>, dependencies: unknown[]) {
 	const [data, setData] = useState<T | null>(null);
@@ -85,17 +87,13 @@ function useAsyncData<T>(load: () => Promise<T>, dependencies: unknown[]) {
 
 function Notice({ children }: { children: React.ReactNode }) {
 	return (
-		<p className="mt-3 rounded-lg border border-red-300/60 bg-red-50/80 p-3 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
+		<p className="mt-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
 			{children}
 		</p>
 	);
 }
 function Loading() {
-	return (
-		<p className="py-10 text-sm text-[color:var(--sea-ink-soft)]">
-			Carregando…
-		</p>
-	);
+	return <p className="py-10 text-sm text-muted-foreground">Carregando…</p>;
 }
 
 function PageTitle({
@@ -111,7 +109,7 @@ function PageTitle({
 		<header className="mb-7 flex flex-wrap items-end justify-between gap-4">
 			<div>
 				<p className="island-kicker">{eyebrow}</p>
-				<h1 className="display-title mt-1 text-4xl font-bold text-[color:var(--sea-ink)]">
+				<h1 className="display-title mt-1 text-4xl font-bold text-foreground">
 					{title}
 				</h1>
 			</div>
@@ -133,12 +131,12 @@ function TransactionRows({
 }) {
 	if (!items.length)
 		return (
-			<p className="py-8 text-sm text-[color:var(--sea-ink-soft)]">
+			<p className="py-8 text-sm text-muted-foreground">
 				Nenhum lançamento por aqui.
 			</p>
 		);
 	return (
-		<ul className="divide-y divide-[color:var(--line)]">
+		<ul className="divide-y divide-border">
 			{items.map((item) => (
 				<li className="flex items-center gap-3 py-3" key={item.id}>
 					<CategoryMark
@@ -146,10 +144,10 @@ function TransactionRows({
 						iconKey={item.category.iconKey}
 					/>
 					<div className="min-w-0 flex-1">
-						<p className="font-semibold text-[color:var(--sea-ink)]">
+						<p className="font-semibold text-foreground">
 							{item.category.name}
 						</p>
-						<p className="truncate text-xs text-[color:var(--sea-ink-soft)]">
+						<p className="truncate text-xs text-muted-foreground">
 							{item.occurredAt}
 							{item.description ? ` · ${item.description}` : ""}
 						</p>
@@ -157,8 +155,8 @@ function TransactionRows({
 					<p
 						className={
 							item.type === "income"
-								? "font-bold text-emerald-700 dark:text-emerald-300"
-								: "font-bold text-rose-700 dark:text-rose-300"
+								? "font-bold text-income"
+								: "font-bold text-destructive"
 						}
 					>
 						{item.type === "income" ? "+" : "−"}
@@ -240,10 +238,10 @@ function Summary({
 }) {
 	const className =
 		tone === "income"
-			? "text-emerald-700 dark:text-emerald-300"
+			? "text-income"
 			: tone === "expense"
-				? "text-rose-700 dark:text-rose-300"
-				: "text-[color:var(--sea-ink)]";
+				? "text-destructive"
+				: "text-foreground";
 	return (
 		<article className="island-shell rounded-2xl p-5">
 			<p className="island-kicker">{label}</p>
@@ -324,7 +322,7 @@ function TransactionForm({
 			<div>
 				<Label htmlFor="transaction-type">Tipo</Label>
 				<select
-					className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+					className={`${selectClassName} w-full`}
 					id="transaction-type"
 					onChange={(event) => setType(event.target.value as Kind)}
 					value={type}
@@ -336,7 +334,7 @@ function TransactionForm({
 			<div>
 				<Label htmlFor="transaction-category">Categoria</Label>
 				<select
-					className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+					className={`${selectClassName} w-full`}
 					id="transaction-category"
 					onChange={(event) => setCategoryId(event.target.value)}
 					value={categoryId}
@@ -509,7 +507,7 @@ function CategoryForm({
 			<div>
 				<Label htmlFor="category-type">Tipo</Label>
 				<select
-					className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+					className={`${selectClassName} w-full`}
 					disabled={Boolean(initial)}
 					id="category-type"
 					onChange={(event) => setType(event.target.value as Kind)}
@@ -532,7 +530,7 @@ function CategoryForm({
 			<div>
 				<Label htmlFor="category-color">Cor</Label>
 				<select
-					className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+					className={`${selectClassName} w-full`}
 					id="category-color"
 					onChange={(event) =>
 						setColorKey(event.target.value as typeof colorKey)
@@ -547,7 +545,7 @@ function CategoryForm({
 			<div>
 				<Label htmlFor="category-icon">Ícone</Label>
 				<select
-					className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+					className={`${selectClassName} w-full`}
 					id="category-icon"
 					onChange={(event) => setIconKey(event.target.value as typeof iconKey)}
 					value={iconKey}
@@ -628,7 +626,7 @@ function Categories() {
 				<Notice>{result.error ?? "Dados indisponíveis."}</Notice>
 			) : (
 				<section className="island-shell rounded-2xl p-5">
-					<ul className="divide-y divide-[color:var(--line)]">
+					<ul className="divide-y divide-border">
 						{result.data.map((category) => (
 							<li className="flex items-center gap-3 py-3" key={category.id}>
 								<CategoryMark
@@ -637,7 +635,7 @@ function Categories() {
 								/>
 								<div className="flex-1">
 									<p className="font-semibold">{category.name}</p>
-									<p className="text-xs text-[color:var(--sea-ink-soft)]">
+									<p className="text-xs text-muted-foreground">
 										{kindLabel(category.type)}
 									</p>
 								</div>
@@ -748,13 +746,13 @@ function Reports() {
 					})
 					.join(", ");
 			})()
-		: "var(--line) 0 100%";
+		: "var(--border) 0 100%";
 	return (
 		<>
 			<PageTitle eyebrow="relatórios" title="Para onde foi seu dinheiro" />
 			<section className="island-shell mb-6 flex flex-wrap gap-3 rounded-2xl p-4">
 				<select
-					className="h-9 w-40 rounded-md border border-input bg-transparent px-3 text-sm"
+					className={`${selectClassName} w-40`}
 					onChange={(event) =>
 						setGranularity(event.target.value as typeof granularity)
 					}
@@ -801,7 +799,7 @@ function Reports() {
 								background: `conic-gradient(${donut})`,
 							}}
 						>
-							<div className="m-6 grid size-28 place-items-center rounded-full bg-[color:var(--surface-strong)] text-center text-xs font-bold">
+							<div className="m-6 grid size-28 place-items-center rounded-full bg-card text-center text-xs font-bold text-card-foreground">
 								{moneyFromCents(result.data.expenseCents)}
 								<br />
 								em despesas
@@ -814,7 +812,7 @@ function Reports() {
 							<h2 className="display-title mt-1 text-2xl font-bold">
 								Despesas por categoria
 							</h2>
-							<ul className="mt-3 divide-y divide-[color:var(--line)]">
+							<ul className="mt-3 divide-y divide-border">
 								{result.data.expenseByCategory.map((item) => (
 									<li
 										className="flex items-center gap-3 py-3"

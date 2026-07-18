@@ -2,6 +2,14 @@ import { Laptop, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "#/components/ui/button.tsx";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuLabel,
+	DropdownMenuRadioGroup,
+	DropdownMenuRadioItem,
+	DropdownMenuTrigger,
+} from "#/components/ui/dropdown-menu.tsx";
 
 type Theme = "light" | "dark" | "system";
 
@@ -50,18 +58,35 @@ export function ThemeToggle() {
 	}
 
 	const Icon = theme === "light" ? Sun : theme === "dark" ? Moon : Laptop;
-	const nextTheme: Theme =
-		theme === "light" ? "dark" : theme === "dark" ? "system" : "light";
-
 	return (
-		<Button
-			aria-label={`Tema atual: ${theme}. Alterar tema.`}
-			onClick={() => updateTheme(nextTheme)}
-			size="icon-sm"
-			title={`Tema: ${theme}`}
-			variant="ghost"
-		>
-			<Icon />
-		</Button>
+		<DropdownMenu>
+			<DropdownMenuTrigger asChild>
+				<Button
+					aria-label={`Tema atual: ${theme}. Escolher tema.`}
+					size="icon-sm"
+					title={`Tema: ${theme}`}
+					variant="ghost"
+				>
+					<Icon />
+				</Button>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end">
+				<DropdownMenuLabel>Tema</DropdownMenuLabel>
+				<DropdownMenuRadioGroup
+					onValueChange={(value) => updateTheme(value as Theme)}
+					value={theme}
+				>
+					<DropdownMenuRadioItem value="light">
+						<Sun /> Claro
+					</DropdownMenuRadioItem>
+					<DropdownMenuRadioItem value="dark">
+						<Moon /> Escuro
+					</DropdownMenuRadioItem>
+					<DropdownMenuRadioItem value="system">
+						<Laptop /> Sistema
+					</DropdownMenuRadioItem>
+				</DropdownMenuRadioGroup>
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 }

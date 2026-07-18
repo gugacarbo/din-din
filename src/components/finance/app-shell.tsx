@@ -10,7 +10,21 @@ import {
 import type { ReactNode } from "react";
 
 import { Button } from "#/components/ui/button.tsx";
-import { cn } from "#/lib/utils.ts";
+import {
+	Sidebar,
+	SidebarContent,
+	SidebarFooter,
+	SidebarGroup,
+	SidebarGroupContent,
+	SidebarHeader,
+	SidebarInset,
+	SidebarMenu,
+	SidebarMenuButton,
+	SidebarMenuItem,
+	SidebarProvider,
+	SidebarSeparator,
+	SidebarTrigger,
+} from "#/components/ui/sidebar.tsx";
 
 import { ThemeToggle } from "./theme-toggle.tsx";
 
@@ -27,12 +41,10 @@ const secondaryNavigation = [
 
 function NavigationLink({
 	item,
-	compact = false,
 }: {
 	item:
 		| (typeof primaryNavigation)[number]
 		| (typeof secondaryNavigation)[number];
-	compact?: boolean;
 }) {
 	const pathname = useRouterState({
 		select: (state) => state.location.pathname,
@@ -41,19 +53,14 @@ function NavigationLink({
 	const Icon = item.icon;
 
 	return (
-		<a
-			className={cn(
-				"flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
-				active
-					? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-					: "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-				compact && "flex-col gap-1 px-2 py-1 text-[0.65rem]",
-			)}
-			href={item.to}
-		>
-			<Icon className="size-5" />
-			<span>{item.label}</span>
-		</a>
+		<SidebarMenuItem>
+			<SidebarMenuButton asChild isActive={active} tooltip={item.label}>
+				<Link to={item.to}>
+					<Icon />
+					<span>{item.label}</span>
+				</Link>
+			</SidebarMenuButton>
+		</SidebarMenuItem>
 	);
 }
 
@@ -65,54 +72,59 @@ export function AppShell({
 	onLogout: () => void;
 }) {
 	return (
-		<div className="min-h-dvh pb-18 lg:pb-0">
-			<aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-sidebar-border bg-sidebar/90 px-4 py-6 text-sidebar-foreground backdrop-blur lg:flex lg:flex-col">
-				<Link className="mb-9 px-2" to="/">
-					<p className="display-title text-3xl font-bold text-foreground">
+		<SidebarProvider>
+			<Sidebar className="border-sidebar-border bg-sidebar/90 backdrop-blur">
+				<SidebarHeader className="px-4 py-6">
+					<Link className="px-2" to="/">
+						<p className="display-title text-3xl font-bold text-foreground">
+							din din
+						</p>
+						<p className="island-kicker mt-1">suas finanças, claras</p>
+					</Link>
+				</SidebarHeader>
+				<SidebarContent>
+					<SidebarGroup>
+						<SidebarGroupContent>
+							<SidebarMenu aria-label="Principal">
+								{primaryNavigation.map((item) => (
+									<NavigationLink item={item} key={item.to} />
+								))}
+							</SidebarMenu>
+						</SidebarGroupContent>
+					</SidebarGroup>
+					<SidebarGroup>
+						<SidebarGroupContent>
+							<SidebarMenu aria-label="Secundária">
+								{secondaryNavigation.map((item) => (
+									<NavigationLink item={item} key={item.to} />
+								))}
+							</SidebarMenu>
+						</SidebarGroupContent>
+					</SidebarGroup>
+				</SidebarContent>
+				<SidebarFooter>
+					<SidebarSeparator />
+					<div className="flex items-center justify-between px-2 pb-2">
+						<ThemeToggle />
+						<Button onClick={onLogout} size="sm" variant="ghost">
+							<LogOut /> Sair
+						</Button>
+					</div>
+				</SidebarFooter>
+			</Sidebar>
+			<SidebarInset className="bg-transparent">
+				<header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur md:hidden">
+					<SidebarTrigger />
+					<Link
+						className="display-title text-2xl font-bold text-foreground"
+						to="/"
+					>
 						din din
-					</p>
-					<p className="island-kicker mt-1">suas finanças, claras</p>
-				</Link>
-				<nav className="space-y-1" aria-label="Principal">
-					{primaryNavigation.map((item) => (
-						<NavigationLink item={item} key={item.to} />
-					))}
-				</nav>
-				<div className="mt-7 border-t border-sidebar-border pt-5">
-					<nav className="space-y-1" aria-label="Secundária">
-						{secondaryNavigation.map((item) => (
-							<NavigationLink item={item} key={item.to} />
-						))}
-					</nav>
-				</div>
-				<div className="mt-auto flex items-center justify-between border-t border-sidebar-border pt-4">
+					</Link>
 					<ThemeToggle />
-					<Button onClick={onLogout} size="sm" variant="ghost">
-						<LogOut /> Sair
-					</Button>
-				</div>
-			</aside>
-			<header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur lg:hidden">
-				<Link
-					className="display-title text-2xl font-bold text-foreground"
-					to="/"
-				>
-					din din
-				</Link>
-				<ThemeToggle />
-			</header>
-			<main className="page-wrap py-6 lg:ml-64 lg:w-auto lg:max-w-none lg:px-8">
-				{children}
-			</main>
-			<nav
-				className="fixed inset-x-0 bottom-0 z-30 flex justify-around border-t border-border bg-background/90 px-2 py-2 backdrop-blur lg:hidden"
-				aria-label="Principal"
-			>
-				{primaryNavigation.map((item) => (
-					<NavigationLink compact item={item} key={item.to} />
-				))}
-				<NavigationLink compact item={secondaryNavigation[0]} />
-			</nav>
-		</div>
+				</header>
+				<main className="page-wrap py-6 md:max-w-none md:px-8">{children}</main>
+			</SidebarInset>
+		</SidebarProvider>
 	);
 }

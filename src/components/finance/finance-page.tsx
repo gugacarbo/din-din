@@ -1,15 +1,50 @@
-import { Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { CircleAlert, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import {
+	type ComponentProps,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { Cell, Pie, PieChart } from "recharts";
 
+import { Alert, AlertDescription } from "#/components/ui/alert.tsx";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "#/components/ui/alert-dialog.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import { Card } from "#/components/ui/card.tsx";
+import {
+	type ChartConfig,
+	ChartContainer,
+	ChartTooltip,
+	ChartTooltipContent,
+} from "#/components/ui/chart.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import { Label } from "#/components/ui/label.tsx";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "#/components/ui/select.tsx";
+import { Skeleton } from "#/components/ui/skeleton.tsx";
+import { Tabs, TabsList, TabsTrigger } from "#/components/ui/tabs.tsx";
 import { authClient } from "#/lib/auth-client.ts";
 import {
 	CATEGORY_COLORS,
 	CATEGORY_ICONS,
 	saoPauloToday,
 } from "#/lib/finance.ts";
+import { cn } from "#/lib/utils.ts";
 import type { CategoryDto, TransactionDto } from "#/server/finance.ts";
 import {
 	archiveCategory,
@@ -43,9 +78,6 @@ const money = new Intl.NumberFormat("pt-BR", {
 });
 const moneyFromCents = (value: number) => money.format(value / 100);
 const kindLabel = (kind: Kind) => (kind === "income" ? "Receita" : "Despesa");
-const selectClassName =
-	"h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
-
 function useAsyncData<T>(load: () => Promise<T>, dependencies: unknown[]) {
 	const [data, setData] = useState<T | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -87,13 +119,62 @@ function useAsyncData<T>(load: () => Promise<T>, dependencies: unknown[]) {
 
 function Notice({ children }: { children: React.ReactNode }) {
 	return (
-		<p className="mt-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-			{children}
-		</p>
+		<Alert className="mt-3" variant="destructive">
+			<CircleAlert />
+			<AlertDescription>{children}</AlertDescription>
+		</Alert>
 	);
 }
 function Loading() {
-	return <p className="py-10 text-sm text-muted-foreground">Carregando…</p>;
+	return (
+		<div aria-label="Carregando" className="space-y-3 py-6" role="status">
+			<Skeleton className="h-5 w-1/3" />
+			<Skeleton className="h-16 w-full" />
+			<Skeleton className="h-16 w-full" />
+			<span className="sr-only">Carregando…</span>
+		</div>
+	);
+}
+
+function FinanceCard({ className, ...props }: ComponentProps<typeof Card>) {
+	return (
+		<Card
+			className={cn("island-shell rounded-2xl py-0 shadow-none", className)}
+			{...props}
+		/>
+	);
+}
+
+function ArchiveConfirmation({
+	open,
+	itemName,
+	onOpenChange,
+	onConfirm,
+}: {
+	open: boolean;
+	itemName: string;
+	onOpenChange: (open: boolean) => void;
+	onConfirm: () => void;
+}) {
+	return (
+		<AlertDialog onOpenChange={onOpenChange} open={open}>
+			<AlertDialogContent>
+				<AlertDialogHeader>
+					<AlertDialogTitle>Arquivar {itemName}?</AlertDialogTitle>
+					<AlertDialogDescription>
+						O item sairá das listas ativas, mas poderá ser restaurado pelo
+						arquivo.
+					</AlertDialogDescription>
+				</AlertDialogHeader>
+				<AlertDialogFooter>
+					<AlertDialogCancel>Cancelar</AlertDialogCancel>
+					<AlertDialogAction onClick={onConfirm} variant="destructive">
+						Arquivar
+					</AlertDialogAction>
+				</AlertDialogFooter>
+			</AlertDialogContent>
+		</AlertDialog>
+	);
 }
 
 function PageTitle({
@@ -212,7 +293,7 @@ function Dashboard() {
 				<Summary label="Saídas" value={month.expenseCents} tone="expense" />
 				<Summary label="Saldo" value={month.balanceCents} tone="balance" />
 			</section>
-			<section className="island-shell mt-7 rounded-2xl p-5">
+			<FinanceCard className="mt-7 p-5">
 				<div className="mb-3 flex items-center justify-between">
 					<h2 className="display-title text-2xl font-bold">
 						Últimos lançamentos
@@ -222,7 +303,7 @@ function Dashboard() {
 					</a>
 				</div>
 				<TransactionRows items={recentTransactions} />
-			</section>
+			</FinanceCard>
 		</>
 	);
 }
@@ -243,12 +324,12 @@ function Summary({
 				? "text-destructive"
 				: "text-foreground";
 	return (
-		<article className="island-shell rounded-2xl p-5">
+		<FinanceCard className="p-5">
 			<p className="island-kicker">{label}</p>
 			<p className={`mt-2 text-2xl font-extrabold ${className}`}>
 				{moneyFromCents(value)}
 			</p>
-		</article>
+		</FinanceCard>
 	);
 }
 
@@ -315,101 +396,105 @@ function TransactionForm({
 		}
 	}
 	return (
-		<form
-			className="island-shell mb-6 grid gap-3 rounded-2xl p-5 md:grid-cols-2"
-			onSubmit={submit}
-		>
-			<div>
-				<Label htmlFor="transaction-type">Tipo</Label>
-				<select
-					className={`${selectClassName} w-full`}
-					id="transaction-type"
-					onChange={(event) => setType(event.target.value as Kind)}
-					value={type}
-				>
-					<option value="expense">Despesa</option>
-					<option value="income">Receita</option>
-				</select>
-			</div>
-			<div>
-				<Label htmlFor="transaction-category">Categoria</Label>
-				<select
-					className={`${selectClassName} w-full`}
-					id="transaction-category"
-					onChange={(event) => setCategoryId(event.target.value)}
-					value={categoryId}
-				>
-					{choices.map((category) => (
-						<option key={category.id} value={category.id}>
-							{category.name}
-						</option>
-					))}
-				</select>
-			</div>
-			<div>
-				<Label htmlFor="transaction-amount">Valor (R$)</Label>
-				<Input
-					id="transaction-amount"
-					inputMode="decimal"
-					onChange={(event) => setAmount(event.target.value)}
-					required
-					step="0.01"
-					type="number"
-					value={amount}
-				/>
-			</div>
-			<div>
-				<Label htmlFor="transaction-date">Data</Label>
-				<Input
-					id="transaction-date"
-					onChange={(event) => setOccurredAt(event.target.value)}
-					required
-					type="date"
-					value={occurredAt}
-				/>
-			</div>
-			<div className="md:col-span-2">
-				<Label htmlFor="transaction-description">Descrição opcional</Label>
-				<Input
-					id="transaction-description"
-					maxLength={280}
-					onChange={(event) => setDescription(event.target.value)}
-					value={description}
-				/>
-			</div>
-			{error && (
-				<div className="md:col-span-2">
-					<Notice>{error}</Notice>
+		<FinanceCard className="mb-6">
+			<form className="grid gap-3 p-5 md:grid-cols-2" onSubmit={submit}>
+				<div>
+					<Label htmlFor="transaction-type">Tipo</Label>
+					<Select
+						onValueChange={(value) => setType(value as Kind)}
+						value={type}
+					>
+						<SelectTrigger className="w-full" id="transaction-type">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="expense">Despesa</SelectItem>
+							<SelectItem value="income">Receita</SelectItem>
+						</SelectContent>
+					</Select>
 				</div>
-			)}
-			<div className="flex gap-2 md:col-span-2">
-				<Button disabled={saving || categoriesResult.loading} type="submit">
-					{saving
-						? "Salvando…"
-						: initial
-							? "Salvar alterações"
-							: "Adicionar lançamento"}
-				</Button>
-				{onCancel && (
-					<Button onClick={onCancel} type="button" variant="outline">
-						Cancelar
-					</Button>
+				<div>
+					<Label htmlFor="transaction-category">Categoria</Label>
+					<Select onValueChange={setCategoryId} value={categoryId}>
+						<SelectTrigger className="w-full" id="transaction-category">
+							<SelectValue placeholder="Selecione uma categoria" />
+						</SelectTrigger>
+						<SelectContent>
+							{choices.map((category) => (
+								<SelectItem key={category.id} value={category.id}>
+									{category.name}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</div>
+				<div>
+					<Label htmlFor="transaction-amount">Valor (R$)</Label>
+					<Input
+						id="transaction-amount"
+						inputMode="decimal"
+						onChange={(event) => setAmount(event.target.value)}
+						required
+						step="0.01"
+						type="number"
+						value={amount}
+					/>
+				</div>
+				<div>
+					<Label htmlFor="transaction-date">Data</Label>
+					<Input
+						id="transaction-date"
+						onChange={(event) => setOccurredAt(event.target.value)}
+						required
+						type="date"
+						value={occurredAt}
+					/>
+				</div>
+				<div className="md:col-span-2">
+					<Label htmlFor="transaction-description">Descrição opcional</Label>
+					<Input
+						id="transaction-description"
+						maxLength={280}
+						onChange={(event) => setDescription(event.target.value)}
+						value={description}
+					/>
+				</div>
+				{error && (
+					<div className="md:col-span-2">
+						<Notice>{error}</Notice>
+					</div>
 				)}
-			</div>
-		</form>
+				<div className="flex gap-2 md:col-span-2">
+					<Button disabled={saving || categoriesResult.loading} type="submit">
+						{saving
+							? "Salvando…"
+							: initial
+								? "Salvar alterações"
+								: "Adicionar lançamento"}
+					</Button>
+					{onCancel && (
+						<Button onClick={onCancel} type="button" variant="outline">
+							Cancelar
+						</Button>
+					)}
+				</div>
+			</form>
+		</FinanceCard>
 	);
 }
 
 function Transactions() {
 	const [refresh, setRefresh] = useState(0);
 	const [editing, setEditing] = useState<TransactionDto | undefined>();
+	const [archiving, setArchiving] = useState<TransactionDto | null>(null);
 	const result = useAsyncData(
 		() => listTransactions({ data: { scope: "active" } }),
 		[refresh],
 	);
-	async function archive(item: TransactionDto) {
-		if (!window.confirm(`Arquivar ${item.category.name}?`)) return;
-		await archiveTransaction({ data: { id: item.id } });
+	async function archive() {
+		if (!archiving) return;
+		await archiveTransaction({ data: { id: archiving.id } });
+		setArchiving(null);
 		setRefresh((value) => value + 1);
 	}
 	async function loadMore() {
@@ -429,6 +514,14 @@ function Transactions() {
 					<Plus /> Novo
 				</Button>
 			</PageTitle>
+			<ArchiveConfirmation
+				itemName={archiving?.category.name ?? "este lançamento"}
+				onConfirm={() => void archive()}
+				onOpenChange={(open) => {
+					if (!open) setArchiving(null);
+				}}
+				open={Boolean(archiving)}
+			/>
 			{editing && (
 				<TransactionForm
 					initial={editing.id ? editing : undefined}
@@ -444,10 +537,10 @@ function Transactions() {
 			) : result.error || !result.data ? (
 				<Notice>{result.error ?? "Dados indisponíveis."}</Notice>
 			) : (
-				<section className="island-shell rounded-2xl p-5">
+				<FinanceCard className="p-5">
 					<TransactionRows
 						items={result.data.items}
-						onArchive={archive}
+						onArchive={setArchiving}
 						onEdit={(item) => setEditing(item)}
 					/>
 					{result.data.nextCursor && (
@@ -459,7 +552,7 @@ function Transactions() {
 							Carregar mais
 						</Button>
 					)}
-				</section>
+				</FinanceCard>
 			)}
 		</>
 	);
@@ -500,77 +593,87 @@ function CategoryForm({
 		}
 	}
 	return (
-		<form
-			className="island-shell mb-6 grid gap-3 rounded-2xl p-5 md:grid-cols-2"
-			onSubmit={submit}
-		>
-			<div>
-				<Label htmlFor="category-type">Tipo</Label>
-				<select
-					className={`${selectClassName} w-full`}
-					disabled={Boolean(initial)}
-					id="category-type"
-					onChange={(event) => setType(event.target.value as Kind)}
-					value={type}
-				>
-					<option value="expense">Despesa</option>
-					<option value="income">Receita</option>
-				</select>
-			</div>
-			<div>
-				<Label htmlFor="category-name">Nome</Label>
-				<Input
-					id="category-name"
-					maxLength={40}
-					onChange={(event) => setName(event.target.value)}
-					required
-					value={name}
-				/>
-			</div>
-			<div>
-				<Label htmlFor="category-color">Cor</Label>
-				<select
-					className={`${selectClassName} w-full`}
-					id="category-color"
-					onChange={(event) =>
-						setColorKey(event.target.value as typeof colorKey)
-					}
-					value={colorKey}
-				>
-					{CATEGORY_COLORS.map((color) => (
-						<option key={color}>{color}</option>
-					))}
-				</select>
-			</div>
-			<div>
-				<Label htmlFor="category-icon">Ícone</Label>
-				<select
-					className={`${selectClassName} w-full`}
-					id="category-icon"
-					onChange={(event) => setIconKey(event.target.value as typeof iconKey)}
-					value={iconKey}
-				>
-					{CATEGORY_ICONS.map((icon) => (
-						<option key={icon}>{icon}</option>
-					))}
-				</select>
-			</div>
-			{error && (
-				<div className="md:col-span-2">
-					<Notice>{error}</Notice>
+		<FinanceCard className="mb-6">
+			<form className="grid gap-3 p-5 md:grid-cols-2" onSubmit={submit}>
+				<div>
+					<Label htmlFor="category-type">Tipo</Label>
+					<Select
+						disabled={Boolean(initial)}
+						onValueChange={(value) => setType(value as Kind)}
+						value={type}
+					>
+						<SelectTrigger className="w-full" id="category-type">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="expense">Despesa</SelectItem>
+							<SelectItem value="income">Receita</SelectItem>
+						</SelectContent>
+					</Select>
 				</div>
-			)}
-			<div className="flex gap-2 md:col-span-2">
-				<Button type="submit">
-					{initial ? "Salvar categoria" : "Criar categoria"}
-				</Button>
-				{onCancel && (
-					<Button onClick={onCancel} type="button" variant="outline">
-						Cancelar
-					</Button>
+				<div>
+					<Label htmlFor="category-name">Nome</Label>
+					<Input
+						id="category-name"
+						maxLength={40}
+						onChange={(event) => setName(event.target.value)}
+						required
+						value={name}
+					/>
+				</div>
+				<div>
+					<Label htmlFor="category-color">Cor</Label>
+					<Select
+						onValueChange={(value) => setColorKey(value as typeof colorKey)}
+						value={colorKey}
+					>
+						<SelectTrigger className="w-full" id="category-color">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{CATEGORY_COLORS.map((color) => (
+								<SelectItem key={color} value={color}>
+									{color}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</div>
+				<div>
+					<Label htmlFor="category-icon">Ícone</Label>
+					<Select
+						onValueChange={(value) => setIconKey(value as typeof iconKey)}
+						value={iconKey}
+					>
+						<SelectTrigger className="w-full" id="category-icon">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{CATEGORY_ICONS.map((icon) => (
+								<SelectItem key={icon} value={icon}>
+									{icon}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</div>
+				{error && (
+					<div className="md:col-span-2">
+						<Notice>{error}</Notice>
+					</div>
 				)}
-			</div>
-		</form>
+				<div className="flex gap-2 md:col-span-2">
+					<Button type="submit">
+						{initial ? "Salvar categoria" : "Criar categoria"}
+					</Button>
+					{onCancel && (
+						<Button onClick={onCancel} type="button" variant="outline">
+							Cancelar
+						</Button>
+					)}
+				</div>
+			</form>
+		</FinanceCard>
 	);
 }
 
@@ -578,15 +681,19 @@ function Categories() {
 	const [status, setStatus] = useState<"active" | "archived">("active");
 	const [refresh, setRefresh] = useState(0);
 	const [editing, setEditing] = useState<CategoryDto | undefined>();
+	const [archiving, setArchiving] = useState<CategoryDto | null>(null);
 	const result = useAsyncData(
 		() => listCategories({ data: { status } }),
 		[status, refresh],
 	);
-	async function toggle(category: CategoryDto) {
-		if (status === "active") {
-			if (!window.confirm(`Arquivar ${category.name}?`)) return;
-			await archiveCategory({ data: { id: category.id } });
-		} else await restoreCategory({ data: { id: category.id } });
+	async function archive() {
+		if (!archiving) return;
+		await archiveCategory({ data: { id: archiving.id } });
+		setArchiving(null);
+		setRefresh((value) => value + 1);
+	}
+	async function restore(category: CategoryDto) {
+		await restoreCategory({ data: { id: category.id } });
 		setRefresh((value) => value + 1);
 	}
 	return (
@@ -596,6 +703,14 @@ function Categories() {
 					<Plus /> Nova
 				</Button>
 			</PageTitle>
+			<ArchiveConfirmation
+				itemName={archiving?.name ?? "esta categoria"}
+				onConfirm={() => void archive()}
+				onOpenChange={(open) => {
+					if (!open) setArchiving(null);
+				}}
+				open={Boolean(archiving)}
+			/>
 			{editing && (
 				<CategoryForm
 					initial={editing.id ? editing : undefined}
@@ -606,26 +721,22 @@ function Categories() {
 					}}
 				/>
 			)}
-			<div className="mb-4 flex gap-2">
-				<Button
-					onClick={() => setStatus("active")}
-					variant={status === "active" ? "default" : "outline"}
-				>
-					Ativas
-				</Button>
-				<Button
-					onClick={() => setStatus("archived")}
-					variant={status === "archived" ? "default" : "outline"}
-				>
-					Arquivadas
-				</Button>
-			</div>
+			<Tabs
+				className="mb-4"
+				onValueChange={(value) => setStatus(value as typeof status)}
+				value={status}
+			>
+				<TabsList>
+					<TabsTrigger value="active">Ativas</TabsTrigger>
+					<TabsTrigger value="archived">Arquivadas</TabsTrigger>
+				</TabsList>
+			</Tabs>
 			{result.loading ? (
 				<Loading />
 			) : result.error || !result.data ? (
 				<Notice>{result.error ?? "Dados indisponíveis."}</Notice>
 			) : (
-				<section className="island-shell rounded-2xl p-5">
+				<FinanceCard className="p-5">
 					<ul className="divide-y divide-border">
 						{result.data.map((category) => (
 							<li className="flex items-center gap-3 py-3" key={category.id}>
@@ -655,7 +766,11 @@ function Categories() {
 											? "Arquivar categoria"
 											: "Restaurar categoria"
 									}
-									onClick={() => toggle(category)}
+									onClick={() =>
+										status === "active"
+											? setArchiving(category)
+											: void restore(category)
+									}
 									size="icon"
 									variant="ghost"
 								>
@@ -664,7 +779,7 @@ function Categories() {
 							</li>
 						))}
 					</ul>
-				</section>
+				</FinanceCard>
 			)}
 		</>
 	);
@@ -698,7 +813,7 @@ function Archive() {
 			) : result.error || !result.data ? (
 				<Notice>{result.error ?? "Dados indisponíveis."}</Notice>
 			) : (
-				<section className="island-shell rounded-2xl p-5">
+				<FinanceCard className="p-5">
 					<TransactionRows items={result.data.items} onRestore={restore} />
 					{result.data.nextCursor && (
 						<Button
@@ -709,7 +824,7 @@ function Archive() {
 							Carregar mais
 						</Button>
 					)}
-				</section>
+				</FinanceCard>
 			)}
 		</>
 	);
@@ -732,43 +847,44 @@ function Reports() {
 		blue: "#3b82f6",
 		orange: "#f97316",
 		amber: "#f59e0b",
+		indigo: "#6366f1",
+		pink: "#ec4899",
 		rose: "#f43f5e",
 		teal: "#14b8a6",
 	};
-	const donut = report?.expenseByCategory.length
-		? (() => {
-				let offset = 0;
-				return report.expenseByCategory
-					.map((item) => {
-						const start = offset;
-						offset += (item.amountCents / report.expenseCents) * 100;
-						return `${chartColors[item.colorKey] ?? "#64748b"} ${start}% ${offset}%`;
-					})
-					.join(", ");
-			})()
-		: "var(--border) 0 100%";
+	const chartData =
+		report?.expenseByCategory.map((item) => ({
+			amountCents: item.amountCents,
+			category: item.categoryName,
+			fill: chartColors[item.colorKey] ?? "#64748b",
+		})) ?? [];
+	const chartConfig = Object.fromEntries(
+		chartData.map((item) => [item.category, { label: item.category }]),
+	) satisfies ChartConfig;
 	return (
 		<>
 			<PageTitle eyebrow="relatórios" title="Para onde foi seu dinheiro" />
-			<section className="island-shell mb-6 flex flex-wrap gap-3 rounded-2xl p-4">
-				<select
-					className={`${selectClassName} w-40`}
-					onChange={(event) =>
-						setGranularity(event.target.value as typeof granularity)
-					}
+			<FinanceCard className="mb-6 flex flex-row flex-wrap gap-3 p-4">
+				<Select
+					onValueChange={(value) => setGranularity(value as typeof granularity)}
 					value={granularity}
 				>
-					<option value="day">Dia</option>
-					<option value="week">Semana</option>
-					<option value="month">Mês</option>
-				</select>
+					<SelectTrigger className="w-40">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="day">Dia</SelectItem>
+						<SelectItem value="week">Semana</SelectItem>
+						<SelectItem value="month">Mês</SelectItem>
+					</SelectContent>
+				</Select>
 				<Input
 					className="w-44"
 					onChange={(event) => setAnchorDate(event.target.value)}
 					type="date"
 					value={anchorDate}
 				/>
-			</section>
+			</FinanceCard>
 			{result.loading ? (
 				<Loading />
 			) : result.error || !result.data ? (
@@ -792,17 +908,42 @@ function Reports() {
 							value={result.data.balanceCents}
 						/>
 					</section>
-					<section className="island-shell mt-7 grid gap-6 rounded-2xl p-5 md:grid-cols-[180px_1fr]">
-						<div
-							className="mx-auto size-40 rounded-full"
-							style={{
-								background: `conic-gradient(${donut})`,
-							}}
-						>
-							<div className="m-6 grid size-28 place-items-center rounded-full bg-card text-center text-xs font-bold text-card-foreground">
-								{moneyFromCents(result.data.expenseCents)}
-								<br />
-								em despesas
+					<FinanceCard className="mt-7 grid gap-6 p-5 md:grid-cols-[180px_1fr]">
+						<div className="relative mx-auto size-40">
+							<ChartContainer
+								aria-label="Distribuição de despesas por categoria"
+								className="size-40"
+								config={chartConfig}
+							>
+								<PieChart>
+									<ChartTooltip
+										content={
+											<ChartTooltipContent
+												formatter={(value) => moneyFromCents(Number(value))}
+												nameKey="category"
+											/>
+										}
+									/>
+									<Pie
+										data={chartData}
+										dataKey="amountCents"
+										innerRadius={48}
+										nameKey="category"
+										outerRadius={76}
+										strokeWidth={4}
+									>
+										{chartData.map((item) => (
+											<Cell fill={item.fill} key={item.category} />
+										))}
+									</Pie>
+								</PieChart>
+							</ChartContainer>
+							<div className="pointer-events-none absolute inset-0 grid place-items-center text-center text-xs font-bold text-card-foreground">
+								<div>
+									{moneyFromCents(result.data.expenseCents)}
+									<br />
+									em despesas
+								</div>
 							</div>
 						</div>
 						<div>
@@ -832,7 +973,7 @@ function Reports() {
 								))}
 							</ul>
 						</div>
-					</section>
+					</FinanceCard>
 				</>
 			)}
 		</>

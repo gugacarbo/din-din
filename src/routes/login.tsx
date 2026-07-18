@@ -1,7 +1,9 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 
+import { Alert, AlertDescription } from "#/components/ui/alert.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import { Card, CardContent } from "#/components/ui/card.tsx";
 import { authClient } from "#/lib/auth-client.ts";
 import { getSessionUser } from "#/server/finance.ts";
 
@@ -35,24 +37,30 @@ function Login() {
 	}
 	return (
 		<main className="page-wrap grid min-h-dvh place-items-center py-8">
-			<section className="island-shell w-full max-w-md rounded-3xl p-8 text-center">
-				<p className="island-kicker">finanças pessoais</p>
-				<h1 className="display-title mt-2 text-5xl font-bold text-foreground">
-					din din
-				</h1>
-				<p className="mt-4 text-muted-foreground">
-					Clareza para cuidar do seu dinheiro, um lançamento de cada vez.
-				</p>
-				<Button
-					className="mt-8 w-full"
-					disabled={loading}
-					onClick={() => void login()}
-					size="lg"
-				>
-					{loading ? "Redirecionando…" : "Entrar com Google"}
-				</Button>
-				{error && <p className="mt-4 text-sm text-destructive">{error}</p>}
-			</section>
+			<Card className="island-shell w-full max-w-md rounded-3xl py-0 shadow-none">
+				<CardContent className="p-8 text-center">
+					<p className="island-kicker">finanças pessoais</p>
+					<h1 className="display-title mt-2 text-5xl font-bold text-foreground">
+						din din
+					</h1>
+					<p className="mt-4 text-muted-foreground">
+						Clareza para cuidar do seu dinheiro, um lançamento de cada vez.
+					</p>
+					<Button
+						className="mt-8 w-full"
+						disabled={loading}
+						onClick={() => void login()}
+						size="lg"
+					>
+						{loading ? "Redirecionando…" : "Entrar com Google"}
+					</Button>
+					{error && (
+						<Alert className="mt-4 text-left" variant="destructive">
+							<AlertDescription>{error}</AlertDescription>
+						</Alert>
+					)}
+				</CardContent>
+			</Card>
 		</main>
 	);
 }

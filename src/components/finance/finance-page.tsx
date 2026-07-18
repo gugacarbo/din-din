@@ -70,6 +70,9 @@ import {
 } from "#/server/finance.ts";
 
 import { AppShell } from "./app-shell.tsx";
+import { ColorSelect } from "./color-select.tsx";
+import { IconSelect } from "./icon-select.tsx";
+import { type Kind, KindSelect } from "./kind-select.tsx";
 import { CategoryMark } from "./presentation.tsx";
 
 type FinancePageKind =
@@ -78,7 +81,6 @@ type FinancePageKind =
 	| "reports"
 	| "categories"
 	| "archive";
-type Kind = "income" | "expense";
 
 const money = new Intl.NumberFormat("pt-BR", {
 	style: "currency",
@@ -407,18 +409,11 @@ function TransactionForm({
 		<form className="grid gap-4" onSubmit={submit}>
 			<div>
 				<Label htmlFor="transaction-type">Tipo</Label>
-				<Select
-					onValueChange={(value) => setType(value as Kind)}
+				<KindSelect
+					id="transaction-type"
+					onValueChange={setType}
 					value={type}
-				>
-					<SelectTrigger className="w-full" id="transaction-type">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="expense">Despesa</SelectItem>
-						<SelectItem value="income">Receita</SelectItem>
-					</SelectContent>
-				</Select>
+				/>
 			</div>
 			<div>
 				<Label htmlFor="transaction-category">Categoria</Label>
@@ -641,19 +636,12 @@ function CategoryForm({
 		<form className="grid gap-4" onSubmit={submit}>
 			<div>
 				<Label htmlFor="category-type">Tipo</Label>
-				<Select
+				<KindSelect
 					disabled={Boolean(initial)}
-					onValueChange={(value) => setType(value as Kind)}
+					id="category-type"
+					onValueChange={setType}
 					value={type}
-				>
-					<SelectTrigger className="w-full" id="category-type">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="expense">Despesa</SelectItem>
-						<SelectItem value="income">Receita</SelectItem>
-					</SelectContent>
-				</Select>
+				/>
 			</div>
 			<div>
 				<Label htmlFor="category-name">Nome</Label>
@@ -667,39 +655,19 @@ function CategoryForm({
 			</div>
 			<div>
 				<Label htmlFor="category-color">Cor</Label>
-				<Select
+				<ColorSelect
+					id="category-color"
 					onValueChange={(value) => setColorKey(value as typeof colorKey)}
 					value={colorKey}
-				>
-					<SelectTrigger className="w-full" id="category-color">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						{CATEGORY_COLORS.map((color) => (
-							<SelectItem key={color} value={color}>
-								{color}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
+				/>
 			</div>
 			<div>
 				<Label htmlFor="category-icon">Ícone</Label>
-				<Select
+				<IconSelect
+					id="category-icon"
 					onValueChange={(value) => setIconKey(value as typeof iconKey)}
 					value={iconKey}
-				>
-					<SelectTrigger className="w-full" id="category-icon">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						{CATEGORY_ICONS.map((icon) => (
-							<SelectItem key={icon} value={icon}>
-								{icon}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
+				/>
 			</div>
 			{error && <Notice>{error}</Notice>}
 			<DialogFooter>

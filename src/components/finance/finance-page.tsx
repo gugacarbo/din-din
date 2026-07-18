@@ -27,6 +27,14 @@ import {
 	ChartTooltip,
 	ChartTooltipContent,
 } from "#/components/ui/chart.tsx";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "#/components/ui/dialog.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import { Label } from "#/components/ui/label.tsx";
 import {
@@ -396,96 +404,131 @@ function TransactionForm({
 		}
 	}
 	return (
-		<FinanceCard className="mb-6">
-			<form className="grid gap-3 p-5 md:grid-cols-2" onSubmit={submit}>
-				<div>
-					<Label htmlFor="transaction-type">Tipo</Label>
-					<Select
-						onValueChange={(value) => setType(value as Kind)}
-						value={type}
-					>
-						<SelectTrigger className="w-full" id="transaction-type">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="expense">Despesa</SelectItem>
-							<SelectItem value="income">Receita</SelectItem>
-						</SelectContent>
-					</Select>
-				</div>
-				<div>
-					<Label htmlFor="transaction-category">Categoria</Label>
-					<Select onValueChange={setCategoryId} value={categoryId}>
-						<SelectTrigger className="w-full" id="transaction-category">
-							<SelectValue placeholder="Selecione uma categoria" />
-						</SelectTrigger>
-						<SelectContent>
-							{choices.map((category) => (
-								<SelectItem key={category.id} value={category.id}>
-									{category.name}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				</div>
-				<div>
-					<Label htmlFor="transaction-amount">Valor (R$)</Label>
-					<Input
-						id="transaction-amount"
-						inputMode="decimal"
-						onChange={(event) => setAmount(event.target.value)}
-						required
-						step="0.01"
-						type="number"
-						value={amount}
+		<form className="grid gap-4" onSubmit={submit}>
+			<div>
+				<Label htmlFor="transaction-type">Tipo</Label>
+				<Select
+					onValueChange={(value) => setType(value as Kind)}
+					value={type}
+				>
+					<SelectTrigger className="w-full" id="transaction-type">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="expense">Despesa</SelectItem>
+						<SelectItem value="income">Receita</SelectItem>
+					</SelectContent>
+				</Select>
+			</div>
+			<div>
+				<Label htmlFor="transaction-category">Categoria</Label>
+				<Select onValueChange={setCategoryId} value={categoryId}>
+					<SelectTrigger className="w-full" id="transaction-category">
+						<SelectValue placeholder="Selecione uma categoria" />
+					</SelectTrigger>
+					<SelectContent>
+						{choices.map((category) => (
+							<SelectItem key={category.id} value={category.id}>
+								{category.name}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			</div>
+			<div>
+				<Label htmlFor="transaction-amount">Valor (R$)</Label>
+				<Input
+					id="transaction-amount"
+					inputMode="decimal"
+					onChange={(event) => setAmount(event.target.value)}
+					required
+					step="0.01"
+					type="number"
+					value={amount}
+				/>
+			</div>
+			<div>
+				<Label htmlFor="transaction-date">Data</Label>
+				<Input
+					id="transaction-date"
+					onChange={(event) => setOccurredAt(event.target.value)}
+					required
+					type="date"
+					value={occurredAt}
+				/>
+			</div>
+			<div>
+				<Label htmlFor="transaction-description">Descrição opcional</Label>
+				<Input
+					id="transaction-description"
+					maxLength={280}
+					onChange={(event) => setDescription(event.target.value)}
+					value={description}
+				/>
+			</div>
+			{error && <Notice>{error}</Notice>}
+			<DialogFooter>
+				<Button disabled={saving || categoriesResult.loading} type="submit">
+					{saving
+						? "Salvando…"
+						: initial
+							? "Salvar alterações"
+							: "Adicionar lançamento"}
+				</Button>
+				<Button onClick={onCancel} type="button" variant="outline">
+					Cancelar
+				</Button>
+			</DialogFooter>
+		</form>
+	);
+}
+
+function TransactionDialog({
+	editing,
+	onOpenChange,
+	onSaved,
+}: {
+	editing: TransactionDto | null;
+	onOpenChange: (open: boolean) => void;
+	onSaved: () => void;
+}) {
+	const isEdit = Boolean(editing?.id);
+	return (
+		<Dialog
+			onOpenChange={(open) => {
+				if (!open) onOpenChange(false);
+			}}
+			open={Boolean(editing)}
+		>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>
+						{isEdit ? "Editar lançamento" : "Novo lançamento"}
+					</DialogTitle>
+					<DialogDescription>
+						{isEdit
+							? "Ajuste os dados do lançamento abaixo."
+							: "Preencha os dados para criar um novo lançamento."}
+					</DialogDescription>
+				</DialogHeader>
+				{editing && (
+					<TransactionForm
+						initial={isEdit ? editing : undefined}
+						onCancel={() => onOpenChange(false)}
+						onSaved={() => {
+							onOpenChange(false);
+							onSaved();
+						}}
 					/>
-				</div>
-				<div>
-					<Label htmlFor="transaction-date">Data</Label>
-					<Input
-						id="transaction-date"
-						onChange={(event) => setOccurredAt(event.target.value)}
-						required
-						type="date"
-						value={occurredAt}
-					/>
-				</div>
-				<div className="md:col-span-2">
-					<Label htmlFor="transaction-description">Descrição opcional</Label>
-					<Input
-						id="transaction-description"
-						maxLength={280}
-						onChange={(event) => setDescription(event.target.value)}
-						value={description}
-					/>
-				</div>
-				{error && (
-					<div className="md:col-span-2">
-						<Notice>{error}</Notice>
-					</div>
 				)}
-				<div className="flex gap-2 md:col-span-2">
-					<Button disabled={saving || categoriesResult.loading} type="submit">
-						{saving
-							? "Salvando…"
-							: initial
-								? "Salvar alterações"
-								: "Adicionar lançamento"}
-					</Button>
-					{onCancel && (
-						<Button onClick={onCancel} type="button" variant="outline">
-							Cancelar
-						</Button>
-					)}
-				</div>
-			</form>
-		</FinanceCard>
+			</DialogContent>
+		</Dialog>
 	);
 }
 
 function Transactions() {
 	const [refresh, setRefresh] = useState(0);
-	const [editing, setEditing] = useState<TransactionDto | undefined>();
+	const [editing, setEditing] = useState<TransactionDto | null>(null);
 	const [archiving, setArchiving] = useState<TransactionDto | null>(null);
 	const result = useAsyncData(
 		() => listTransactions({ data: { scope: "active" } }),
@@ -514,6 +557,13 @@ function Transactions() {
 					<Plus /> Novo
 				</Button>
 			</PageTitle>
+			<TransactionDialog
+				editing={editing}
+				onOpenChange={(open) => {
+					if (!open) setEditing(null);
+				}}
+				onSaved={() => setRefresh((value) => value + 1)}
+			/>
 			<ArchiveConfirmation
 				itemName={archiving?.category.name ?? "este lançamento"}
 				onConfirm={() => void archive()}
@@ -522,16 +572,6 @@ function Transactions() {
 				}}
 				open={Boolean(archiving)}
 			/>
-			{editing && (
-				<TransactionForm
-					initial={editing.id ? editing : undefined}
-					onCancel={() => setEditing(undefined)}
-					onSaved={() => {
-						setEditing(undefined);
-						setRefresh((value) => value + 1);
-					}}
-				/>
-			)}
 			{result.loading ? (
 				<Loading />
 			) : result.error || !result.data ? (
@@ -577,8 +617,11 @@ function CategoryForm({
 		(initial?.iconKey as (typeof CATEGORY_ICONS)[number]) ?? CATEGORY_ICONS[0],
 	);
 	const [error, setError] = useState<string | null>(null);
+	const [saving, setSaving] = useState(false);
 	async function submit(event: React.FormEvent) {
 		event.preventDefault();
+		setSaving(true);
+		setError(null);
 		try {
 			if (initial)
 				await updateCategory({
@@ -590,97 +633,138 @@ function CategoryForm({
 			setError(
 				cause instanceof Error ? cause.message : "Não foi possível salvar.",
 			);
+		} finally {
+			setSaving(false);
 		}
 	}
 	return (
-		<FinanceCard className="mb-6">
-			<form className="grid gap-3 p-5 md:grid-cols-2" onSubmit={submit}>
-				<div>
-					<Label htmlFor="category-type">Tipo</Label>
-					<Select
-						disabled={Boolean(initial)}
-						onValueChange={(value) => setType(value as Kind)}
-						value={type}
-					>
-						<SelectTrigger className="w-full" id="category-type">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="expense">Despesa</SelectItem>
-							<SelectItem value="income">Receita</SelectItem>
-						</SelectContent>
-					</Select>
-				</div>
-				<div>
-					<Label htmlFor="category-name">Nome</Label>
-					<Input
-						id="category-name"
-						maxLength={40}
-						onChange={(event) => setName(event.target.value)}
-						required
-						value={name}
+		<form className="grid gap-4" onSubmit={submit}>
+			<div>
+				<Label htmlFor="category-type">Tipo</Label>
+				<Select
+					disabled={Boolean(initial)}
+					onValueChange={(value) => setType(value as Kind)}
+					value={type}
+				>
+					<SelectTrigger className="w-full" id="category-type">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="expense">Despesa</SelectItem>
+						<SelectItem value="income">Receita</SelectItem>
+					</SelectContent>
+				</Select>
+			</div>
+			<div>
+				<Label htmlFor="category-name">Nome</Label>
+				<Input
+					id="category-name"
+					maxLength={40}
+					onChange={(event) => setName(event.target.value)}
+					required
+					value={name}
+				/>
+			</div>
+			<div>
+				<Label htmlFor="category-color">Cor</Label>
+				<Select
+					onValueChange={(value) => setColorKey(value as typeof colorKey)}
+					value={colorKey}
+				>
+					<SelectTrigger className="w-full" id="category-color">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						{CATEGORY_COLORS.map((color) => (
+							<SelectItem key={color} value={color}>
+								{color}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			</div>
+			<div>
+				<Label htmlFor="category-icon">Ícone</Label>
+				<Select
+					onValueChange={(value) => setIconKey(value as typeof iconKey)}
+					value={iconKey}
+				>
+					<SelectTrigger className="w-full" id="category-icon">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						{CATEGORY_ICONS.map((icon) => (
+							<SelectItem key={icon} value={icon}>
+								{icon}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			</div>
+			{error && <Notice>{error}</Notice>}
+			<DialogFooter>
+				<Button disabled={saving} type="submit">
+					{saving
+						? "Salvando…"
+						: initial
+							? "Salvar alterações"
+							: "Criar categoria"}
+				</Button>
+				<Button onClick={onCancel} type="button" variant="outline">
+					Cancelar
+				</Button>
+			</DialogFooter>
+		</form>
+	);
+}
+
+function CategoryDialog({
+	editing,
+	onOpenChange,
+	onSaved,
+}: {
+	editing: CategoryDto | null;
+	onOpenChange: (open: boolean) => void;
+	onSaved: () => void;
+}) {
+	const isEdit = Boolean(editing?.id);
+	return (
+		<Dialog
+			onOpenChange={(open) => {
+				if (!open) onOpenChange(false);
+			}}
+			open={Boolean(editing)}
+		>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>
+						{isEdit ? "Editar categoria" : "Nova categoria"}
+					</DialogTitle>
+					<DialogDescription>
+						{isEdit
+							? "Ajuste os dados da categoria abaixo."
+							: "Preencha os dados para criar uma nova categoria."}
+					</DialogDescription>
+				</DialogHeader>
+				{editing && (
+					<CategoryForm
+						initial={isEdit ? editing : undefined}
+						onCancel={() => onOpenChange(false)}
+						onSaved={() => {
+							onOpenChange(false);
+							onSaved();
+						}}
 					/>
-				</div>
-				<div>
-					<Label htmlFor="category-color">Cor</Label>
-					<Select
-						onValueChange={(value) => setColorKey(value as typeof colorKey)}
-						value={colorKey}
-					>
-						<SelectTrigger className="w-full" id="category-color">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							{CATEGORY_COLORS.map((color) => (
-								<SelectItem key={color} value={color}>
-									{color}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				</div>
-				<div>
-					<Label htmlFor="category-icon">Ícone</Label>
-					<Select
-						onValueChange={(value) => setIconKey(value as typeof iconKey)}
-						value={iconKey}
-					>
-						<SelectTrigger className="w-full" id="category-icon">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							{CATEGORY_ICONS.map((icon) => (
-								<SelectItem key={icon} value={icon}>
-									{icon}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				</div>
-				{error && (
-					<div className="md:col-span-2">
-						<Notice>{error}</Notice>
-					</div>
 				)}
-				<div className="flex gap-2 md:col-span-2">
-					<Button type="submit">
-						{initial ? "Salvar categoria" : "Criar categoria"}
-					</Button>
-					{onCancel && (
-						<Button onClick={onCancel} type="button" variant="outline">
-							Cancelar
-						</Button>
-					)}
-				</div>
-			</form>
-		</FinanceCard>
+			</DialogContent>
+		</Dialog>
 	);
 }
 
 function Categories() {
 	const [status, setStatus] = useState<"active" | "archived">("active");
 	const [refresh, setRefresh] = useState(0);
-	const [editing, setEditing] = useState<CategoryDto | undefined>();
+	const [editing, setEditing] = useState<CategoryDto | null>(null);
 	const [archiving, setArchiving] = useState<CategoryDto | null>(null);
 	const result = useAsyncData(
 		() => listCategories({ data: { status } }),
@@ -703,6 +787,13 @@ function Categories() {
 					<Plus /> Nova
 				</Button>
 			</PageTitle>
+			<CategoryDialog
+				editing={editing}
+				onOpenChange={(open) => {
+					if (!open) setEditing(null);
+				}}
+				onSaved={() => setRefresh((value) => value + 1)}
+			/>
 			<ArchiveConfirmation
 				itemName={archiving?.name ?? "esta categoria"}
 				onConfirm={() => void archive()}
@@ -711,16 +802,6 @@ function Categories() {
 				}}
 				open={Boolean(archiving)}
 			/>
-			{editing && (
-				<CategoryForm
-					initial={editing.id ? editing : undefined}
-					onCancel={() => setEditing(undefined)}
-					onSaved={() => {
-						setEditing(undefined);
-						setRefresh((value) => value + 1);
-					}}
-				/>
-			)}
 			<Tabs
 				className="mb-4"
 				onValueChange={(value) => setStatus(value as typeof status)}

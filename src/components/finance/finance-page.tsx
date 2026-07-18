@@ -289,8 +289,8 @@ function TransactionRows({
 	);
 }
 
-function Dashboard() {
-	const result = useAsyncData(() => getDashboard(), []);
+function Dashboard({ refreshKey }: { refreshKey: number }) {
+	const result = useAsyncData(() => getDashboard(), [refreshKey]);
 	if (result.loading) return <Loading />;
 	if (result.error || !result.data)
 		return <Notice>{result.error ?? "Dados indisponíveis."}</Notice>;
@@ -521,13 +521,18 @@ function TransactionDialog({
 	);
 }
 
-function Transactions() {
+function Transactions({
+	refreshKey,
+	onEdit,
+}: {
+	refreshKey: number;
+	onEdit: (item: TransactionDto) => void;
+}) {
 	const [refresh, setRefresh] = useState(0);
-	const [editing, setEditing] = useState<TransactionDto | null>(null);
 	const [archiving, setArchiving] = useState<TransactionDto | null>(null);
 	const result = useAsyncData(
 		() => listTransactions({ data: { scope: "active" } }),
-		[refresh],
+		[refresh, refreshKey],
 	);
 	async function archive() {
 		if (!archiving) return;
@@ -547,18 +552,7 @@ function Transactions() {
 	}
 	return (
 		<>
-			<PageTitle eyebrow="histórico" title="Lançamentos">
-				<Button onClick={() => setEditing({} as TransactionDto)}>
-					<Plus /> Novo
-				</Button>
-			</PageTitle>
-			<TransactionDialog
-				editing={editing}
-				onOpenChange={(open) => {
-					if (!open) setEditing(null);
-				}}
-				onSaved={() => setRefresh((value) => value + 1)}
-			/>
+			<PageTitle eyebrow="histórico" title="Lançamentos" />
 			<ArchiveConfirmation
 				itemName={archiving?.category.name ?? "este lançamento"}
 				onConfirm={() => void archive()}
@@ -576,7 +570,7 @@ function Transactions() {
 					<TransactionRows
 						items={result.data.items}
 						onArchive={setArchiving}
-						onEdit={(item) => setEditing(item)}
+						onEdit={onEdit}
 					/>
 					{result.data.nextCursor && (
 						<Button
@@ -834,11 +828,11 @@ function Categories() {
 	);
 }
 
-function Archive() {
+function Archive({ refreshKey }: { refreshKey: number }) {
 	const [refresh, setRefresh] = useState(0);
 	const result = useAsyncData(
 		() => listTransactions({ data: { scope: "archived" } }),
-		[refresh],
+		[refresh, refreshKey],
 	);
 	async function restore(item: TransactionDto) {
 		await restoreTransaction({ data: { id: item.id } });
@@ -879,14 +873,14 @@ function Archive() {
 	);
 }
 
-function Reports() {
+function Reports({ refreshKey }: { refreshKey: number }) {
 	const [granularity, setGranularity] = useState<"day" | "week" | "month">(
 		"month",
 	);
 	const [anchorDate, setAnchorDate] = useState(saoPauloToday());
 	const result = useAsyncData(
 		() => getReport({ data: { granularity, anchorDate } }),
-		[granularity, anchorDate],
+		[granularity, anchorDate, refreshKey],
 	);
 	const report = result.data;
 	const chartColors: Record<string, string> = {
@@ -1034,18 +1028,35 @@ export function FinancePage({ kind }: { kind: FinancePageKind }) {
 		await authClient.signOut();
 		window.location.assign("/login");
 	};
+	const [refreshKey, setRefreshKey] = useState(0);
+	const [editing, setEditing] = useState<TransactionDto | null>(null);
+	const openNewTransaction = () => setEditing({} as TransactionDto);
+	const handleSaved = () => {
+		setEditing(null);
+		setRefreshKey((value) => value + 1);
+	};
 	return (
-		<AppShell onLogout={() => void logout()}>
+		<AppShell
+			onLogout={() => void logout()}
+			onNewTransaction={openNewTransaction}
+		>
+			<TransactionDialog
+				editing={editing}
+				onOpenChange={(open) => {
+					if (!open) setEditing(null);
+				}}
+				onSaved={handleSaved}
+			/>
 			{kind === "dashboard" ? (
-				<Dashboard />
+				<Dashboard refreshKey={refreshKey} />
 			) : kind === "transactions" ? (
-				<Transactions />
+				<Transactions refreshKey={refreshKey} onEdit={setEditing} />
 			) : kind === "categories" ? (
 				<Categories />
 			) : kind === "archive" ? (
-				<Archive />
+				<Archive refreshKey={refreshKey} />
 			) : (
-				<Reports />
+				<Reports refreshKey={refreshKey} />
 			)}
 		</AppShell>
 	);

@@ -5,6 +5,7 @@ import {
 	LayoutDashboard,
 	List,
 	LogOut,
+	Plus,
 	Tags,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -67,9 +68,11 @@ function NavigationLink({
 export function AppShell({
 	children,
 	onLogout,
+	onNewTransaction,
 }: {
 	children: ReactNode;
 	onLogout: () => void;
+	onNewTransaction: () => void;
 }) {
 	return (
 		<SidebarProvider>
@@ -113,15 +116,25 @@ export function AppShell({
 				</SidebarFooter>
 			</Sidebar>
 			<SidebarInset className="bg-transparent">
-				<header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur md:hidden">
-					<SidebarTrigger />
-					<Link
-						className="display-title text-2xl font-bold text-foreground"
-						to="/"
-					>
-						din din
-					</Link>
-					<ThemeToggle />
+				<header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-2 border-b border-border bg-background/90 px-4 backdrop-blur">
+					<div className="flex items-center gap-2">
+						<SidebarTrigger />
+						<Link
+							className="display-title text-2xl font-bold text-foreground md:hidden"
+							to="/"
+						>
+							din din
+						</Link>
+					</div>
+					<div className="flex items-center gap-2">
+						<Button onClick={onNewTransaction} size="sm">
+							<Plus /> <span className="hidden sm:inline">Novo lançamento</span>
+							<span className="sm:hidden">Novo</span>
+						</Button>
+						<div className="md:hidden">
+							<ThemeToggle />
+						</div>
+					</div>
 				</header>
 				<main className="page-wrap py-6 md:max-w-none md:px-8">{children}</main>
 			</SidebarInset>

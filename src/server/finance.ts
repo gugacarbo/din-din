@@ -60,7 +60,7 @@ export type TransactionDto = {
 	updatedAt: string;
 };
 
-export class FinanceError extends Error {
+class FinanceError extends Error {
 	constructor(
 		readonly code:
 			| "UNAUTHENTICATED"

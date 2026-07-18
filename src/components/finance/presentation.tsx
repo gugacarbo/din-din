@@ -21,23 +21,7 @@ import {
 } from "lucide-react";
 import type { ComponentType } from "react";
 
-export const categoryColors = [
-	"emerald",
-	"teal",
-	"cyan",
-	"blue",
-	"indigo",
-	"violet",
-	"pink",
-	"rose",
-	"amber",
-	"orange",
-] as const;
-
-export const categoryIcons: Record<
-	string,
-	ComponentType<{ className?: string }>
-> = {
+const categoryIcons: Record<string, ComponentType<{ className?: string }>> = {
 	Banknote,
 	BriefcaseBusiness,
 	Car,
@@ -88,18 +72,4 @@ export function CategoryMark({
 			<Icon className="size-4" />
 		</span>
 	);
-}
-
-export function formatMoney(cents: number) {
-	return new Intl.NumberFormat("pt-BR", {
-		currency: "BRL",
-		style: "currency",
-	}).format(cents / 100);
-}
-
-export function formatDate(date: string) {
-	return new Intl.DateTimeFormat("pt-BR", {
-		dateStyle: "medium",
-		timeZone: "UTC",
-	}).format(new Date(`${date}T00:00:00Z`));
 }

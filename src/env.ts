@@ -36,5 +36,3 @@ export const env = createEnv({
 	},
 	emptyStringAsUndefined: true,
 });
-
-export type RuntimeEnv = typeof env;

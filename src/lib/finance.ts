@@ -24,9 +24,6 @@ export const CATEGORY_ICONS = [
 	"ShoppingBag",
 ] as const;
 
-export type CategoryColor = (typeof CATEGORY_COLORS)[number];
-export type CategoryIcon = (typeof CATEGORY_ICONS)[number];
-
 export function normalizeCategoryName(value: string) {
 	return value
 		.trim()

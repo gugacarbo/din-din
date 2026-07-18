@@ -9,8 +9,6 @@ refspecs_file=$(mktemp)
 
 echo "\033[0;35mRunning pre-push checks...\033[0m"
 
-PROTECTED_BRANCHES="main master staging"
-
 while read -r local_ref local_sha remote_ref remote_sha; do
   printf '%s %s %s %s\n' "$local_ref" "$local_sha" "$remote_ref" "$remote_sha" >> "$refspecs_file"
 
@@ -19,7 +17,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       remote_branch="${remote_ref#refs/heads/}"
       remote_branch_lower=$(printf '%s' "$remote_branch" | tr '[:upper:]' '[:lower:]')
       case "$remote_branch_lower" in
-        $PROTECTED_BRANCHES)
+        main | master)
           blocked=1
           printf '\n'
           printf '\033[1;31m✖ Push para a branch %s está bloqueado\033[0m\n' "$remote_branch"
@@ -44,7 +42,7 @@ if [ "$blocked" -eq 1 ]; then
 fi
 
 
-CHANGELOG_PUSH_REFSPECS="$(cat "$refspecs_file")" pnpm changelog:validate-pre-push
+CHANGELOG_PUSH_REFSPECS="$(cat "$refspecs_file")" pnpm release:verify
 changelog_exit=$?
 
 if [ "$changelog_exit" -ne 0 ]; then
@@ -52,7 +50,7 @@ if [ "$changelog_exit" -ne 0 ]; then
   exit "$changelog_exit"
 fi
 
-pnpm knip:prod
+pnpm knip
 
 pnpm biome check
 pnpm build

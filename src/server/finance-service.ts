@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { createDb } from "#/db";
@@ -513,7 +513,7 @@ export function createFinanceService({
 						eq(transactions.userId, id),
 						isNull(transactions.archivedAt),
 						gte(transactions.occurredAt, startDate),
-						lte(transactions.occurredAt, endDate),
+						lt(transactions.occurredAt, endDate),
 					),
 				);
 			const incomeCents = rows
@@ -564,7 +564,7 @@ export function createFinanceService({
 						eq(transactions.userId, id),
 						isNull(transactions.archivedAt),
 						gte(transactions.occurredAt, period.startDate),
-						lte(transactions.occurredAt, period.endDate),
+						lt(transactions.occurredAt, period.endDate),
 					),
 				);
 			const incomeCents = rows

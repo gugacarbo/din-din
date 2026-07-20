@@ -352,7 +352,7 @@ function TransactionForm({
 	onSaved: () => void;
 	onCancel?: () => void;
 }) {
-	const [type, setType] = useState<Kind>(initial?.type ?? "expense");
+	const [type, setType] = useState<Kind | undefined>(initial?.type);
 	const categoriesResult = useAsyncData(
 		() => listCategories({ data: { status: "active" } }),
 		[],
@@ -378,6 +378,10 @@ function TransactionForm({
 	}, [choices, categoryId]);
 	async function submit(event: React.FormEvent) {
 		event.preventDefault();
+		if (!type) {
+			setError("Escolha o tipo do lançamento antes de salvar.");
+			return;
+		}
 		const amountCents = Math.round(Number(amount.replace(",", ".")) * 100);
 		if (!categoryId || !Number.isSafeInteger(amountCents) || amountCents <= 0) {
 			setError("Informe uma categoria e um valor maior que zero.");
@@ -406,10 +410,14 @@ function TransactionForm({
 		}
 	}
 	return (
-		<form className="grid gap-4" onSubmit={submit}>
+		<form className="grid gap-4" noValidate onSubmit={submit}>
 			<div>
 				<Label htmlFor="transaction-type">Tipo</Label>
 				<KindSelect
+					aria-describedby={
+						error && !type ? "transaction-type-error" : undefined
+					}
+					aria-invalid={!type}
 					id="transaction-type"
 					onValueChange={setType}
 					value={type}
@@ -417,7 +425,11 @@ function TransactionForm({
 			</div>
 			<div>
 				<Label htmlFor="transaction-category">Categoria</Label>
-				<Select onValueChange={setCategoryId} value={categoryId}>
+				<Select
+					disabled={!type}
+					onValueChange={setCategoryId}
+					value={categoryId}
+				>
 					<SelectTrigger className="w-full" id="transaction-category">
 						<SelectValue placeholder="Selecione uma categoria" />
 					</SelectTrigger>
@@ -461,7 +473,13 @@ function TransactionForm({
 					value={description}
 				/>
 			</div>
-			{error && <Notice>{error}</Notice>}
+			{error && (
+				<Notice>
+					<span id={!type ? "transaction-type-error" : undefined} role="alert">
+						{error}
+					</span>
+				</Notice>
+			)}
 			<DialogFooter>
 				<Button disabled={saving || categoriesResult.loading} type="submit">
 					{saving

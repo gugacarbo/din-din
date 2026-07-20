@@ -26,17 +26,26 @@ export function KindSelect({
 	id,
 	className,
 	disabled,
+	"aria-describedby": ariaDescribedBy,
+	"aria-invalid": ariaInvalid,
 }: {
-	value: Kind;
+	value?: Kind;
 	onValueChange: (value: Kind) => void;
 	id?: string;
 	className?: string;
 	disabled?: boolean;
+	"aria-describedby"?: string;
+	"aria-invalid"?: boolean;
 }) {
 	return (
 		<Select disabled={disabled} onValueChange={onValueChange} value={value}>
-			<SelectTrigger className={cn("w-full", className)} id={id}>
-				<SelectValue />
+			<SelectTrigger
+				aria-describedby={ariaDescribedBy}
+				aria-invalid={ariaInvalid}
+				className={cn("w-full", className)}
+				id={id}
+			>
+				<SelectValue placeholder="Selecione o tipo" />
 			</SelectTrigger>
 			<SelectContent>
 				{(Object.keys(kindLabels) as Kind[]).map((kind) => {

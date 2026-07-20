@@ -1,0 +1,76 @@
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { createElement, type ReactNode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const api = vi.hoisted(() => ({
+	archiveCategory: vi.fn(), archiveTransaction: vi.fn(), createCategory: vi.fn(), createTransaction: vi.fn(),
+	getDashboard: vi.fn(), getReport: vi.fn(), listCategories: vi.fn(), listTransactions: vi.fn(),
+	restoreCategory: vi.fn(), restoreTransaction: vi.fn(), updateCategory: vi.fn(), updateTransaction: vi.fn(),
+}));
+
+vi.mock("#/server/finance.ts", () => api);
+vi.mock("#/lib/auth-client.ts", () => ({ authClient: { signOut: vi.fn() } }));
+vi.mock("@tanstack/react-router", () => ({
+	Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => createElement("a", { href: to, ...props }, children),
+	useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) => select({ location: { pathname: "/" } }),
+}));
+vi.mock("recharts", () => ({
+	Cell: "div",
+	Pie: "div",
+	PieChart: "div",
+	ResponsiveContainer: ({ children }: { children: ReactNode }) => children,
+	Tooltip: () => null,
+	Legend: () => null,
+}));
+
+import { FinancePage } from "#/components/finance/finance-page.tsx";
+
+const expenseCategory = { id: "22222222-2222-4222-8222-222222222222", type: "expense", name: "Mercado", colorKey: "orange", iconKey: "Utensils", archivedAt: null, createdAt: "2024-01-01T00:00:00.000Z", updatedAt: "2024-01-01T00:00:00.000Z" };
+const incomeCategory = { ...expenseCategory, id: "11111111-1111-4111-8111-111111111111", type: "income", name: "Salário", colorKey: "emerald", iconKey: "BriefcaseBusiness" };
+const transaction = { id: "33333333-3333-4333-8333-333333333333", type: "expense", categoryId: expenseCategory.id, category: expenseCategory, amountCents: 1200, currency: "BRL" as const, occurredAt: "2024-02-10", description: "antes", archivedAt: null, createdAt: "2024-02-10T00:00:00.000Z", updatedAt: "2024-02-10T00:00:00.000Z" };
+
+describe("FinancePage", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		api.getDashboard.mockResolvedValue({ month: { incomeCents: 0, expenseCents: 0, balanceCents: 0 }, recentTransactions: [] });
+		api.listCategories.mockResolvedValue([incomeCategory, expenseCategory]);
+		api.listTransactions.mockResolvedValue({ items: [transaction], nextCursor: null });
+		api.getReport.mockResolvedValue({ period: { granularity: "month", anchorDate: "2024-02-10", startDate: "2024-02-01", endDate: "2024-03-01" }, incomeCents: 0, expenseCents: 0, balanceCents: 0, expenseByCategory: [] });
+	});
+
+	it("requires an explicit type before allowing a new transaction", async () => {
+		const user = userEvent.setup();
+		render(<FinancePage kind="dashboard" />);
+		await screen.findByText("Seu mês em movimento");
+		await user.click(screen.getByRole("button", { name: /novo lançamento/i }));
+		await waitFor(() => expect(api.listCategories).toHaveBeenCalled());
+		const type = screen.getByLabelText("Tipo");
+		expect(type).toHaveTextContent("Selecione o tipo");
+		expect(screen.getByLabelText("Categoria")).toBeDisabled();
+		await user.click(screen.getByRole("button", { name: /adicionar lançamento/i }));
+		expect(await screen.findByText("Escolha o tipo do lançamento antes de salvar.")).toHaveAttribute("role", "alert");
+		expect(type).toHaveAttribute("aria-invalid", "true");
+	});
+
+	it("preserves the persisted type while editing", async () => {
+		const user = userEvent.setup();
+		api.updateTransaction.mockResolvedValue(transaction);
+		render(<FinancePage kind="transactions" />);
+		await waitFor(() => expect(api.listTransactions).toHaveBeenCalled());
+		await screen.findByText(/antes/);
+		await user.click(screen.getByRole("button", { name: "Editar lançamento" }));
+		expect(screen.getByLabelText("Tipo")).toHaveTextContent("Despesa");
+		expect(screen.getByLabelText("Categoria")).toHaveTextContent("Mercado");
+		await user.click(screen.getByRole("button", { name: /salvar alterações/i }));
+		await waitFor(() => expect(api.updateTransaction).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: "expense" }) })));
+	});
+
+	it("exposes the real mobile Archive navigation", async () => {
+		render(<FinancePage kind="dashboard" />);
+		const nav = screen.getByRole("navigation", { name: "Navegação mobile" });
+		const link = within(nav).getByRole("link", { name: "Arquivo" });
+		expect(link).toHaveAttribute("href", "/archive");
+		expect(nav).toHaveClass("md:hidden");
+	});
+});

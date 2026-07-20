@@ -98,13 +98,15 @@ export const categories = sqliteTable(
 		normalizedName: text("normalized_name").notNull(),
 		colorKey: text("color_key").notNull(),
 		iconKey: text("icon_key").notNull(),
+		parentCategoryId: text("parent_category_id"),
 		archivedAt: integer("archived_at", { mode: "number" }),
 		...financeTimestamps,
 	},
 	(table) => [
-		uniqueIndex("categories_user_type_name_unique").on(
+		uniqueIndex("categories_user_type_parent_name_unique").on(
 			table.userId,
 			table.type,
+			sql`coalesce(${table.parentCategoryId}, '__root__')`,
 			table.normalizedName,
 		),
 		uniqueIndex("categories_id_user_type_unique").on(
@@ -117,6 +119,11 @@ export const categories = sqliteTable(
 			"categories_name_length_check",
 			sql`length(${table.name}) between 1 and 40`,
 		),
+		foreignKey({
+			columns: [table.parentCategoryId, table.userId, table.type],
+			foreignColumns: [table.id, table.userId, table.type],
+			name: "categories_parent_owner_type_fk",
+		}),
 		check(
 			"categories_color_key_check",
 			sql`${table.colorKey} in ('emerald', 'cyan', 'violet', 'blue', 'orange', 'amber', 'rose', 'teal')`,
@@ -124,6 +131,55 @@ export const categories = sqliteTable(
 		check(
 			"categories_icon_key_check",
 			sql`${table.iconKey} in ('BriefcaseBusiness', 'CircleDollarSign', 'Gift', 'House', 'Utensils', 'Car', 'HeartPulse', 'Gamepad2', 'Tags', 'WalletCards', 'GraduationCap', 'ShoppingBag')`,
+		),
+	],
+);
+
+export const paymentMethods = sqliteTable(
+	"payment_methods",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		kind: text("kind", {
+			enum: [
+				"credit_card",
+				"debit_card",
+				"pix",
+				"cash",
+				"bank_transfer",
+				"boleto",
+				"other",
+			],
+		}).notNull(),
+		invoiceControl: integer("invoice_control", { mode: "boolean" })
+			.notNull()
+			.default(false),
+		closingDay: integer("closing_day"),
+		dueDay: integer("due_day"),
+		archivedAt: integer("archived_at", { mode: "number" }),
+		...financeTimestamps,
+	},
+	(table) => [
+		uniqueIndex("payment_methods_id_user_unique").on(table.id, table.userId),
+		index("payment_methods_owner_archive_index").on(
+			table.userId,
+			table.archivedAt,
+			table.name,
+		),
+		check(
+			"payment_methods_kind_check",
+			sql`${table.kind} in ('credit_card', 'debit_card', 'pix', 'cash', 'bank_transfer', 'boleto', 'other')`,
+		),
+		check(
+			"payment_methods_name_length_check",
+			sql`length(${table.name}) between 1 and 80`,
+		),
+		check(
+			"payment_methods_invoice_configuration_check",
+			sql`(${table.kind} = 'credit_card' and ${table.invoiceControl} = 1 and ${table.closingDay} between 1 and 31 and ${table.dueDay} between 1 and 31) or (${table.invoiceControl} = 0 and ${table.closingDay} is null and ${table.dueDay} is null)`,
 		),
 	],
 );
@@ -136,11 +192,14 @@ export const transactions = sqliteTable(
 			.notNull()
 			.references(() => user.id, { onDelete: "cascade" }),
 		categoryId: text("category_id").notNull(),
+		paymentMethodId: text("payment_method_id"),
 		type: text("type", { enum: ["income", "expense"] }).notNull(),
 		amountCents: integer("amount_cents").notNull(),
 		currency: text("currency").notNull().default("BRL"),
 		occurredAt: text("occurred_at").notNull(),
 		description: text("description"),
+		invoiceCycleClosingDate: text("invoice_cycle_closing_date"),
+		invoiceCycleDueDate: text("invoice_cycle_due_date"),
 		archivedAt: integer("archived_at", { mode: "number" }),
 		...financeTimestamps,
 	},
@@ -156,10 +215,21 @@ export const transactions = sqliteTable(
 			table.archivedAt,
 			table.id,
 		),
+		index("transactions_payment_cycle_index").on(
+			table.userId,
+			table.paymentMethodId,
+			table.invoiceCycleClosingDate,
+			table.invoiceCycleDueDate,
+		),
 		foreignKey({
 			columns: [table.categoryId, table.userId, table.type],
 			foreignColumns: [categories.id, categories.userId, categories.type],
 			name: "transactions_category_owner_type_fk",
+		}),
+		foreignKey({
+			columns: [table.paymentMethodId, table.userId],
+			foreignColumns: [paymentMethods.id, paymentMethods.userId],
+			name: "transactions_payment_method_owner_fk",
 		}),
 		check(
 			"transactions_type_check",
@@ -183,5 +253,6 @@ export const transactions = sqliteTable(
 
 export const userRelations = relations(user, ({ many }) => ({
 	categories: many(categories),
+	paymentMethods: many(paymentMethods),
 	transactions: many(transactions),
 }));

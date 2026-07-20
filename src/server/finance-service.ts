@@ -1,8 +1,15 @@
+// biome-ignore-all lint/style/noNonNullAssertion: Lookups are guarded by the service's owned-record checks.
+// biome-ignore-all lint/suspicious/noExplicitAny: The recursive report tree is serialized JSON.
 import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { createDb } from "#/db";
-import { categories, transactions, userBootstrap } from "#/db/schema";
+import {
+	categories,
+	paymentMethods,
+	transactions,
+	userBootstrap,
+} from "#/db/schema";
 import { createCoreAuth } from "#/lib/auth-core";
 import {
 	CATEGORY_COLORS,
@@ -14,24 +21,61 @@ import {
 } from "#/lib/finance";
 
 const categoryType = z.enum(["income", "expense"]);
+const paymentKind = z.enum([
+	"credit_card",
+	"debit_card",
+	"pix",
+	"cash",
+	"bank_transfer",
+	"boleto",
+	"other",
+]);
+const civilDate = z.string().refine(isCivilDate, "Informe uma data válida.");
+const nullablePaymentMethod = z.string().uuid().nullable();
 const categoryInput = z.object({
 	type: categoryType,
 	name: z.string().trim().min(1).max(40),
 	colorKey: z.enum(CATEGORY_COLORS),
 	iconKey: z.enum(CATEGORY_ICONS),
+	parentCategoryId: z.string().uuid().nullable().optional(),
 });
-const civilDate = z.string().refine(isCivilDate, "Informe uma data válida.");
 const transactionInput = z.object({
 	type: categoryType,
 	categoryId: z.string().uuid(),
+	paymentMethodId: nullablePaymentMethod.optional(),
 	amountCents: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
 	occurredAt: civilDate,
 	description: z.string().trim().max(280).nullable().optional(),
 });
+const paymentMethodInput = z
+	.object({
+		name: z.string().trim().min(1).max(80),
+		kind: paymentKind,
+		invoiceControl: z.boolean().default(false),
+		closingDay: z.number().int().min(1).max(31).nullable().optional(),
+		dueDay: z.number().int().min(1).max(31).nullable().optional(),
+	})
+	.superRefine((value, ctx) => {
+		const configured = value.kind === "credit_card" && value.invoiceControl;
+		if (configured && (value.closingDay == null || value.dueDay == null))
+			ctx.addIssue({
+				code: "custom",
+				message: "Informe fechamento e vencimento do cartão.",
+			});
+		if (!configured && (value.closingDay != null || value.dueDay != null))
+			ctx.addIssue({
+				code: "custom",
+				message:
+					"Fechamento e vencimento só são usados em cartão de crédito com fatura.",
+			});
+	});
 
 type Database = ReturnType<typeof createDb>;
 type CategoryType = z.infer<typeof categoryType>;
+type PaymentKind = z.infer<typeof paymentKind>;
 type Cursor = { occurredAt: string; createdAt: number; id: string };
+type CategoryRow = typeof categories.$inferSelect;
+type PaymentRow = typeof paymentMethods.$inferSelect;
 
 export type CategoryDto = {
 	id: string;
@@ -39,6 +83,20 @@ export type CategoryDto = {
 	name: string;
 	colorKey: string;
 	iconKey: string;
+	parentCategoryId: string | null;
+	level: 1 | 2 | 3;
+	path: string[];
+	archivedAt: string | null;
+	createdAt: string;
+	updatedAt: string;
+};
+export type PaymentMethodDto = {
+	id: string;
+	name: string;
+	kind: PaymentKind;
+	invoiceControl: boolean;
+	closingDay: number | null;
+	dueDay: number | null;
 	archivedAt: string | null;
 	createdAt: string;
 	updatedAt: string;
@@ -48,13 +106,31 @@ export type TransactionDto = {
 	type: CategoryType;
 	categoryId: string;
 	category: CategoryDto;
+	paymentMethodId: string | null;
+	paymentMethod: PaymentMethodDto | null;
 	amountCents: number;
 	currency: "BRL";
 	occurredAt: string;
 	description: string | null;
+	invoiceCycleClosingDate: string | null;
+	invoiceCycleDueDate: string | null;
 	archivedAt: string | null;
 	createdAt: string;
 	updatedAt: string;
+};
+export type InvoiceDto = {
+	paymentMethodId: string;
+	paymentMethod: PaymentMethodDto;
+	cycleClosingDate: string;
+	cycleDueDate: string;
+	items: Array<{
+		transactionId: string;
+		occurredAt: string;
+		description: string | null;
+		amountCents: number;
+		category: CategoryDto;
+	}>;
+	totalCents: number;
 };
 
 export const financeSchemas = {
@@ -63,10 +139,18 @@ export const financeSchemas = {
 		.omit({ type: true })
 		.extend({ id: z.string().uuid() }),
 	transactionInput,
-	transactionUpdate: transactionInput.extend({ id: z.string().uuid() }),
+	transactionUpdate: transactionInput.extend({
+		id: z.string().uuid(),
+		paymentMethodId: nullablePaymentMethod,
+	}),
+	paymentMethodInput,
+	paymentMethodUpdate: paymentMethodInput.extend({ id: z.string().uuid() }),
 	id: z.object({ id: z.string().uuid() }),
 	listCategories: z.object({
 		status: z.enum(["active", "archived"]).default("active"),
+	}),
+	listPaymentMethods: z.object({
+		status: z.enum(["active", "archived", "all"]).default("active"),
 	}),
 	listTransactions: z.object({
 		scope: z.enum(["active", "archived"]).default("active"),
@@ -91,41 +175,105 @@ export class FinanceError extends Error {
 	}
 }
 
-function now() {
-	return Date.now();
-}
-function iso(value: number | null) {
-	return value === null ? null : new Date(value).toISOString();
-}
-function categoryDto(row: typeof categories.$inferSelect): CategoryDto {
-	return {
-		id: row.id,
-		type: row.type,
-		name: row.name,
-		colorKey: row.colorKey,
-		iconKey: row.iconKey,
-		archivedAt: iso(row.archivedAt),
-		createdAt: new Date(row.createdAt).toISOString(),
-		updatedAt: new Date(row.updatedAt).toISOString(),
-	};
-}
+const now = () => Date.now();
+const iso = (value: number | null) =>
+	value === null ? null : new Date(value).toISOString();
+const idSchema = z.string().uuid();
 function encodeCursor(cursor: Cursor) {
 	return btoa(JSON.stringify(cursor));
 }
 function decodeCursor(value?: string): Cursor | undefined {
 	if (!value) return undefined;
 	try {
-		const parsed = z
+		return z
 			.object({
 				occurredAt: civilDate,
 				createdAt: z.number().int(),
-				id: z.string().uuid(),
+				id: idSchema,
 			})
 			.parse(JSON.parse(atob(value)));
-		return parsed;
 	} catch {
 		throw new FinanceError("VALIDATION_ERROR", "Cursor inválido.");
 	}
+}
+function monthDate(year: number, month: number, day: number) {
+	const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+	return `${year}-${String(month).padStart(2, "0")}-${String(Math.min(day, last)).padStart(2, "0")}`;
+}
+function shiftMonth(year: number, month: number, amount: number) {
+	const date = new Date(Date.UTC(year, month - 1 + amount, 1));
+	return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1 };
+}
+export function invoiceCycleFor(
+	occurredAt: string,
+	closingDay: number,
+	dueDay: number,
+) {
+	const [year, month] = occurredAt.split("-").map(Number);
+	const currentClosing = monthDate(year, month, closingDay);
+	const closing =
+		occurredAt <= currentClosing
+			? currentClosing
+			: (() => {
+					const next = shiftMonth(year, month, 1);
+					return monthDate(next.year, next.month, closingDay);
+				})();
+	const [closingYear, closingMonth] = closing.split("-").map(Number);
+	let due = monthDate(closingYear, closingMonth, dueDay);
+	if (due <= closing) {
+		const next = shiftMonth(closingYear, closingMonth, 1);
+		due = monthDate(next.year, next.month, dueDay);
+	}
+	return { closingDate: closing, dueDate: due };
+}
+function paymentDto(row: PaymentRow): PaymentMethodDto {
+	return {
+		id: row.id,
+		name: row.name,
+		kind: row.kind as PaymentKind,
+		invoiceControl: row.invoiceControl,
+		closingDay: row.closingDay,
+		dueDay: row.dueDay,
+		archivedAt: iso(row.archivedAt),
+		createdAt: new Date(row.createdAt).toISOString(),
+		updatedAt: new Date(row.updatedAt).toISOString(),
+	};
+}
+function categoryDtos(rows: CategoryRow[]) {
+	const byId = new Map(rows.map((row) => [row.id, row]));
+	const cache = new Map<string, string[]>();
+	function path(row: CategoryRow, seen = new Set<string>()): string[] {
+		const cached = cache.get(row.id);
+		if (cached) return cached;
+		if (seen.has(row.id)) return [row.id];
+		const parent = row.parentCategoryId
+			? byId.get(row.parentCategoryId)
+			: undefined;
+		const next = parent
+			? [...path(parent, new Set([...seen, row.id])), row.id]
+			: [row.id];
+		cache.set(row.id, next);
+		return next;
+	}
+	return new Map(
+		rows.map((row) => {
+			const itemPath = path(row);
+			const dto: CategoryDto = {
+				id: row.id,
+				type: row.type as CategoryType,
+				name: row.name,
+				colorKey: row.colorKey,
+				iconKey: row.iconKey,
+				parentCategoryId: row.parentCategoryId,
+				level: Math.min(itemPath.length, 3) as 1 | 2 | 3,
+				path: itemPath,
+				archivedAt: iso(row.archivedAt),
+				createdAt: new Date(row.createdAt).toISOString(),
+				updatedAt: new Date(row.updatedAt).toISOString(),
+			};
+			return [row.id, dto];
+		}),
+	);
 }
 
 async function bootstrap(db: Database, d1: D1Database, userId: string) {
@@ -202,45 +350,82 @@ async function ownedCategory(
 ) {
 	const filters = [eq(categories.id, id), eq(categories.userId, userId)];
 	if (type) filters.push(eq(categories.type, type));
-	const rows = await db
-		.select()
-		.from(categories)
-		.where(and(...filters))
-		.limit(1);
-	if (!rows[0])
-		throw new FinanceError("NOT_FOUND", "Categoria não encontrada.");
-	return rows[0];
+	const row = (
+		await db
+			.select()
+			.from(categories)
+			.where(and(...filters))
+			.limit(1)
+	)[0];
+	if (!row) throw new FinanceError("NOT_FOUND", "Categoria não encontrada.");
+	return row;
 }
-
+async function ownedPaymentMethod(db: Database, userId: string, id: string) {
+	const row = (
+		await db
+			.select()
+			.from(paymentMethods)
+			.where(and(eq(paymentMethods.id, id), eq(paymentMethods.userId, userId)))
+			.limit(1)
+	)[0];
+	if (!row)
+		throw new FinanceError("NOT_FOUND", "Forma de pagamento não encontrada.");
+	return row;
+}
+async function categoryMap(db: Database, userId: string) {
+	return categoryDtos(
+		await db.select().from(categories).where(eq(categories.userId, userId)),
+	);
+}
 async function transactionDto(
 	db: Database,
 	userId: string,
 	id: string,
 ): Promise<TransactionDto> {
-	const rows = await db
-		.select({ transaction: transactions, category: categories })
-		.from(transactions)
-		.innerJoin(
-			categories,
-			and(
-				eq(transactions.categoryId, categories.id),
-				eq(transactions.userId, categories.userId),
-				eq(transactions.type, categories.type),
-			),
-		)
-		.where(and(eq(transactions.id, id), eq(transactions.userId, userId)))
-		.limit(1);
-	const row = rows[0];
+	const row = (
+		await db
+			.select({
+				transaction: transactions,
+				category: categories,
+				paymentMethod: paymentMethods,
+			})
+			.from(transactions)
+			.innerJoin(
+				categories,
+				and(
+					eq(transactions.categoryId, categories.id),
+					eq(transactions.userId, categories.userId),
+					eq(transactions.type, categories.type),
+				),
+			)
+			.leftJoin(
+				paymentMethods,
+				and(
+					eq(transactions.paymentMethodId, paymentMethods.id),
+					eq(transactions.userId, paymentMethods.userId),
+				),
+			)
+			.where(and(eq(transactions.id, id), eq(transactions.userId, userId)))
+			.limit(1)
+	)[0];
 	if (!row) throw new FinanceError("NOT_FOUND", "Lançamento não encontrado.");
+	const map = await categoryMap(db, userId);
+	const category = map.get(row.category.id);
+	if (!category)
+		throw new FinanceError("NOT_FOUND", "Categoria não encontrada.");
 	return {
 		id: row.transaction.id,
-		type: row.transaction.type,
+		type: row.transaction.type as CategoryType,
 		categoryId: row.transaction.categoryId,
-		category: categoryDto(row.category),
+		category,
+		paymentMethodId: row.transaction.paymentMethodId,
+		paymentMethod: row.paymentMethod ? paymentDto(row.paymentMethod) : null,
 		amountCents: row.transaction.amountCents,
 		currency: "BRL",
 		occurredAt: row.transaction.occurredAt,
 		description: row.transaction.description,
+		invoiceCycleClosingDate: row.transaction.invoiceCycleClosingDate,
+		invoiceCycleDueDate: row.transaction.invoiceCycleDueDate,
 		archivedAt: iso(row.transaction.archivedAt),
 		createdAt: new Date(row.transaction.createdAt).toISOString(),
 		updatedAt: new Date(row.transaction.updatedAt).toISOString(),
@@ -257,14 +442,91 @@ export function createFinanceService({
 	const db = createDb(d1);
 	const auth = createCoreAuth(d1);
 	const session = auth.api.getSession({ headers });
-
 	async function userId() {
 		const current = await session;
 		if (!current?.user)
 			throw new FinanceError("UNAUTHENTICATED", "Faça login para continuar.");
 		return current.user.id;
 	}
-
+	async function validateParent(
+		id: string,
+		type: CategoryType,
+		parentCategoryId: string | null | undefined,
+		selfId?: string,
+	) {
+		if (!parentCategoryId) return null;
+		const parent = await ownedCategory(db, id, parentCategoryId, type);
+		if (parent.archivedAt)
+			throw new FinanceError(
+				"CONFLICT",
+				"Categoria pai arquivada não pode receber filhos.",
+			);
+		if (parent.id === selfId)
+			throw new FinanceError(
+				"CONFLICT",
+				"Uma categoria não pode ser pai de si mesma.",
+			);
+		const all = await db
+			.select()
+			.from(categories)
+			.where(eq(categories.userId, id));
+		const map = new Map(all.map((item) => [item.id, item]));
+		let cursor: CategoryRow | undefined = parent;
+		let level = 1;
+		const seen = new Set<string>(selfId ? [selfId] : []);
+		while (cursor) {
+			if (seen.has(cursor.id))
+				throw new FinanceError(
+					"CONFLICT",
+					"A categoria não pode formar um ciclo.",
+				);
+			seen.add(cursor.id);
+			level += 1;
+			cursor = cursor.parentCategoryId
+				? map.get(cursor.parentCategoryId)
+				: undefined;
+		}
+		if (level > 3)
+			throw new FinanceError(
+				"CONFLICT",
+				"Categorias aceitam no máximo três níveis.",
+			);
+		return parent;
+	}
+	async function hasActiveDescendant(id: string, categoryId: string) {
+		const all = await db
+			.select()
+			.from(categories)
+			.where(eq(categories.userId, id));
+		const children = new Map<string, CategoryRow[]>();
+		for (const item of all)
+			if (item.parentCategoryId)
+				children.set(item.parentCategoryId, [
+					...(children.get(item.parentCategoryId) ?? []),
+					item,
+				]);
+		const walk = (current: string): boolean =>
+			(children.get(current) ?? []).some(
+				(child) => child.archivedAt === null || walk(child.id),
+			);
+		return walk(categoryId);
+	}
+	async function cycleSnapshot(
+		type: CategoryType,
+		occurredAt: string,
+		method: PaymentRow | null,
+	) {
+		if (
+			type !== "expense" ||
+			!method ||
+			method.kind !== "credit_card" ||
+			!method.invoiceControl ||
+			!method.closingDay ||
+			!method.dueDay
+		)
+			return { closingDate: null, dueDate: null };
+		return invoiceCycleFor(occurredAt, method.closingDay, method.dueDay);
+	}
 	return {
 		async getSessionUser() {
 			return { id: await userId() };
@@ -272,39 +534,52 @@ export function createFinanceService({
 		async listCategories(data: z.infer<typeof financeSchemas.listCategories>) {
 			const id = await userId();
 			await bootstrap(db, d1, id);
-			const archived =
-				data.status === "active"
-					? isNull(categories.archivedAt)
-					: sql`${categories.archivedAt} is not null`;
-			return (
-				await db
-					.select()
-					.from(categories)
-					.where(and(eq(categories.userId, id), archived))
-					.orderBy(categories.type, categories.name)
-			).map(categoryDto);
+			const all = await db
+				.select()
+				.from(categories)
+				.where(eq(categories.userId, id));
+			const result = categoryDtos(all);
+			return all
+				.filter((row) =>
+					data.status === "active"
+						? row.archivedAt === null
+						: row.archivedAt !== null,
+				)
+				.map((row) => result.get(row.id)!)
+				.sort(
+					(a, b) =>
+						a.type.localeCompare(b.type) ||
+						a.path.join("/").localeCompare(b.path.join("/")),
+				);
 		},
 		async createCategory(data: z.infer<typeof categoryInput>) {
 			const id = await userId();
+			const parentCategoryId = data.parentCategoryId ?? null;
+			await validateParent(id, data.type, parentCategoryId);
 			const normalizedName = normalizeCategoryName(data.name);
-			const timestamp = now();
-			const existing = await db
-				.select()
-				.from(categories)
-				.where(
-					and(
-						eq(categories.userId, id),
-						eq(categories.type, data.type),
-						eq(categories.normalizedName, normalizedName),
-					),
-				)
-				.limit(1);
-			if (existing[0]?.archivedAt === null)
+			const duplicate = (
+				await db
+					.select()
+					.from(categories)
+					.where(
+						and(
+							eq(categories.userId, id),
+							eq(categories.type, data.type),
+							eq(categories.normalizedName, normalizedName),
+							parentCategoryId
+								? eq(categories.parentCategoryId, parentCategoryId)
+								: isNull(categories.parentCategoryId),
+						),
+					)
+					.limit(1)
+			)[0];
+			if (duplicate?.archivedAt === null)
 				throw new FinanceError(
 					"CONFLICT",
-					"Já existe uma categoria com este nome.",
+					"Já existe uma categoria com este nome neste nível.",
 				);
-			if (existing[0]) {
+			const timestamp = now();
+			if (duplicate) {
 				await db
 					.update(categories)
 					.set({
@@ -314,39 +589,66 @@ export function createFinanceService({
 						archivedAt: null,
 						updatedAt: timestamp,
 					})
-					.where(eq(categories.id, existing[0].id));
-				return categoryDto(await ownedCategory(db, id, existing[0].id));
+					.where(eq(categories.id, duplicate.id));
+				return (await categoryMap(db, id)).get(duplicate.id)!;
 			}
 			const categoryId = crypto.randomUUID();
 			await db.insert(categories).values({
 				id: categoryId,
 				userId: id,
-				...data,
+				type: data.type,
+				name: data.name,
 				normalizedName,
+				colorKey: data.colorKey,
+				iconKey: data.iconKey,
+				parentCategoryId,
 				createdAt: timestamp,
 				updatedAt: timestamp,
 			});
-			return categoryDto(await ownedCategory(db, id, categoryId));
+			return (await categoryMap(db, id)).get(categoryId)!;
 		},
 		async updateCategory(data: z.infer<typeof financeSchemas.categoryUpdate>) {
 			const id = await userId();
 			const previous = await ownedCategory(db, id, data.id);
-			const normalizedName = normalizeCategoryName(data.name);
-			const duplicate = await db
-				.select({ id: categories.id })
-				.from(categories)
-				.where(
-					and(
-						eq(categories.userId, id),
-						eq(categories.type, previous.type),
-						eq(categories.normalizedName, normalizedName),
-					),
-				)
-				.limit(1);
-			if (duplicate[0] && duplicate[0].id !== previous.id)
+			const parentCategoryId =
+				data.parentCategoryId === undefined
+					? previous.parentCategoryId
+					: data.parentCategoryId;
+			await validateParent(
+				id,
+				previous.type as CategoryType,
+				parentCategoryId,
+				previous.id,
+			);
+			if (
+				parentCategoryId !== previous.parentCategoryId &&
+				(await hasActiveDescendant(id, previous.id))
+			)
 				throw new FinanceError(
 					"CONFLICT",
-					"Já existe uma categoria com este nome.",
+					"Não mova categoria com descendente ativo.",
+				);
+			const normalizedName = normalizeCategoryName(data.name);
+			const duplicate = (
+				await db
+					.select({ id: categories.id })
+					.from(categories)
+					.where(
+						and(
+							eq(categories.userId, id),
+							eq(categories.type, previous.type),
+							eq(categories.normalizedName, normalizedName),
+							parentCategoryId
+								? eq(categories.parentCategoryId, parentCategoryId)
+								: isNull(categories.parentCategoryId),
+						),
+					)
+					.limit(1)
+			)[0];
+			if (duplicate && duplicate.id !== previous.id)
+				throw new FinanceError(
+					"CONFLICT",
+					"Já existe uma categoria com este nome neste nível.",
 				);
 			await db
 				.update(categories)
@@ -355,14 +657,20 @@ export function createFinanceService({
 					normalizedName,
 					colorKey: data.colorKey,
 					iconKey: data.iconKey,
+					parentCategoryId,
 					updatedAt: now(),
 				})
-				.where(and(eq(categories.id, previous.id), eq(categories.userId, id)));
-			return categoryDto(await ownedCategory(db, id, previous.id));
+				.where(eq(categories.id, previous.id));
+			return (await categoryMap(db, id)).get(previous.id)!;
 		},
 		async archiveCategory(data: z.infer<typeof financeSchemas.id>) {
 			const id = await userId();
 			await ownedCategory(db, id, data.id);
+			if (await hasActiveDescendant(id, data.id))
+				throw new FinanceError(
+					"CONFLICT",
+					"Arquive os descendentes antes da categoria.",
+				);
 			await db
 				.update(categories)
 				.set({ archivedAt: now(), updatedAt: now() })
@@ -371,11 +679,99 @@ export function createFinanceService({
 		},
 		async restoreCategory(data: z.infer<typeof financeSchemas.id>) {
 			const id = await userId();
-			await ownedCategory(db, id, data.id);
+			const category = await ownedCategory(db, id, data.id);
+			if (category.parentCategoryId) {
+				const parent = await ownedCategory(
+					db,
+					id,
+					category.parentCategoryId,
+					category.type as CategoryType,
+				);
+				if (parent.archivedAt)
+					throw new FinanceError(
+						"CONFLICT",
+						"Restaure primeiro as categorias ancestrais.",
+					);
+			}
 			await db
 				.update(categories)
 				.set({ archivedAt: null, updatedAt: now() })
-				.where(and(eq(categories.id, data.id), eq(categories.userId, id)));
+				.where(eq(categories.id, data.id));
+			return { id: data.id };
+		},
+		async listPaymentMethods(
+			data: z.infer<typeof financeSchemas.listPaymentMethods>,
+		) {
+			const id = await userId();
+			const rows = await db
+				.select()
+				.from(paymentMethods)
+				.where(
+					and(
+						eq(paymentMethods.userId, id),
+						data.status === "active"
+							? isNull(paymentMethods.archivedAt)
+							: data.status === "archived"
+								? sql`${paymentMethods.archivedAt} is not null`
+								: undefined,
+					),
+				)
+				.orderBy(paymentMethods.name);
+			return rows.map(paymentDto);
+		},
+		async createPaymentMethod(data: z.infer<typeof paymentMethodInput>) {
+			const id = await userId();
+			const timestamp = now();
+			const methodId = crypto.randomUUID();
+			const configured = data.kind === "credit_card" && data.invoiceControl;
+			await db.insert(paymentMethods).values({
+				id: methodId,
+				userId: id,
+				name: data.name,
+				kind: data.kind,
+				invoiceControl: configured,
+				closingDay: configured ? data.closingDay! : null,
+				dueDay: configured ? data.dueDay! : null,
+				createdAt: timestamp,
+				updatedAt: timestamp,
+			});
+			return paymentDto(await ownedPaymentMethod(db, id, methodId));
+		},
+		async updatePaymentMethod(
+			data: z.infer<typeof financeSchemas.paymentMethodUpdate>,
+		) {
+			const id = await userId();
+			await ownedPaymentMethod(db, id, data.id);
+			const configured = data.kind === "credit_card" && data.invoiceControl;
+			await db
+				.update(paymentMethods)
+				.set({
+					name: data.name,
+					kind: data.kind,
+					invoiceControl: configured,
+					closingDay: configured ? data.closingDay! : null,
+					dueDay: configured ? data.dueDay! : null,
+					updatedAt: now(),
+				})
+				.where(eq(paymentMethods.id, data.id));
+			return paymentDto(await ownedPaymentMethod(db, id, data.id));
+		},
+		async archivePaymentMethod(data: z.infer<typeof financeSchemas.id>) {
+			const id = await userId();
+			await ownedPaymentMethod(db, id, data.id);
+			await db
+				.update(paymentMethods)
+				.set({ archivedAt: now(), updatedAt: now() })
+				.where(eq(paymentMethods.id, data.id));
+			return { id: data.id };
+		},
+		async restorePaymentMethod(data: z.infer<typeof financeSchemas.id>) {
+			const id = await userId();
+			await ownedPaymentMethod(db, id, data.id);
+			await db
+				.update(paymentMethods)
+				.set({ archivedAt: null, updatedAt: now() })
+				.where(eq(paymentMethods.id, data.id));
 			return { id: data.id };
 		},
 		async createTransaction(data: z.infer<typeof transactionInput>) {
@@ -386,13 +782,29 @@ export function createFinanceService({
 					"CONFLICT",
 					"Categoria arquivada não pode receber lançamentos.",
 				);
+			const paymentMethodId = data.paymentMethodId ?? null;
+			const method = paymentMethodId
+				? await ownedPaymentMethod(db, id, paymentMethodId)
+				: null;
+			if (method?.archivedAt)
+				throw new FinanceError(
+					"CONFLICT",
+					"Forma de pagamento arquivada não pode receber novos lançamentos.",
+				);
+			const snapshot = await cycleSnapshot(data.type, data.occurredAt, method);
 			const timestamp = now();
 			const transactionId = crypto.randomUUID();
 			await db.insert(transactions).values({
 				id: transactionId,
 				userId: id,
-				...data,
+				type: data.type,
+				categoryId: data.categoryId,
+				paymentMethodId,
+				amountCents: data.amountCents,
+				occurredAt: data.occurredAt,
 				description: data.description || null,
+				invoiceCycleClosingDate: snapshot.closingDate,
+				invoiceCycleDueDate: snapshot.dueDate,
 				createdAt: timestamp,
 				updatedAt: timestamp,
 			});
@@ -402,12 +814,14 @@ export function createFinanceService({
 			data: z.infer<typeof financeSchemas.transactionUpdate>,
 		) {
 			const id = await userId();
-			const current = await db
-				.select({ id: transactions.id })
-				.from(transactions)
-				.where(and(eq(transactions.id, data.id), eq(transactions.userId, id)))
-				.limit(1);
-			if (!current[0])
+			const current = (
+				await db
+					.select()
+					.from(transactions)
+					.where(and(eq(transactions.id, data.id), eq(transactions.userId, id)))
+					.limit(1)
+			)[0];
+			if (!current)
 				throw new FinanceError("NOT_FOUND", "Lançamento não encontrado.");
 			const category = await ownedCategory(db, id, data.categoryId, data.type);
 			if (category.archivedAt)
@@ -415,17 +829,33 @@ export function createFinanceService({
 					"CONFLICT",
 					"Categoria arquivada não pode receber lançamentos.",
 				);
+			let method: PaymentRow | null = null;
+			if (data.paymentMethodId) {
+				method = await ownedPaymentMethod(db, id, data.paymentMethodId);
+				if (
+					method.archivedAt &&
+					data.paymentMethodId !== current.paymentMethodId
+				)
+					throw new FinanceError(
+						"CONFLICT",
+						"Forma de pagamento arquivada não pode receber novos lançamentos.",
+					);
+			}
+			const snapshot = await cycleSnapshot(data.type, data.occurredAt, method);
 			await db
 				.update(transactions)
 				.set({
 					type: data.type,
 					categoryId: data.categoryId,
+					paymentMethodId: data.paymentMethodId,
 					amountCents: data.amountCents,
 					occurredAt: data.occurredAt,
 					description: data.description || null,
+					invoiceCycleClosingDate: snapshot.closingDate,
+					invoiceCycleDueDate: snapshot.dueDate,
 					updatedAt: now(),
 				})
-				.where(and(eq(transactions.id, data.id), eq(transactions.userId, id)));
+				.where(eq(transactions.id, data.id));
 			return transactionDto(db, id, data.id);
 		},
 		async archiveTransaction(data: z.infer<typeof financeSchemas.id>) {
@@ -493,21 +923,83 @@ export function createFinanceService({
 					page.map((row) => transactionDto(db, id, row.id)),
 				),
 				nextCursor:
-					rows.length > 30 && page.length > 0
+					rows.length > 30 && page.length
 						? encodeCursor(page[page.length - 1])
 						: null,
 			};
+		},
+		async listInvoices() {
+			const id = await userId();
+			const rows = await db
+				.select({
+					transaction: transactions,
+					category: categories,
+					paymentMethod: paymentMethods,
+				})
+				.from(transactions)
+				.innerJoin(
+					categories,
+					and(
+						eq(transactions.categoryId, categories.id),
+						eq(transactions.userId, categories.userId),
+						eq(transactions.type, categories.type),
+					),
+				)
+				.innerJoin(
+					paymentMethods,
+					and(
+						eq(transactions.paymentMethodId, paymentMethods.id),
+						eq(transactions.userId, paymentMethods.userId),
+					),
+				)
+				.where(
+					and(
+						eq(transactions.userId, id),
+						isNull(transactions.archivedAt),
+						sql`${transactions.invoiceCycleClosingDate} is not null`,
+						sql`${transactions.invoiceCycleDueDate} is not null`,
+					),
+				);
+			const map = await categoryMap(db, id);
+			const grouped = new Map<string, InvoiceDto>();
+			for (const row of rows) {
+				const key = `${row.transaction.paymentMethodId}|${row.transaction.invoiceCycleClosingDate}|${row.transaction.invoiceCycleDueDate}`;
+				const invoice = grouped.get(key) ?? {
+					paymentMethodId: row.paymentMethod.id,
+					paymentMethod: paymentDto(row.paymentMethod),
+					cycleClosingDate: row.transaction.invoiceCycleClosingDate!,
+					cycleDueDate: row.transaction.invoiceCycleDueDate!,
+					items: [],
+					totalCents: 0,
+				};
+				invoice.items.push({
+					transactionId: row.transaction.id,
+					occurredAt: row.transaction.occurredAt,
+					description: row.transaction.description,
+					amountCents: row.transaction.amountCents,
+					category: map.get(row.category.id)!,
+				});
+				invoice.totalCents += row.transaction.amountCents;
+				grouped.set(key, invoice);
+			}
+			return [...grouped.values()].sort((a, b) =>
+				b.cycleClosingDate.localeCompare(a.cycleClosingDate),
+			);
 		},
 		async getDashboard() {
 			const id = await userId();
 			await bootstrap(db, d1, id);
 			const { startDate, endDate } = periodFor("month", saoPauloToday());
 			const rows = await db
-				.select({
-					type: transactions.type,
-					amountCents: transactions.amountCents,
-				})
+				.select({ transaction: transactions, paymentMethod: paymentMethods })
 				.from(transactions)
+				.leftJoin(
+					paymentMethods,
+					and(
+						eq(transactions.paymentMethodId, paymentMethods.id),
+						eq(transactions.userId, paymentMethods.userId),
+					),
+				)
 				.where(
 					and(
 						eq(transactions.userId, id),
@@ -517,11 +1009,27 @@ export function createFinanceService({
 					),
 				);
 			const incomeCents = rows
-				.filter((row) => row.type === "income")
-				.reduce((sum, row) => sum + row.amountCents, 0);
+				.filter((row) => row.transaction.type === "income")
+				.reduce((sum, row) => sum + row.transaction.amountCents, 0);
 			const expenseCents = rows
-				.filter((row) => row.type === "expense")
-				.reduce((sum, row) => sum + row.amountCents, 0);
+				.filter((row) => row.transaction.type === "expense")
+				.reduce((sum, row) => sum + row.transaction.amountCents, 0);
+			const byPayment = new Map<
+				string,
+				{ paymentMethodId: string | null; name: string; amountCents: number }
+			>();
+			for (const row of rows.filter(
+				(item) => item.transaction.type === "income",
+			)) {
+				const key = row.paymentMethod?.id ?? "none";
+				const item = byPayment.get(key) ?? {
+					paymentMethodId: row.paymentMethod?.id ?? null,
+					name: row.paymentMethod?.name ?? "Não informado",
+					amountCents: 0,
+				};
+				item.amountCents += row.transaction.amountCents;
+				byPayment.set(key, item);
+			}
 			const recentIds = await db
 				.select({ id: transactions.id })
 				.from(transactions)
@@ -540,6 +1048,9 @@ export function createFinanceService({
 					expenseCents,
 					balanceCents: incomeCents - expenseCents,
 				},
+				incomeByPaymentMethod: [...byPayment.values()].sort(
+					(a, b) => b.amountCents - a.amountCents,
+				),
 				recentTransactions: await Promise.all(
 					recentIds.map((row) => transactionDto(db, id, row.id)),
 				),
@@ -549,7 +1060,11 @@ export function createFinanceService({
 			const id = await userId();
 			const period = periodFor(data.granularity, data.anchorDate);
 			const rows = await db
-				.select({ transaction: transactions, category: categories })
+				.select({
+					transaction: transactions,
+					category: categories,
+					paymentMethod: paymentMethods,
+				})
 				.from(transactions)
 				.innerJoin(
 					categories,
@@ -557,6 +1072,13 @@ export function createFinanceService({
 						eq(transactions.categoryId, categories.id),
 						eq(transactions.userId, categories.userId),
 						eq(transactions.type, categories.type),
+					),
+				)
+				.leftJoin(
+					paymentMethods,
+					and(
+						eq(transactions.paymentMethodId, paymentMethods.id),
+						eq(transactions.userId, paymentMethods.userId),
 					),
 				)
 				.where(
@@ -577,26 +1099,74 @@ export function createFinanceService({
 				(sum, row) => sum + row.transaction.amountCents,
 				0,
 			);
-			const groups = new Map<
+			const map = await categoryMap(db, id);
+			const direct = new Map<string, number>();
+			for (const row of expenseRows)
+				direct.set(
+					row.category.id,
+					(direct.get(row.category.id) ?? 0) + row.transaction.amountCents,
+				);
+			const nodes = new Map<
 				string,
 				{
-					categoryId: string;
-					categoryName: string;
-					colorKey: string;
-					iconKey: string;
-					amountCents: number;
+					category: CategoryDto;
+					directAmountCents: number;
+					aggregateAmountCents: number;
+					children: any[];
 				}
 			>();
-			for (const row of expenseRows) {
-				const item = groups.get(row.category.id) || {
-					categoryId: row.category.id,
-					categoryName: row.category.name,
-					colorKey: row.category.colorKey,
-					iconKey: row.category.iconKey,
+			for (const [categoryId, amount] of direct) {
+				let category = map.get(categoryId);
+				while (category) {
+					const node = nodes.get(category.id) ?? {
+						category,
+						directAmountCents: 0,
+						aggregateAmountCents: 0,
+						children: [],
+					};
+					node.aggregateAmountCents += amount;
+					if (category.id === categoryId) node.directAmountCents += amount;
+					nodes.set(category.id, node);
+					category = category.parentCategoryId
+						? map.get(category.parentCategoryId)
+						: undefined;
+				}
+			}
+			const roots: any[] = [];
+			for (const node of nodes.values()) {
+				const parent = node.category.parentCategoryId
+					? nodes.get(node.category.parentCategoryId)
+					: undefined;
+				if (parent) parent.children.push(node);
+				else roots.push(node);
+			}
+			const expenseByCategory = [...direct.entries()]
+				.map(([categoryId, amountCents]) => {
+					const category = map.get(categoryId)!;
+					return {
+						categoryId,
+						categoryName: category.name,
+						colorKey: category.colorKey,
+						iconKey: category.iconKey,
+						amountCents,
+					};
+				})
+				.sort((a, b) => b.amountCents - a.amountCents);
+			const income = new Map<
+				string,
+				{ paymentMethodId: string | null; name: string; amountCents: number }
+			>();
+			for (const row of rows.filter(
+				(item) => item.transaction.type === "income",
+			)) {
+				const key = row.paymentMethod?.id ?? "none";
+				const item = income.get(key) ?? {
+					paymentMethodId: row.paymentMethod?.id ?? null,
+					name: row.paymentMethod?.name ?? "Não informado",
 					amountCents: 0,
 				};
 				item.amountCents += row.transaction.amountCents;
-				groups.set(row.category.id, item);
+				income.set(key, item);
 			}
 			return {
 				period: {
@@ -607,7 +1177,9 @@ export function createFinanceService({
 				incomeCents,
 				expenseCents,
 				balanceCents: incomeCents - expenseCents,
-				expenseByCategory: [...groups.values()].sort(
+				expenseByCategory,
+				expenseCategoryTree: roots,
+				incomeByPaymentMethod: [...income.values()].sort(
 					(a, b) => b.amountCents - a.amountCents,
 				),
 			};

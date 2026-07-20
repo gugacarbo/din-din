@@ -33,6 +33,7 @@
     "db:migrate:local": "wrangler d1 migrations apply din-din --local",
     "db:migrate:remote": "wrangler d1 migrations apply din-din --remote",
     "db:migrate": "pnpm run db:migrate:local",
+	"verify:migration-rollback": "node scripts/verify-migration-rollback.mjs",
     "db:studio": "drizzle-kit studio",
     "prepare": "husky"
   },

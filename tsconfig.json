@@ -1,5 +1,6 @@
 {
   "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["test/**", "vitest.unit.config.ts", "vitest.workers.config.ts"],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",
@@ -9,7 +10,7 @@
       "@/*": ["./src/*"]
     },
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client", "@cloudflare/workers-types"],
+    "types": ["vite/client"],
 
     /* Bundler mode */
     "moduleResolution": "bundler",

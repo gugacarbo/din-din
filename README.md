@@ -22,6 +22,17 @@ Para produção, use `https://dindin.gugacarbo.space/api/auth/callback/google`.
 pnpm run release:verify
 ```
 
+Os tipos do Worker são gerados de `wrangler.jsonc` em
+`src/worker-configuration.d.ts` e são versionados. Depois de alterar bindings
+ou vars do Worker, execute `pnpm run types:wrangler` e inclua o arquivo gerado
+no commit. Em clone limpo, use `pnpm run types:wrangler:check` para confirmar
+que o artefato continua compatível; esse comando também faz parte de
+`release:verify`.
+
+`pnpm test` executa tanto os testes unitários quanto a suíte Workers. A última
+roda contra um D1 local e efêmero do Miniflare, aplica as migrations de
+`drizzle/` e nunca acessa o D1 remoto ou credenciais OAuth reais.
+
 ## Banco e release
 
 As migrações versionadas ficam em `drizzle/`. Gere uma nova após alterar

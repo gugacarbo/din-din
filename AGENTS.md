@@ -41,6 +41,10 @@ pnpm run dev                      # wrangler dev + vite
 pnpm run release:verify
 ```
 
+Ele inclui uma prova negativa versionada: `pnpm run types:wrangler:negative`
+deve passar ao confirmar que uma configuração de fixture sem `DB` torna o
+artefato de tipos desatualizado, sem alterar arquivos.
+
 ## Como deployar
 
 Configure o `database_id` real do D1 e os secrets do Worker antes do primeiro

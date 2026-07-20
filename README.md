@@ -29,6 +29,10 @@ no commit. Em clone limpo, use `pnpm run types:wrangler:check` para confirmar
 que o artefato continua compatível; esse comando também faz parte de
 `release:verify`.
 
+`pnpm run types:wrangler:negative` usa a fixture versionada sem o binding
+`DB` e confirma que o mesmo `--check` falha por drift, sem alterar o artefato.
+Ele também faz parte de `release:verify` para manter essa prova de regressão.
+
 `pnpm test` executa tanto os testes unitários quanto a suíte Workers. A última
 roda contra um D1 local e efêmero do Miniflare, aplica as migrations de
 `drizzle/` e nunca acessa o D1 remoto ou credenciais OAuth reais.

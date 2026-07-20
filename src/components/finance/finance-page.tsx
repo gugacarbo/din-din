@@ -53,19 +53,29 @@ import {
 	saoPauloToday,
 } from "#/lib/finance.ts";
 import { cn } from "#/lib/utils.ts";
-import type { CategoryDto, TransactionDto } from "#/server/finance.ts";
+import type {
+	CategoryDto,
+	PaymentMethodDto,
+	TransactionDto,
+} from "#/server/finance.ts";
 import {
 	archiveCategory,
+	archivePaymentMethod,
 	archiveTransaction,
 	createCategory,
+	createPaymentMethod,
 	createTransaction,
 	getDashboard,
 	getReport,
 	listCategories,
+	listInvoices,
+	listPaymentMethods,
 	listTransactions,
 	restoreCategory,
+	restorePaymentMethod,
 	restoreTransaction,
 	updateCategory,
+	updatePaymentMethod,
 	updateTransaction,
 } from "#/server/finance.ts";
 
@@ -80,6 +90,7 @@ type FinancePageKind =
 	| "transactions"
 	| "reports"
 	| "categories"
+	| "payments"
 	| "archive";
 
 const money = new Intl.NumberFormat("pt-BR", {
@@ -294,7 +305,7 @@ function Dashboard({ refreshKey }: { refreshKey: number }) {
 	if (result.loading) return <Loading />;
 	if (result.error || !result.data)
 		return <Notice>{result.error ?? "Dados indisponíveis."}</Notice>;
-	const { month, recentTransactions } = result.data;
+	const { month, recentTransactions, incomeByPaymentMethod } = result.data;
 	return (
 		<>
 			<PageTitle eyebrow="visão geral" title="Seu mês em movimento" />
@@ -303,6 +314,22 @@ function Dashboard({ refreshKey }: { refreshKey: number }) {
 				<Summary label="Saídas" value={month.expenseCents} tone="expense" />
 				<Summary label="Saldo" value={month.balanceCents} tone="balance" />
 			</section>
+			<FinanceCard className="mt-7 p-5">
+				<h2 className="display-title text-2xl font-bold">
+					De onde vieram as entradas
+				</h2>
+				<ul className="mt-3 divide-y divide-border">
+					{incomeByPaymentMethod.map((item) => (
+						<li
+							className="flex justify-between py-2"
+							key={item.paymentMethodId ?? "none"}
+						>
+							<span>{item.name}</span>
+							<strong>{moneyFromCents(item.amountCents)}</strong>
+						</li>
+					))}
+				</ul>
+			</FinanceCard>
 			<FinanceCard className="mt-7 p-5">
 				<div className="mb-3 flex items-center justify-between">
 					<h2 className="display-title text-2xl font-bold">
@@ -358,6 +385,13 @@ function TransactionForm({
 		[],
 	);
 	const [categoryId, setCategoryId] = useState(initial?.categoryId ?? "");
+	const [paymentMethodId, setPaymentMethodId] = useState(
+		initial?.paymentMethodId ?? "",
+	);
+	const paymentMethodsResult = useAsyncData(
+		() => listPaymentMethods({ data: { status: "all" } }),
+		[],
+	);
 	const [amount, setAmount] = useState(
 		initial ? String(initial.amountCents / 100) : "",
 	);
@@ -372,6 +406,13 @@ function TransactionForm({
 			categoriesResult.data?.filter((category) => category.type === type) ?? [],
 		[categoriesResult.data, type],
 	);
+	const paymentChoices = useMemo(() => {
+		const methods = paymentMethodsResult.data ?? [];
+		return methods.filter(
+			(method: PaymentMethodDto) =>
+				method.archivedAt === null || method.id === initial?.paymentMethodId,
+		);
+	}, [paymentMethodsResult.data, initial?.paymentMethodId]);
 	useEffect(() => {
 		if (!choices.some((category) => category.id === categoryId))
 			setCategoryId(choices[0]?.id ?? "");
@@ -396,6 +437,7 @@ function TransactionForm({
 				amountCents,
 				occurredAt,
 				description: description || null,
+				paymentMethodId: paymentMethodId || null,
 			};
 			if (initial)
 				await updateTransaction({ data: { ...data, id: initial.id } });
@@ -411,6 +453,30 @@ function TransactionForm({
 	}
 	return (
 		<form className="grid gap-4" noValidate onSubmit={submit}>
+			<div>
+				<Label htmlFor="transaction-payment-method">
+					Forma de pagamento (opcional)
+				</Label>
+				<Select
+					onValueChange={(value) =>
+						setPaymentMethodId(value === "none" ? "" : value)
+					}
+					value={paymentMethodId || "none"}
+				>
+					<SelectTrigger className="w-full" id="transaction-payment-method">
+						<SelectValue placeholder="Não informado" />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="none">Não informado</SelectItem>
+						{paymentChoices.map((method: PaymentMethodDto) => (
+							<SelectItem key={method.id} value={method.id}>
+								{method.name}
+								{method.archivedAt ? " (arquivada)" : ""}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			</div>
 			<div>
 				<Label htmlFor="transaction-type">Tipo</Label>
 				<KindSelect
@@ -436,7 +502,9 @@ function TransactionForm({
 					<SelectContent>
 						{choices.map((category) => (
 							<SelectItem key={category.id} value={category.id}>
-								{category.name}
+								{category.path.length > 1
+									? `${"— ".repeat(category.path.length - 1)}${category.name}`
+									: category.name}
 							</SelectItem>
 						))}
 					</SelectContent>
@@ -623,6 +691,23 @@ function CategoryForm({
 	const [iconKey, setIconKey] = useState<(typeof CATEGORY_ICONS)[number]>(
 		(initial?.iconKey as (typeof CATEGORY_ICONS)[number]) ?? CATEGORY_ICONS[0],
 	);
+	const [parentCategoryId, setParentCategoryId] = useState(
+		initial?.parentCategoryId ?? "",
+	);
+	const categoriesResult = useAsyncData(
+		() => listCategories({ data: { status: "active" } }),
+		[],
+	);
+	const parentChoices = useMemo(
+		() =>
+			(categoriesResult.data ?? []).filter(
+				(category) =>
+					category.type === type &&
+					category.id !== initial?.id &&
+					category.level < 3,
+			),
+		[categoriesResult.data, type, initial?.id],
+	);
 	const [error, setError] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
 	async function submit(event: React.FormEvent) {
@@ -632,9 +717,24 @@ function CategoryForm({
 		try {
 			if (initial)
 				await updateCategory({
-					data: { id: initial.id, name, colorKey, iconKey },
+					data: {
+						id: initial.id,
+						name,
+						colorKey,
+						iconKey,
+						parentCategoryId: parentCategoryId || null,
+					},
 				});
-			else await createCategory({ data: { type, name, colorKey, iconKey } });
+			else
+				await createCategory({
+					data: {
+						type,
+						name,
+						colorKey,
+						iconKey,
+						parentCategoryId: parentCategoryId || null,
+					},
+				});
 			onSaved();
 		} catch (cause) {
 			setError(
@@ -646,6 +746,28 @@ function CategoryForm({
 	}
 	return (
 		<form className="grid gap-4" onSubmit={submit}>
+			<div>
+				<Label htmlFor="category-parent">Categoria pai (opcional)</Label>
+				<Select
+					onValueChange={(value) =>
+						setParentCategoryId(value === "root" ? "" : value)
+					}
+					value={parentCategoryId || "root"}
+				>
+					<SelectTrigger className="w-full" id="category-parent">
+						<SelectValue placeholder="Categoria raiz" />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="root">Categoria raiz</SelectItem>
+						{parentChoices.map((category) => (
+							<SelectItem
+								key={category.id}
+								value={category.id}
+							>{`${"— ".repeat(category.level - 1)}${category.name}`}</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			</div>
 			<div>
 				<Label htmlFor="category-type">Tipo</Label>
 				<KindSelect
@@ -846,6 +968,308 @@ function Categories() {
 	);
 }
 
+function PaymentMethodForm({
+	initial,
+	onSaved,
+	onCancel,
+}: {
+	initial?: PaymentMethodDto;
+	onSaved: () => void;
+	onCancel: () => void;
+}) {
+	const [name, setName] = useState(initial?.name ?? "");
+	const [kind, setKind] = useState<PaymentMethodDto["kind"]>(
+		initial?.kind ?? "credit_card",
+	);
+	const [invoiceControl, setInvoiceControl] = useState(
+		initial?.invoiceControl ?? false,
+	);
+	const [closingDay, setClosingDay] = useState(
+		initial?.closingDay ? String(initial.closingDay) : "",
+	);
+	const [dueDay, setDueDay] = useState(
+		initial?.dueDay ? String(initial.dueDay) : "",
+	);
+	const [error, setError] = useState<string | null>(null);
+	const [saving, setSaving] = useState(false);
+	const canInvoice = kind === "credit_card" && invoiceControl;
+	async function submit(event: React.FormEvent) {
+		event.preventDefault();
+		setSaving(true);
+		setError(null);
+		try {
+			const data = {
+				name,
+				kind,
+				invoiceControl: canInvoice,
+				closingDay: canInvoice ? Number(closingDay) : null,
+				dueDay: canInvoice ? Number(dueDay) : null,
+			};
+			if (initial)
+				await updatePaymentMethod({ data: { id: initial.id, ...data } });
+			else await createPaymentMethod({ data });
+			onSaved();
+		} catch (cause) {
+			setError(
+				cause instanceof Error ? cause.message : "Não foi possível salvar.",
+			);
+		} finally {
+			setSaving(false);
+		}
+	}
+	return (
+		<form className="grid gap-4" onSubmit={submit}>
+			<div>
+				<Label htmlFor="payment-name">Nome</Label>
+				<Input
+					id="payment-name"
+					maxLength={80}
+					onChange={(event) => setName(event.target.value)}
+					required
+					value={name}
+				/>
+			</div>
+			<div>
+				<Label htmlFor="payment-kind">Tipo</Label>
+				<Select
+					onValueChange={(value) => setKind(value as PaymentMethodDto["kind"])}
+					value={kind}
+				>
+					<SelectTrigger className="w-full" id="payment-kind">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="credit_card">Cartão de crédito</SelectItem>
+						<SelectItem value="debit_card">Cartão de débito</SelectItem>
+						<SelectItem value="pix">Pix</SelectItem>
+						<SelectItem value="cash">Dinheiro</SelectItem>
+						<SelectItem value="bank_transfer">Transferência</SelectItem>
+						<SelectItem value="boleto">Boleto</SelectItem>
+						<SelectItem value="other">Outro</SelectItem>
+					</SelectContent>
+				</Select>
+			</div>
+			{kind === "credit_card" && (
+				<label className="flex items-center gap-2 text-sm font-medium">
+					<input
+						checked={invoiceControl}
+						onChange={(event) => setInvoiceControl(event.target.checked)}
+						type="checkbox"
+					/>{" "}
+					Controlar faturas
+				</label>
+			)}
+			{canInvoice && (
+				<div className="grid grid-cols-2 gap-3">
+					<div>
+						<Label htmlFor="payment-closing-day">Fechamento</Label>
+						<Input
+							id="payment-closing-day"
+							max="31"
+							min="1"
+							onChange={(event) => setClosingDay(event.target.value)}
+							required
+							type="number"
+							value={closingDay}
+						/>
+					</div>
+					<div>
+						<Label htmlFor="payment-due-day">Vencimento</Label>
+						<Input
+							id="payment-due-day"
+							max="31"
+							min="1"
+							onChange={(event) => setDueDay(event.target.value)}
+							required
+							type="number"
+							value={dueDay}
+						/>
+					</div>
+				</div>
+			)}
+			{error && <Notice>{error}</Notice>}
+			<DialogFooter>
+				<Button disabled={saving} type="submit">
+					{saving ? "Salvando…" : "Salvar forma"}
+				</Button>
+				<Button onClick={onCancel} type="button" variant="outline">
+					Cancelar
+				</Button>
+			</DialogFooter>
+		</form>
+	);
+}
+
+function Payments() {
+	const [tab, setTab] = useState<"methods" | "invoices">("methods");
+	const [refresh, setRefresh] = useState(0);
+	const [editing, setEditing] = useState<PaymentMethodDto | null>(null);
+	const methods = useAsyncData(
+		() => listPaymentMethods({ data: { status: "all" } }),
+		[refresh],
+	);
+	const invoices = useAsyncData(() => listInvoices(), [refresh]);
+	async function archive(method: PaymentMethodDto) {
+		await archivePaymentMethod({ data: { id: method.id } });
+		setRefresh((value) => value + 1);
+	}
+	async function restore(method: PaymentMethodDto) {
+		await restorePaymentMethod({ data: { id: method.id } });
+		setRefresh((value) => value + 1);
+	}
+	return (
+		<>
+			<PageTitle eyebrow="pagamentos" title="Formas e faturas">
+				<Button onClick={() => setEditing({} as PaymentMethodDto)}>
+					<Plus /> Nova forma
+				</Button>
+			</PageTitle>
+			<Dialog
+				onOpenChange={(open) => {
+					if (!open) setEditing(null);
+				}}
+				open={Boolean(editing)}
+			>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>
+							{editing?.id ? "Editar forma" : "Nova forma de pagamento"}
+						</DialogTitle>
+						<DialogDescription>
+							Vincule receitas e despesas a este meio. A configuração de fatura
+							é opcional.
+						</DialogDescription>
+					</DialogHeader>
+					{editing && (
+						<PaymentMethodForm
+							initial={editing.id ? editing : undefined}
+							onCancel={() => setEditing(null)}
+							onSaved={() => {
+								setEditing(null);
+								setRefresh((value) => value + 1);
+							}}
+						/>
+					)}
+				</DialogContent>
+			</Dialog>
+			<Tabs
+				className="mb-4"
+				onValueChange={(value) => setTab(value as typeof tab)}
+				value={tab}
+			>
+				<TabsList>
+					<TabsTrigger value="methods">Formas de pagamento</TabsTrigger>
+					<TabsTrigger value="invoices">Faturas</TabsTrigger>
+				</TabsList>
+			</Tabs>
+			{tab === "methods" &&
+				(methods.loading ? (
+					<Loading />
+				) : methods.error || !methods.data ? (
+					<Notice>{methods.error ?? "Dados indisponíveis."}</Notice>
+				) : (
+					<FinanceCard className="p-5">
+						<ul className="divide-y divide-border">
+							{methods.data.map((method) => (
+								<li className="flex items-center gap-3 py-3" key={method.id}>
+									<div className="min-w-0 flex-1">
+										<p className="font-semibold">
+											{method.name}
+											{method.archivedAt ? " (arquivada)" : ""}
+										</p>
+										<p className="text-xs text-muted-foreground">
+											{method.kind === "credit_card" && method.invoiceControl
+												? `Cartão · fecha dia ${method.closingDay} · vence dia ${method.dueDay}`
+												: method.kind.replace("_", " ")}
+										</p>
+									</div>
+									{!method.archivedAt && (
+										<Button
+											aria-label="Editar forma de pagamento"
+											onClick={() => setEditing(method)}
+											size="icon"
+											variant="ghost"
+										>
+											<Pencil />
+										</Button>
+									)}
+									<Button
+										aria-label={
+											method.archivedAt
+												? "Restaurar forma de pagamento"
+												: "Arquivar forma de pagamento"
+										}
+										onClick={() =>
+											void (method.archivedAt
+												? restore(method)
+												: archive(method))
+										}
+										size="icon"
+										variant="ghost"
+									>
+										{method.archivedAt ? <RotateCcw /> : <Trash2 />}
+									</Button>
+								</li>
+							))}
+						</ul>
+					</FinanceCard>
+				))}
+			{tab === "invoices" &&
+				(invoices.loading ? (
+					<Loading />
+				) : invoices.error || !invoices.data ? (
+					<Notice>{invoices.error ?? "Dados indisponíveis."}</Notice>
+				) : (
+					<div className="grid gap-4">
+						{invoices.data.length === 0 ? (
+							<FinanceCard className="p-5">
+								<p className="text-sm text-muted-foreground">
+									Nenhuma fatura derivada no momento.
+								</p>
+							</FinanceCard>
+						) : (
+							invoices.data.map((invoice) => (
+								<FinanceCard
+									className="p-5"
+									key={`${invoice.paymentMethodId}-${invoice.cycleClosingDate}-${invoice.cycleDueDate}`}
+								>
+									<div className="flex justify-between gap-3">
+										<div>
+											<h2 className="font-bold">
+												{invoice.paymentMethod.name}
+												{invoice.paymentMethod.archivedAt ? " (arquivado)" : ""}
+											</h2>
+											<p className="text-xs text-muted-foreground">
+												Ciclo até {invoice.cycleClosingDate} · vence em{" "}
+												{invoice.cycleDueDate}
+											</p>
+										</div>
+										<p className="font-bold">
+											{moneyFromCents(invoice.totalCents)}
+										</p>
+									</div>
+									<ul className="mt-3 divide-y divide-border">
+										{invoice.items.map((item) => (
+											<li
+												className="flex justify-between py-2 text-sm"
+												key={item.transactionId}
+											>
+												<span>
+													{item.category.name} · {item.occurredAt}
+												</span>
+												<span>{moneyFromCents(item.amountCents)}</span>
+											</li>
+										))}
+									</ul>
+								</FinanceCard>
+							))
+						)}
+					</div>
+				))}
+		</>
+	);
+}
+
 function Archive({ refreshKey }: { refreshKey: number }) {
 	const [refresh, setRefresh] = useState(0);
 	const result = useAsyncData(
@@ -1035,6 +1459,22 @@ function Reports({ refreshKey }: { refreshKey: number }) {
 							</ul>
 						</div>
 					</FinanceCard>
+					<FinanceCard className="mt-7 p-5">
+						<h2 className="display-title text-2xl font-bold">
+							Entradas por forma de pagamento
+						</h2>
+						<ul className="mt-3 divide-y divide-border">
+							{result.data.incomeByPaymentMethod.map((item) => (
+								<li
+									className="flex justify-between py-2"
+									key={item.paymentMethodId ?? "none"}
+								>
+									<span>{item.name}</span>
+									<strong>{moneyFromCents(item.amountCents)}</strong>
+								</li>
+							))}
+						</ul>
+					</FinanceCard>
 				</>
 			)}
 		</>
@@ -1071,6 +1511,8 @@ export function FinancePage({ kind }: { kind: FinancePageKind }) {
 				<Transactions refreshKey={refreshKey} onEdit={setEditing} />
 			) : kind === "categories" ? (
 				<Categories />
+			) : kind === "payments" ? (
+				<Payments />
 			) : kind === "archive" ? (
 				<Archive refreshKey={refreshKey} />
 			) : (

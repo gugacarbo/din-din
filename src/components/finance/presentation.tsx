@@ -21,7 +21,10 @@ import {
 } from "lucide-react";
 import type { ComponentType } from "react";
 
-export const categoryIcons: Record<string, ComponentType<{ className?: string }>> = {
+export const categoryIcons: Record<
+	string,
+	ComponentType<{ className?: string }>
+> = {
 	Banknote,
 	BriefcaseBusiness,
 	Car,

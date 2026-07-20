@@ -2,6 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
 	ArchiveRestore,
 	BarChart3,
+	CreditCard,
 	LayoutDashboard,
 	List,
 	LogOut,
@@ -37,6 +38,7 @@ const primaryNavigation = [
 
 const secondaryNavigation = [
 	{ to: "/categories" as const, label: "Categorias", icon: Tags },
+	{ to: "/payments" as const, label: "Pagamentos", icon: CreditCard },
 	{ to: "/archive" as const, label: "Arquivo", icon: ArchiveRestore },
 ];
 

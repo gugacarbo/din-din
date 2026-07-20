@@ -41,7 +41,7 @@ function Login() {
 				<CardContent className="p-8 text-center">
 					<p className="island-kicker">finanças pessoais</p>
 					<h1 className="display-title mt-2 text-5xl font-bold text-foreground">
-						din din
+						Din Din
 					</h1>
 					<p className="mt-4 text-muted-foreground">
 						Clareza para cuidar do seu dinheiro, um lançamento de cada vez.

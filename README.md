@@ -1,4 +1,4 @@
-# din din
+# Din Din
 
 Aplicação de finanças pessoais em português, com autenticação Google, categorias,
 lançamentos e relatórios em BRL. Roda no Cloudflare Workers, usa D1 e Drizzle.

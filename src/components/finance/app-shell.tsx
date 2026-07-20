@@ -80,7 +80,7 @@ export function AppShell({
 				<SidebarHeader className="px-4 py-6">
 					<Link className="px-2" to="/">
 						<p className="display-title text-3xl font-bold text-foreground">
-							din din
+							Din Din
 						</p>
 						<p className="island-kicker mt-1">suas finanças, claras</p>
 					</Link>
@@ -123,7 +123,7 @@ export function AppShell({
 							className="display-title text-2xl font-bold text-foreground md:hidden"
 							to="/"
 						>
-							din din
+							Din Din
 						</Link>
 					</div>
 					<div className="flex items-center gap-2">

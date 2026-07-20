@@ -1315,6 +1315,82 @@ function Archive({ refreshKey }: { refreshKey: number }) {
 	);
 }
 
+type ExpenseCategoryTreeNode = {
+	category: CategoryDto;
+	directAmountCents: number;
+	aggregateAmountCents: number;
+	children: ExpenseCategoryTreeNode[];
+};
+
+function ExpenseCategoryTree({ nodes }: { nodes: ExpenseCategoryTreeNode[] }) {
+	return (
+		<ul
+			className="mt-3 divide-y divide-border"
+			aria-label="Árvore de despesas por categoria"
+		>
+			{nodes.map((node) => (
+				<ExpenseCategoryTreeNodeRow key={node.category.id} node={node} />
+			))}
+		</ul>
+	);
+}
+
+function ExpenseCategoryTreeNodeRow({
+	node,
+	depth = 0,
+}: {
+	node: ExpenseCategoryTreeNode;
+	depth?: number;
+}) {
+	const [expanded, setExpanded] = useState(true);
+	const hasChildren = node.children.length > 0;
+	return (
+		<li>
+			<div
+				className="flex items-center gap-3 py-3"
+				style={{ paddingLeft: `${depth * 1.25}rem` }}
+			>
+				{hasChildren ? (
+					<button
+						aria-expanded={expanded}
+						aria-label={`${expanded ? "Recolher" : "Expandir"} ${node.category.name}`}
+						className="grid size-6 place-items-center rounded text-sm text-muted-foreground hover:bg-muted"
+						onClick={() => setExpanded((value) => !value)}
+						type="button"
+					>
+						{expanded ? "−" : "+"}
+					</button>
+				) : (
+					<span className="size-6" />
+				)}
+				<CategoryMark
+					colorKey={node.category.colorKey}
+					iconKey={node.category.iconKey}
+				/>
+				<div className="min-w-0 flex-1">
+					<p className="font-semibold">{node.category.name}</p>
+					<p className="text-xs text-muted-foreground">
+						Direto: {moneyFromCents(node.directAmountCents)} · Agregado:{" "}
+						{moneyFromCents(node.aggregateAmountCents)}
+					</p>
+				</div>
+				<strong>{moneyFromCents(node.aggregateAmountCents)}</strong>
+			</div>
+			{hasChildren && expanded && (
+				<ul className="border-l border-border">
+					{node.children.map((child) => (
+						<ExpenseCategoryTreeNodeRow
+							depth={depth + 1}
+							key={child.category.id}
+							node={child}
+						/>
+					))}
+				</ul>
+			)}
+		</li>
+	);
+}
+
 function Reports({ refreshKey }: { refreshKey: number }) {
 	const [granularity, setGranularity] = useState<"day" | "week" | "month">(
 		"month",
@@ -1438,25 +1514,11 @@ function Reports({ refreshKey }: { refreshKey: number }) {
 							<h2 className="display-title mt-1 text-2xl font-bold">
 								Despesas por categoria
 							</h2>
-							<ul className="mt-3 divide-y divide-border">
-								{result.data.expenseByCategory.map((item) => (
-									<li
-										className="flex items-center gap-3 py-3"
-										key={item.categoryId}
-									>
-										<CategoryMark
-											colorKey={item.colorKey}
-											iconKey={item.iconKey}
-										/>
-										<span className="flex-1 font-semibold">
-											{item.categoryName}
-										</span>
-										<span className="font-bold">
-											{moneyFromCents(item.amountCents)}
-										</span>
-									</li>
-								))}
-							</ul>
+							<ExpenseCategoryTree
+								nodes={
+									result.data.expenseCategoryTree as ExpenseCategoryTreeNode[]
+								}
+							/>
 						</div>
 					</FinanceCard>
 					<FinanceCard className="mt-7 p-5">

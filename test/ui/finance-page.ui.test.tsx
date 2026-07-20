@@ -75,4 +75,33 @@ describe("FinancePage", () => {
 		expect(link).toHaveAttribute("href", "/archive");
 		expect(nav).toHaveClass("md:hidden");
 	});
+
+	it("renders expense categories as an expandable tree with direct and aggregate totals", async () => {
+		const child = {
+			...expenseCategory,
+			id: "44444444-4444-4444-8444-444444444444",
+			name: "Restaurante",
+			parentCategoryId: expenseCategory.id,
+			level: 2 as const,
+			path: [expenseCategory.id, "44444444-4444-4444-8444-444444444444"],
+		};
+		api.getReport.mockResolvedValue({
+			period: { granularity: "month", anchorDate: "2024-02-10", startDate: "2024-02-01", endDate: "2024-03-01" },
+			incomeCents: 0,
+			expenseCents: 3000,
+			balanceCents: -3000,
+			expenseByCategory: [],
+			expenseCategoryTree: [{ category: expenseCategory, directAmountCents: 1000, aggregateAmountCents: 3000, children: [{ category: child, directAmountCents: 2000, aggregateAmountCents: 2000, children: [] }] }],
+			incomeByPaymentMethod: [],
+		});
+		const user = userEvent.setup();
+		render(<FinancePage kind="reports" />);
+		await screen.findByText("Mercado");
+		expect(screen.getByText("Restaurante")).toBeInTheDocument();
+		expect(screen.getByText(/Direto: R\$ 10,00 · Agregado: R\$ 30,00/)).toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "Recolher Mercado" }));
+		expect(screen.queryByText("Restaurante")).not.toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "Expandir Mercado" }));
+		expect(screen.getByText("Restaurante")).toBeInTheDocument();
+	});
 });

@@ -37,6 +37,19 @@ function run(args) {
 	return result.stdout;
 }
 
+function assertSafeToDown() {
+	const output = run([
+		"--command",
+		"select case when exists(select 1 from payment_methods) or exists(select 1 from categories where parent_category_id is not null) or exists(select 1 from transactions where payment_method_id is not null or invoice_cycle_closing_date is not null or invoice_cycle_due_date is not null) then 1 else 0 end as incompatible_feature_data;",
+		"--json",
+	]);
+	if (/"incompatible_feature_data"\s*:\s*1/.test(output)) {
+		throw new Error(
+			"Rollback recusado: dados da feature precisam ser removidos antes do down local.",
+		);
+	}
+}
+
 const downSql = `
 PRAGMA defer_foreign_keys = ON;
 BEGIN TRANSACTION;
@@ -89,10 +102,15 @@ try {
 	run(["--command", "insert into user (id,name,email,email_verified,created_at,updated_at) values ('00000000-0000-4000-8000-000000000001','Legacy','legacy@example.test',1,1,1); insert into categories (id,user_id,type,name,normalized_name,color_key,icon_key,created_at,updated_at) values ('00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001','expense','Legacy','legacy','orange','Utensils',1,1); insert into transactions (id,user_id,category_id,type,amount_cents,currency,occurred_at,created_at,updated_at) values ('00000000-0000-4000-8000-000000000003','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','expense',100,'BRL','2024-01-01',1,1);"]);
 	run(["--file", feature]);
 	run(["--command", "insert into payment_methods (id,user_id,name,kind,invoice_control,created_at,updated_at) values ('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000001','Synthetic Pix','pix',0,1,1);"]);
-	// Down is explicitly guarded: feature rows make a destructive restore unsafe.
-	const incompatible = true;
-	if (!incompatible) throw new Error("Rollback guard did not detect feature data.");
+	let refused = false;
+	try {
+		assertSafeToDown();
+	} catch (error) {
+		refused = error instanceof Error && error.message.startsWith("Rollback recusado:");
+	}
+	if (!refused) throw new Error("Rollback guard did not refuse incompatible feature data.");
 	run(["--command", "delete from payment_methods where id='00000000-0000-4000-8000-000000000004';"]);
+	assertSafeToDown();
 	await writeFile(downFile, downSql);
 	run(["--file", downFile]);
 	const restored = run(["--command", "select count(*) as legacy_transactions from transactions; pragma table_info(categories); pragma foreign_key_check;", "--json"]);

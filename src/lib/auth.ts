@@ -1,27 +1,13 @@
-import { drizzleAdapter } from "@better-auth/drizzle-adapter";
-import { betterAuth } from "better-auth";
+import { type BetterAuthPlugin, betterAuth } from "better-auth";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 
-import { createDb } from "#/db";
-import * as schema from "#/db/schema";
-import { database, env } from "#/env";
+import { createAuthOptions } from "#/lib/auth-core";
 
 /** Creates an auth instance from the current Worker request's D1 binding. */
-export function createAuth(d1 = database) {
+export function createAuth(d1?: D1Database) {
 	return betterAuth({
-		baseURL: env.BETTER_AUTH_URL,
-		secret: env.BETTER_AUTH_SECRET,
-		database: drizzleAdapter(createDb(d1), {
-			provider: "sqlite",
-			schema,
-		}),
-		socialProviders: {
-			google: {
-				clientId: env.GOOGLE_CLIENT_ID,
-				clientSecret: env.GOOGLE_CLIENT_SECRET,
-			},
-		},
-		plugins: [tanstackStartCookies()],
+		...createAuthOptions(d1),
+		plugins: [tanstackStartCookies() as BetterAuthPlugin],
 	});
 }
 

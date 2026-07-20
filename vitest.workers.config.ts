@@ -1,0 +1,53 @@
+import {
+	cloudflareTest,
+	readD1Migrations,
+} from "@cloudflare/vitest-pool-workers";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vitest/config";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Vitest configuration for tests that run in the Cloudflare Workers runtime
+ * against an ephemeral, local D1 database. The `wrangler.jsonc` is reused for
+ * bindings, but `remote: true` is never set: `env.DB` is a Miniflare-provided
+ * local D1 instance, not the production database.
+ *
+ * Synthetic, non-secret values are provided for the four auth-related vars so
+ * that `src/env.ts` and `createAuth()` can be imported inside the pool without
+ * hitting real OAuth or production secrets.
+ */
+export default defineConfig(async () => {
+	const migrationsPath = path.join(__dirname, "drizzle");
+	const migrations = await readD1Migrations(migrationsPath);
+
+	return {
+		plugins: [
+			cloudflareTest({
+				main: "./test/workers/worker.ts",
+				wrangler: { configPath: "wrangler.jsonc" },
+				miniflare: {
+					bindings: {
+						TEST_MIGRATIONS: migrations,
+						BETTER_AUTH_SECRET:
+							"test-secret-with-at-least-32-characters-for-better-auth",
+						BETTER_AUTH_URL: "http://localhost:3000",
+						GOOGLE_CLIENT_ID: "test-google-client-id",
+						GOOGLE_CLIENT_SECRET: "test-google-client-secret",
+					},
+				},
+			}),
+		],
+		test: {
+			include: ["test/workers/**/*.test.ts"],
+			exclude: ["src/**/*.test.ts", "node_modules/**"],
+			setupFiles: ["./test/workers/setup.ts"],
+			server: {
+				deps: {
+					external: ["@tanstack/react-start"],
+				},
+			},
+		},
+	};
+});

@@ -1,0 +1,10 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "din-din-types-without-db",
+	"compatibility_date": "2025-09-02",
+	"compatibility_flags": ["nodejs_compat"],
+	"main": "../../test/workers/worker.ts",
+	"vars": {
+		"BETTER_AUTH_URL": "https://dindin.gugacarbo.space"
+	}
+}

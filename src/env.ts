@@ -2,20 +2,7 @@ import { env as cloudflareEnv } from "cloudflare:workers";
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
 
-type WorkerRuntimeEnv = {
-	BETTER_AUTH_SECRET: string;
-	BETTER_AUTH_URL: string;
-	GOOGLE_CLIENT_ID: string;
-	GOOGLE_CLIENT_SECRET: string;
-};
-
-const runtimeEnv = cloudflareEnv as unknown as WorkerRuntimeEnv & {
-	DB?: D1Database;
-};
-
-if (!runtimeEnv.DB) {
-	throw new Error("O binding D1 DB não está configurado para este Worker.");
-}
+const runtimeEnv = cloudflareEnv;
 
 /** D1 is a Worker binding, not a primitive environment variable for T3 Env. */
 export const database = runtimeEnv.DB;

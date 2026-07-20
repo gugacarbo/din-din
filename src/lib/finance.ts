@@ -56,20 +56,21 @@ export function periodFor(
 ) {
 	if (!isCivilDate(anchorDate)) throw new Error("Data civil inválida.");
 	if (granularity === "day")
-		return { startDate: anchorDate, endDate: anchorDate };
+		return { startDate: anchorDate, endDate: addDays(anchorDate, 1) };
 	if (granularity === "month") {
 		const [year, month] = anchorDate.split("-").map(Number);
-		const end = new Date(Date.UTC(year, month, 0)).getUTCDate();
 		return {
 			startDate: `${year}-${String(month).padStart(2, "0")}-01`,
-			endDate: `${year}-${String(month).padStart(2, "0")}-${String(end).padStart(2, "0")}`,
+			endDate: `${year + (month === 12 ? 1 : 0)}-${String(
+				month === 12 ? 1 : month + 1,
+			).padStart(2, "0")}-01`,
 		};
 	}
 	const [year, month, day] = anchorDate.split("-").map(Number);
 	const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
 	const offsetFromMonday = weekday === 0 ? 6 : weekday - 1;
 	const startDate = addDays(anchorDate, -offsetFromMonday);
-	return { startDate, endDate: addDays(startDate, 6) };
+	return { startDate, endDate: addDays(startDate, 7) };
 }
 
 export function saoPauloToday(date = new Date()) {

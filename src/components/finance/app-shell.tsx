@@ -136,6 +136,14 @@ export function AppShell({
 						</div>
 					</div>
 				</header>
+				<nav
+					aria-label="Navegação mobile"
+					className="border-b border-border px-4 py-2 md:hidden"
+				>
+					<Link className="text-sm font-bold" to="/archive">
+						Arquivo
+					</Link>
+				</nav>
 				<main className="page-wrap py-6 md:max-w-none md:px-8">{children}</main>
 			</SidebarInset>
 		</SidebarProvider>

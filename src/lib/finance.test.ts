@@ -14,14 +14,22 @@ describe("finance helpers", () => {
 		expect(isCivilDate("2026-02-30")).toBe(false);
 	});
 
-	it("calculates Monday-to-Sunday weeks and calendar months", () => {
+	it("calculates civil periods with an exclusive end date", () => {
+		expect(periodFor("day", "2024-02-29")).toEqual({
+			startDate: "2024-02-29",
+			endDate: "2024-03-01",
+		});
 		expect(periodFor("week", "2026-07-17")).toEqual({
 			startDate: "2026-07-13",
-			endDate: "2026-07-19",
+			endDate: "2026-07-20",
 		});
 		expect(periodFor("month", "2024-02-10")).toEqual({
 			startDate: "2024-02-01",
-			endDate: "2024-02-29",
+			endDate: "2024-03-01",
+		});
+		expect(periodFor("month", "2024-12-10")).toEqual({
+			startDate: "2024-12-01",
+			endDate: "2025-01-01",
 		});
 	});
 });

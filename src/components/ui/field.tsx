@@ -7,7 +7,7 @@ function Field({ className, ...props }: React.ComponentProps<"div">) {
 	return (
 		<div
 			data-slot="field"
-			className={cn("grid gap-2", className)}
+			className={cn("group grid gap-2", className)}
 			{...props}
 		/>
 	);
@@ -17,7 +17,13 @@ function FieldLabel({
 	className,
 	...props
 }: React.ComponentProps<typeof Label>) {
-	return <Label className={cn("data-[invalid=true]:text-destructive", className)} data-slot="field-label" {...props} />;
+	return (
+		<Label
+			className={cn("group-data-[invalid=true]:text-destructive", className)}
+			data-slot="field-label"
+			{...props}
+		/>
+	);
 }
 
 function FieldError({
@@ -26,9 +32,14 @@ function FieldError({
 	children,
 	...props
 }: React.ComponentProps<"p"> & {
-	errors?: Array<{ message?: string }>;
+	errors?: Array<{ message?: string } | undefined>;
 }) {
-	const content = children ?? errors?.map((error) => error?.message).filter(Boolean).join(", ");
+	const content =
+		children ??
+		errors
+			?.map((error) => error?.message)
+			.filter(Boolean)
+			.join(", ");
 	if (!content) return null;
 	return (
 		<p

@@ -71,7 +71,7 @@ placeholder `YOUR_DATABASE_ID`.
 
 | Capítulo       | Quando carregar |
 | -------------- | --------------- |
-| (nenhum ainda) | —               |
+| `docs/context/CONVENIONS.md` | ao criar ou alterar formulários ou dados remotos do cliente |
 
 ## Mapa de docs
 

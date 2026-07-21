@@ -17,6 +17,7 @@ import {
 	SheetHeader,
 	SheetTitle,
 } from "#/components/ui/sheet.tsx";
+import { useIsMobile } from "#/hooks/use-mobile.ts";
 import type { TransactionDto } from "#/server/finance.ts";
 
 import { CategoryMark } from "./presentation.tsx";
@@ -36,20 +37,6 @@ function clampDrawerHeight(height: number, viewportHeight: number) {
 		viewportHeight,
 		Math.max(drawerMinimumHeight(viewportHeight), height),
 	);
-}
-
-function useIsMobile() {
-	const [isMobile, setIsMobile] = useState(false);
-
-	useEffect(() => {
-		const mediaQuery = window.matchMedia("(max-width: 639px)");
-		const update = () => setIsMobile(mediaQuery.matches);
-		update();
-		mediaQuery.addEventListener("change", update);
-		return () => mediaQuery.removeEventListener("change", update);
-	}, []);
-
-	return isMobile;
 }
 
 function Detail({

@@ -1,16 +1,27 @@
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 
 import { Alert, AlertDescription } from "#/components/ui/alert.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Card, CardContent } from "#/components/ui/card.tsx";
+import { Field, FieldError, FieldLabel } from "#/components/ui/field.tsx";
+import { Input } from "#/components/ui/input.tsx";
 import { authClient } from "#/lib/auth-client.ts";
-import { getSessionUser } from "#/server/finance.ts";
+import { sessionQueryOptions } from "#/lib/finance-query-options.ts";
+
+const devLoginSchema = z.object({
+	email: z.string().trim().email("Informe um e-mail válido."),
+});
+type DevLoginValues = z.infer<typeof devLoginSchema>;
 
 export const Route = createFileRoute("/login")({
-	beforeLoad: async () => {
+	beforeLoad: async ({ context }) => {
 		try {
-			await getSessionUser();
+			await context.queryClient.ensureQueryData(sessionQueryOptions());
 			throw redirect({ to: "/" });
 		} catch (error) {
 			if (error && typeof error === "object" && "isRedirect" in error)
@@ -23,7 +34,26 @@ export const Route = createFileRoute("/login")({
 export function Login() {
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
-	const [email, setEmail] = useState("");
+	const form = useForm<DevLoginValues>({
+		defaultValues: { email: "" },
+		resolver: zodResolver(devLoginSchema),
+	});
+	const devLogin = useMutation({
+		mutationFn: async ({ email }: DevLoginValues) => {
+			const response = await fetch("/api/auth/dev-login", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ email }),
+			});
+			if (response.ok) return;
+			const body = (await response.json().catch(() => null)) as {
+				message?: string;
+			} | null;
+			throw new Error(
+				body?.message ?? "Não foi possível entrar com este e-mail.",
+			);
+		},
+	});
 	async function login() {
 		setLoading(true);
 		setError(null);
@@ -36,23 +66,10 @@ export function Login() {
 			setLoading(false);
 		}
 	}
-	async function loginWithEmail() {
-		setLoading(true);
+	async function loginWithEmail({ email }: DevLoginValues) {
 		setError(null);
 		try {
-			const response = await fetch("/api/auth/dev-login", {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ email }),
-			});
-			if (!response.ok) {
-				const body = (await response.json().catch(() => null)) as {
-					message?: string;
-				} | null;
-				throw new Error(
-					body?.message ?? "Não foi possível entrar com este e-mail.",
-				);
-			}
+			await devLogin.mutateAsync({ email });
 			window.location.assign("/");
 		} catch (cause) {
 			setError(
@@ -60,7 +77,6 @@ export function Login() {
 					? cause.message
 					: "Não foi possível entrar com este e-mail.",
 			);
-			setLoading(false);
 		}
 	}
 	return (
@@ -85,27 +101,28 @@ export function Login() {
 					{import.meta.env.DEV && (
 						<form
 							className="mt-4 grid gap-3"
-							onSubmit={(event) => {
-								event.preventDefault();
-								void loginWithEmail();
-							}}
+							noValidate
+							onSubmit={form.handleSubmit(loginWithEmail)}
 						>
-							<label className="sr-only" htmlFor="dev-login-email">
-								E-mail de desenvolvimento
-							</label>
-							<input
-								autoComplete="email"
-								className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-								disabled={loading}
-								id="dev-login-email"
-								onChange={(event) => setEmail(event.target.value)}
-								placeholder="voce@exemplo.com"
-								required
-								type="email"
-								value={email}
-							/>
+							<Field data-invalid={Boolean(form.formState.errors.email)}>
+								<FieldLabel className="sr-only" htmlFor="dev-login-email">
+									E-mail de desenvolvimento
+								</FieldLabel>
+								<Input
+									aria-invalid={Boolean(form.formState.errors.email)}
+									{...form.register("email")}
+									autoComplete="email"
+									className="h-11"
+									disabled={loading || form.formState.isSubmitting}
+									id="dev-login-email"
+									placeholder="voce@exemplo.com"
+									required
+									type="email"
+								/>
+								<FieldError errors={[form.formState.errors.email]} />
+							</Field>
 							<Button
-								disabled={loading}
+								disabled={loading || form.formState.isSubmitting}
 								size="lg"
 								type="submit"
 								variant="outline"

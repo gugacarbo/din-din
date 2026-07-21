@@ -1,12 +1,12 @@
-import { CircleAlert, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-	type ComponentProps,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+	useInfiniteQuery,
+	useMutation,
+	useQuery,
+	useQueryClient,
+} from "@tanstack/react-query";
+import { CircleAlert, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { type ComponentProps, useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { Cell, Pie, PieChart } from "recharts";
 import { z } from "zod";
@@ -38,12 +38,13 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "#/components/ui/dialog.tsx";
-import {
-	Field,
-	FieldError,
-	FieldLabel,
-} from "#/components/ui/field.tsx";
+import { Field, FieldError, FieldLabel } from "#/components/ui/field.tsx";
 import { Input } from "#/components/ui/input.tsx";
+import {
+	formatMoneyInputFromCents,
+	MoneyInput,
+	moneyInputToCents,
+} from "#/components/ui/money-input.tsx";
 import {
 	Select,
 	SelectContent,
@@ -51,15 +52,25 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "#/components/ui/select.tsx";
+import {
+	Sheet,
+	SheetContent,
+	SheetDescription,
+	SheetHeader,
+	SheetTitle,
+} from "#/components/ui/sheet.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
 import { Tabs, TabsList, TabsTrigger } from "#/components/ui/tabs.tsx";
+import { Textarea } from "#/components/ui/textarea.tsx";
+import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import {
 	CATEGORY_COLORS,
 	CATEGORY_ICONS,
 	saoPauloToday,
 } from "#/lib/finance.ts";
+import { financeQueryKey } from "#/lib/finance-query-options.ts";
 import { cn } from "#/lib/utils.ts";
 import type {
 	CategoryDto,
@@ -109,19 +120,15 @@ const transactionFormSchema = z.object({
 		error: "Escolha o tipo do lançamento antes de salvar.",
 	}),
 	categoryId: z.string().min(1, "Escolha uma categoria."),
-	amount: z
-		.string()
-		.refine(
-			(value) => {
-				const amountCents = Math.round(Number(value.replace(",", ".")) * 100);
-				return Number.isSafeInteger(amountCents) && amountCents > 0;
-			},
-			"Informe um valor maior que zero.",
-		),
+	amount: z.string().refine((value) => {
+		const amountCents = moneyInputToCents(value);
+		return Number.isSafeInteger(amountCents) && amountCents > 0;
+	}, "Informe um valor maior que zero."),
 	occurredAt: z.string().min(1, "Informe a data do lançamento."),
 	description: z.string().max(280, "Use no máximo 280 caracteres."),
 });
-type TransactionFormValues = z.infer<typeof transactionFormSchema>;
+type TransactionFormInput = z.input<typeof transactionFormSchema>;
+type TransactionFormValues = z.output<typeof transactionFormSchema>;
 
 const categoryFormSchema = z.object({
 	parentCategoryId: z.string(),
@@ -131,10 +138,11 @@ const categoryFormSchema = z.object({
 		.trim()
 		.min(1, "Informe o nome da categoria.")
 		.max(40, "Use no máximo 40 caracteres."),
-	colorKey: z.string().min(1, "Escolha uma cor."),
-	iconKey: z.string().min(1, "Escolha um ícone."),
+	colorKey: z.enum(CATEGORY_COLORS),
+	iconKey: z.enum(CATEGORY_ICONS),
 });
-type CategoryFormValues = z.infer<typeof categoryFormSchema>;
+type CategoryFormInput = z.input<typeof categoryFormSchema>;
+type CategoryFormValues = z.output<typeof categoryFormSchema>;
 
 const paymentMethodKinds = [
 	"credit_card",
@@ -153,8 +161,8 @@ const paymentMethodFormSchema = z
 			.min(1, "Informe o nome da forma de pagamento.")
 			.max(80, "Use no máximo 80 caracteres."),
 		kind: z.enum(paymentMethodKinds),
-		colorKey: z.string().min(1, "Escolha uma cor."),
-		iconKey: z.string().min(1, "Escolha um ícone."),
+		colorKey: z.enum(CATEGORY_COLORS),
+		iconKey: z.enum(CATEGORY_ICONS),
 		invoiceControl: z.boolean(),
 		closingDay: z.string(),
 		dueDay: z.string(),
@@ -175,7 +183,8 @@ const paymentMethodFormSchema = z
 			}
 		}
 	});
-type PaymentMethodFormValues = z.infer<typeof paymentMethodFormSchema>;
+type PaymentMethodFormInput = z.input<typeof paymentMethodFormSchema>;
+type PaymentMethodFormValues = z.output<typeof paymentMethodFormSchema>;
 
 const money = new Intl.NumberFormat("pt-BR", {
 	style: "currency",
@@ -183,44 +192,10 @@ const money = new Intl.NumberFormat("pt-BR", {
 });
 const moneyFromCents = (value: number) => money.format(value / 100);
 const kindLabel = (kind: Kind) => (kind === "income" ? "Receita" : "Despesa");
-function useAsyncData<T>(load: () => Promise<T>, dependencies: unknown[]) {
-	const [data, setData] = useState<T | null>(null);
-	const [error, setError] = useState<string | null>(null);
-	const [loading, setLoading] = useState(true);
-	const dependencyKey = JSON.stringify(dependencies);
-	const loadRef = useRef(load);
-	useEffect(() => {
-		loadRef.current = load;
-	}, [load]);
-	useEffect(() => {
-		void dependencyKey;
-		let alive = true;
-		setLoading(true);
-		loadRef
-			.current()
-			.then((next) => {
-				if (alive) {
-					setData(next);
-					setError(null);
-				}
-			})
-			.catch((cause: unknown) => {
-				if (alive)
-					setError(
-						cause instanceof Error
-							? cause.message
-							: "Não foi possível carregar os dados.",
-					);
-			})
-			.finally(() => {
-				if (alive) setLoading(false);
-			});
-		return () => {
-			alive = false;
-		};
-	}, [dependencyKey]);
-	return { data, error, loading, setData };
-}
+const errorMessage = (cause: unknown) =>
+	cause instanceof Error
+		? cause.message
+		: "Não foi possível carregar os dados.";
 
 function Notice({ children }: { children: React.ReactNode }) {
 	return (
@@ -393,17 +368,14 @@ function TransactionRows({
 	);
 }
 
-function Dashboard({
-	refreshKey,
-	onView,
-}: {
-	refreshKey: number;
-	onView: (item: TransactionDto) => void;
-}) {
-	const result = useAsyncData(() => getDashboard(), [refreshKey]);
-	if (result.loading) return <Loading />;
+function Dashboard({ onView }: { onView: (item: TransactionDto) => void }) {
+	const result = useQuery({
+		queryKey: [...financeQueryKey, "dashboard"],
+		queryFn: getDashboard,
+	});
+	if (result.isPending) return <Loading />;
 	if (result.error || !result.data)
-		return <Notice>{result.error ?? "Dados indisponíveis."}</Notice>;
+		return <Notice>{errorMessage(result.error)}</Notice>;
 	const { month, recentTransactions, incomeByPaymentMethod } = result.data;
 	return (
 		<>
@@ -478,27 +450,42 @@ function TransactionForm({
 	onSaved: () => void;
 	onCancel?: () => void;
 }) {
-	const form = useForm<TransactionFormValues>({
+	const form = useForm<TransactionFormInput, unknown, TransactionFormValues>({
 		defaultValues: {
 			paymentMethodId: initial?.paymentMethodId ?? "",
 			type: initial?.type,
 			categoryId: initial?.categoryId ?? "",
-			amount: initial ? String(initial.amountCents / 100) : "",
+			amount: initial ? formatMoneyInputFromCents(initial.amountCents) : "0,00",
 			occurredAt: initial?.occurredAt ?? saoPauloToday(),
 			description: initial?.description ?? "",
 		},
 		resolver: zodResolver(transactionFormSchema),
 	});
 	const type = form.watch("type");
-	const categoriesResult = useAsyncData(
-		() => listCategories({ data: { status: "active" } }),
-		[],
-	);
-	const paymentMethodsResult = useAsyncData(
-		() => listPaymentMethods({ data: { status: "all" } }),
-		[],
-	);
+	const categoriesResult = useQuery({
+		queryKey: [...financeQueryKey, "categories", "active"],
+		queryFn: () => listCategories({ data: { status: "active" } }),
+	});
+	const paymentMethodsResult = useQuery({
+		queryKey: [...financeQueryKey, "payment-methods", "all"],
+		queryFn: () => listPaymentMethods({ data: { status: "all" } }),
+	});
 	const [submitError, setSubmitError] = useState<string | null>(null);
+	const saveTransaction = useMutation({
+		mutationFn: async (values: TransactionFormValues) => {
+			const data = {
+				type: values.type,
+				categoryId: values.categoryId,
+				amountCents: moneyInputToCents(values.amount),
+				occurredAt: values.occurredAt,
+				description: values.description || null,
+				paymentMethodId: values.paymentMethodId || null,
+			};
+			if (initial)
+				return updateTransaction({ data: { ...data, id: initial.id } });
+			return createTransaction({ data });
+		},
+	});
 	const choices = useMemo(
 		() =>
 			categoriesResult.data?.filter((category) => category.type === type) ?? [],
@@ -512,7 +499,9 @@ function TransactionForm({
 		);
 	}, [paymentMethodsResult.data, initial?.paymentMethodId]);
 	useEffect(() => {
-		if (!choices.some((category) => category.id === form.getValues("categoryId")))
+		if (
+			!choices.some((category) => category.id === form.getValues("categoryId"))
+		)
 			form.setValue("categoryId", choices[0]?.id ?? "", {
 				shouldValidate: form.formState.isSubmitted,
 			});
@@ -520,19 +509,7 @@ function TransactionForm({
 	async function submit(values: TransactionFormValues) {
 		setSubmitError(null);
 		try {
-			const data = {
-				type: values.type,
-				categoryId: values.categoryId,
-				amountCents: Math.round(
-					Number(values.amount.replace(",", ".")) * 100,
-				),
-				occurredAt: values.occurredAt,
-				description: values.description || null,
-				paymentMethodId: values.paymentMethodId || null,
-			};
-			if (initial)
-				await updateTransaction({ data: { ...data, id: initial.id } });
-			else await createTransaction({ data });
+			await saveTransaction.mutateAsync(values);
 			onSaved();
 		} catch (cause) {
 			setSubmitError(
@@ -541,17 +518,23 @@ function TransactionForm({
 		}
 	}
 	return (
-		<form className="grid gap-4" noValidate onSubmit={form.handleSubmit(submit)}>
+		<form
+			className="grid gap-4"
+			noValidate
+			onSubmit={form.handleSubmit(submit)}
+		>
 			<Controller
 				control={form.control}
 				name="paymentMethodId"
 				render={({ field, fieldState }) => (
 					<Field data-invalid={fieldState.invalid}>
 						<FieldLabel htmlFor="transaction-payment-method">
-					Forma de pagamento (opcional)
+							Forma de pagamento (opcional)
 						</FieldLabel>
 						<Select
-							onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
+							onValueChange={(value) =>
+								field.onChange(value === "none" ? "" : value)
+							}
 							value={field.value || "none"}
 						>
 							<SelectTrigger
@@ -609,19 +592,24 @@ function TransactionForm({
 					</Field>
 				)}
 			/>
-			<Field data-invalid={Boolean(form.formState.errors.amount)}>
-				<FieldLabel htmlFor="transaction-amount">Valor (R$)</FieldLabel>
-				<Input
-					aria-invalid={Boolean(form.formState.errors.amount)}
-					{...form.register("amount")}
-					id="transaction-amount"
-					inputMode="decimal"
-					required
-					step="0.01"
-					type="number"
-				/>
-				<FieldError errors={[form.formState.errors.amount]} />
-			</Field>
+			<Controller
+				control={form.control}
+				name="amount"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="transaction-amount">Valor (R$)</FieldLabel>
+						<MoneyInput
+							aria-invalid={fieldState.invalid}
+							id="transaction-amount"
+							onBlur={field.onBlur}
+							onValueChange={field.onChange}
+							required
+							value={field.value}
+						/>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
 			<Field data-invalid={Boolean(form.formState.errors.occurredAt)}>
 				<FieldLabel htmlFor="transaction-date">Data</FieldLabel>
 				<Input
@@ -637,18 +625,20 @@ function TransactionForm({
 				<FieldLabel htmlFor="transaction-description">
 					Descrição opcional
 				</FieldLabel>
-				<Input
+				<Textarea
 					aria-invalid={Boolean(form.formState.errors.description)}
 					{...form.register("description")}
+					className="min-h-18"
 					id="transaction-description"
 					maxLength={280}
+					rows={2}
 				/>
 				<FieldError errors={[form.formState.errors.description]} />
 			</Field>
 			{submitError && <Notice>{submitError}</Notice>}
 			<DialogFooter className="flex-row justify-end">
 				<Button
-					disabled={form.formState.isSubmitting || categoriesResult.loading}
+					disabled={form.formState.isSubmitting || categoriesResult.isPending}
 					type="submit"
 				>
 					{form.formState.isSubmitting
@@ -674,71 +664,86 @@ function TransactionDialog({
 	onOpenChange: (open: boolean) => void;
 	onSaved: () => void;
 }) {
+	const isMobile = useIsMobile();
 	const isEdit = Boolean(editing?.id);
-	return (
-		<Dialog
-			onOpenChange={(open) => {
-				if (!open) onOpenChange(false);
+	const title = isEdit ? "Editar lançamento" : "Novo lançamento";
+	const description = isEdit
+		? "Ajuste os dados do lançamento abaixo."
+		: "Preencha os dados para criar um novo lançamento.";
+	const form = editing && (
+		<TransactionForm
+			initial={isEdit ? editing : undefined}
+			onCancel={() => onOpenChange(false)}
+			onSaved={() => {
+				onOpenChange(false);
+				onSaved();
 			}}
-			open={Boolean(editing)}
-		>
+		/>
+	);
+	const onSheetOpenChange = (open: boolean) => {
+		if (!open) onOpenChange(false);
+	};
+
+	if (isMobile)
+		return (
+			<Sheet onOpenChange={onSheetOpenChange} open={Boolean(editing)}>
+				<SheetContent
+					className="max-h-dvh min-h-[72dvh] overflow-y-auto rounded-t-2xl px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+					side="bottom"
+				>
+					<SheetHeader className="p-0 text-left">
+						<SheetTitle>{title}</SheetTitle>
+						<SheetDescription>{description}</SheetDescription>
+					</SheetHeader>
+					{form}
+				</SheetContent>
+			</Sheet>
+		);
+
+	return (
+		<Dialog onOpenChange={onSheetOpenChange} open={Boolean(editing)}>
 			<DialogContent>
 				<DialogHeader>
-					<DialogTitle>
-						{isEdit ? "Editar lançamento" : "Novo lançamento"}
-					</DialogTitle>
-					<DialogDescription>
-						{isEdit
-							? "Ajuste os dados do lançamento abaixo."
-							: "Preencha os dados para criar um novo lançamento."}
-					</DialogDescription>
+					<DialogTitle>{title}</DialogTitle>
+					<DialogDescription>{description}</DialogDescription>
 				</DialogHeader>
-				{editing && (
-					<TransactionForm
-						initial={isEdit ? editing : undefined}
-						onCancel={() => onOpenChange(false)}
-						onSaved={() => {
-							onOpenChange(false);
-							onSaved();
-						}}
-					/>
-				)}
+				{form}
 			</DialogContent>
 		</Dialog>
 	);
 }
 
 function Transactions({
-	refreshKey,
 	onEdit,
 	onView,
 }: {
-	refreshKey: number;
 	onEdit: (item: TransactionDto) => void;
 	onView: (item: TransactionDto) => void;
 }) {
-	const [refresh, setRefresh] = useState(0);
+	const queryClient = useQueryClient();
 	const [archiving, setArchiving] = useState<TransactionDto | null>(null);
-	const result = useAsyncData(
-		() => listTransactions({ data: { scope: "active" } }),
-		[refresh, refreshKey],
-	);
+	const result = useInfiniteQuery({
+		queryKey: [...financeQueryKey, "transactions", "active"],
+		initialPageParam: undefined as string | undefined,
+		queryFn: ({ pageParam }) =>
+			listTransactions({
+				data: pageParam
+					? { scope: "active", cursor: pageParam }
+					: { scope: "active" },
+			}),
+		getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+	});
+	const archiveMutation = useMutation({
+		mutationFn: (id: string) => archiveTransaction({ data: { id } }),
+		onSuccess: () =>
+			queryClient.invalidateQueries({ queryKey: financeQueryKey }),
+	});
 	async function archive() {
 		if (!archiving) return;
-		await archiveTransaction({ data: { id: archiving.id } });
+		await archiveMutation.mutateAsync(archiving.id);
 		setArchiving(null);
-		setRefresh((value) => value + 1);
 	}
-	async function loadMore() {
-		if (!result.data?.nextCursor) return;
-		const next = await listTransactions({
-			data: { scope: "active", cursor: result.data.nextCursor },
-		});
-		result.setData({
-			items: [...result.data.items, ...next.items],
-			nextCursor: next.nextCursor,
-		});
-	}
+	const transactions = result.data?.pages.flatMap((page) => page.items) ?? [];
 	return (
 		<>
 			<PageTitle eyebrow="histórico" title="Lançamentos" />
@@ -750,25 +755,26 @@ function Transactions({
 				}}
 				open={Boolean(archiving)}
 			/>
-			{result.loading ? (
+			{result.isPending ? (
 				<Loading />
 			) : result.error || !result.data ? (
-				<Notice>{result.error ?? "Dados indisponíveis."}</Notice>
+				<Notice>{errorMessage(result.error)}</Notice>
 			) : (
 				<FinanceCard className="p-5">
 					<TransactionRows
-						items={result.data.items}
+						items={transactions}
 						onArchive={setArchiving}
 						onEdit={onEdit}
 						onView={onView}
 					/>
-					{result.data.nextCursor && (
+					{result.hasNextPage && (
 						<Button
 							className="mt-4"
-							onClick={() => void loadMore()}
+							disabled={result.isFetchingNextPage}
+							onClick={() => void result.fetchNextPage()}
 							variant="outline"
 						>
-							Carregar mais
+							{result.isFetchingNextPage ? "Carregando…" : "Carregar mais"}
 						</Button>
 					)}
 				</FinanceCard>
@@ -786,21 +792,25 @@ function CategoryForm({
 	onSaved: () => void;
 	onCancel?: () => void;
 }) {
-	const form = useForm<CategoryFormValues>({
+	const form = useForm<CategoryFormInput, unknown, CategoryFormValues>({
 		defaultValues: {
 			parentCategoryId: initial?.parentCategoryId ?? "root",
 			type: initial?.type ?? "expense",
 			name: initial?.name ?? "",
-			colorKey: initial?.colorKey ?? CATEGORY_COLORS[0],
-			iconKey: initial?.iconKey ?? CATEGORY_ICONS[0],
+			colorKey:
+				(initial?.colorKey as (typeof CATEGORY_COLORS)[number]) ??
+				CATEGORY_COLORS[0],
+			iconKey:
+				(initial?.iconKey as (typeof CATEGORY_ICONS)[number]) ??
+				CATEGORY_ICONS[0],
 		},
 		resolver: zodResolver(categoryFormSchema),
 	});
 	const type = form.watch("type");
-	const categoriesResult = useAsyncData(
-		() => listCategories({ data: { status: "active" } }),
-		[],
-	);
+	const categoriesResult = useQuery({
+		queryKey: [...financeQueryKey, "categories", "active"],
+		queryFn: () => listCategories({ data: { status: "active" } }),
+	});
 	const parentChoices = useMemo(
 		() =>
 			(categoriesResult.data ?? []).filter(
@@ -812,35 +822,23 @@ function CategoryForm({
 		[categoriesResult.data, type, initial?.id],
 	);
 	const [submitError, setSubmitError] = useState<string | null>(null);
+	const saveCategory = useMutation({
+		mutationFn: async (values: CategoryFormValues) => {
+			const data = {
+				name: values.name,
+				colorKey: values.colorKey,
+				iconKey: values.iconKey,
+				parentCategoryId:
+					values.parentCategoryId === "root" ? null : values.parentCategoryId,
+			};
+			if (initial) return updateCategory({ data: { id: initial.id, ...data } });
+			return createCategory({ data: { ...data, type: values.type } });
+		},
+	});
 	async function submit(values: CategoryFormValues) {
 		setSubmitError(null);
 		try {
-			if (initial)
-				await updateCategory({
-					data: {
-						id: initial.id,
-						name: values.name,
-						colorKey: values.colorKey,
-						iconKey: values.iconKey,
-						parentCategoryId:
-							values.parentCategoryId === "root"
-								? null
-								: values.parentCategoryId,
-					},
-				});
-			else
-				await createCategory({
-					data: {
-						type: values.type,
-						name: values.name,
-						colorKey: values.colorKey,
-						iconKey: values.iconKey,
-						parentCategoryId:
-							values.parentCategoryId === "root"
-								? null
-								: values.parentCategoryId,
-					},
-				});
+			await saveCategory.mutateAsync(values);
 			onSaved();
 		} catch (cause) {
 			setSubmitError(
@@ -849,7 +847,11 @@ function CategoryForm({
 		}
 	}
 	return (
-		<form className="grid gap-4" noValidate onSubmit={form.handleSubmit(submit)}>
+		<form
+			className="grid gap-4"
+			noValidate
+			onSubmit={form.handleSubmit(submit)}
+		>
 			<Controller
 				control={form.control}
 				name="parentCategoryId"
@@ -990,23 +992,31 @@ function CategoryDialog({
 }
 
 function Categories() {
+	const queryClient = useQueryClient();
 	const [status, setStatus] = useState<"active" | "archived">("active");
-	const [refresh, setRefresh] = useState(0);
 	const [editing, setEditing] = useState<CategoryDto | null>(null);
 	const [archiving, setArchiving] = useState<CategoryDto | null>(null);
-	const result = useAsyncData(
-		() => listCategories({ data: { status } }),
-		[status, refresh],
-	);
+	const result = useQuery({
+		queryKey: [...financeQueryKey, "categories", status],
+		queryFn: () => listCategories({ data: { status } }),
+	});
+	const archiveMutation = useMutation({
+		mutationFn: (id: string) => archiveCategory({ data: { id } }),
+		onSuccess: () =>
+			queryClient.invalidateQueries({ queryKey: financeQueryKey }),
+	});
+	const restoreMutation = useMutation({
+		mutationFn: (id: string) => restoreCategory({ data: { id } }),
+		onSuccess: () =>
+			queryClient.invalidateQueries({ queryKey: financeQueryKey }),
+	});
 	async function archive() {
 		if (!archiving) return;
-		await archiveCategory({ data: { id: archiving.id } });
+		await archiveMutation.mutateAsync(archiving.id);
 		setArchiving(null);
-		setRefresh((value) => value + 1);
 	}
 	async function restore(category: CategoryDto) {
-		await restoreCategory({ data: { id: category.id } });
-		setRefresh((value) => value + 1);
+		await restoreMutation.mutateAsync(category.id);
 	}
 	return (
 		<>
@@ -1020,7 +1030,9 @@ function Categories() {
 				onOpenChange={(open) => {
 					if (!open) setEditing(null);
 				}}
-				onSaved={() => setRefresh((value) => value + 1)}
+				onSaved={() => {
+					void queryClient.invalidateQueries({ queryKey: financeQueryKey });
+				}}
 			/>
 			<ArchiveConfirmation
 				itemName={archiving?.name ?? "esta categoria"}
@@ -1040,10 +1052,10 @@ function Categories() {
 					<TabsTrigger value="archived">Arquivadas</TabsTrigger>
 				</TabsList>
 			</Tabs>
-			{result.loading ? (
+			{result.isPending ? (
 				<Loading />
 			) : result.error || !result.data ? (
-				<Notice>{result.error ?? "Dados indisponíveis."}</Notice>
+				<Notice>{errorMessage(result.error)}</Notice>
 			) : (
 				<FinanceCard className="p-5">
 					<ul className="divide-y divide-border">
@@ -1106,145 +1118,190 @@ function PaymentMethodForm({
 	onSaved: () => void;
 	onCancel: () => void;
 }) {
-	const [name, setName] = useState(initial?.name ?? "");
-	const [kind, setKind] = useState<PaymentMethodDto["kind"]>(
-		initial?.kind ?? "credit_card",
-	);
-	const [colorKey, setColorKey] = useState<(typeof CATEGORY_COLORS)[number]>(
-		(initial?.colorKey as (typeof CATEGORY_COLORS)[number]) ??
-			CATEGORY_COLORS[0],
-	);
-	const [iconKey, setIconKey] = useState<(typeof CATEGORY_ICONS)[number]>(
-		(initial?.iconKey as (typeof CATEGORY_ICONS)[number]) ?? "CreditCard",
-	);
-	const [invoiceControl, setInvoiceControl] = useState(
-		initial?.invoiceControl ?? false,
-	);
-	const [closingDay, setClosingDay] = useState(
-		initial?.closingDay ? String(initial.closingDay) : "",
-	);
-	const [dueDay, setDueDay] = useState(
-		initial?.dueDay ? String(initial.dueDay) : "",
-	);
-	const [error, setError] = useState<string | null>(null);
-	const [saving, setSaving] = useState(false);
+	const form = useForm<
+		PaymentMethodFormInput,
+		unknown,
+		PaymentMethodFormValues
+	>({
+		defaultValues: {
+			name: initial?.name ?? "",
+			kind: initial?.kind ?? "credit_card",
+			colorKey:
+				(initial?.colorKey as (typeof CATEGORY_COLORS)[number]) ??
+				CATEGORY_COLORS[0],
+			iconKey:
+				(initial?.iconKey as (typeof CATEGORY_ICONS)[number]) ?? "CreditCard",
+			invoiceControl: initial?.invoiceControl ?? false,
+			closingDay: initial?.closingDay ? String(initial.closingDay) : "",
+			dueDay: initial?.dueDay ? String(initial.dueDay) : "",
+		},
+		resolver: zodResolver(paymentMethodFormSchema),
+	});
+	const kind = form.watch("kind");
+	const invoiceControl = form.watch("invoiceControl");
+	const [submitError, setSubmitError] = useState<string | null>(null);
 	const canInvoice = kind === "credit_card" && invoiceControl;
-	async function submit(event: React.FormEvent) {
-		event.preventDefault();
-		setSaving(true);
-		setError(null);
-		try {
+	const savePaymentMethod = useMutation({
+		mutationFn: async (values: PaymentMethodFormValues) => {
+			const usesInvoices =
+				values.kind === "credit_card" && values.invoiceControl;
 			const data = {
-				name,
-				kind,
-				colorKey,
-				iconKey,
-				invoiceControl: canInvoice,
-				closingDay: canInvoice ? Number(closingDay) : null,
-				dueDay: canInvoice ? Number(dueDay) : null,
+				name: values.name,
+				kind: values.kind,
+				colorKey: values.colorKey,
+				iconKey: values.iconKey,
+				invoiceControl: usesInvoices,
+				closingDay: usesInvoices ? Number(values.closingDay) : null,
+				dueDay: usesInvoices ? Number(values.dueDay) : null,
 			};
 			if (initial)
-				await updatePaymentMethod({ data: { id: initial.id, ...data } });
-			else await createPaymentMethod({ data });
+				return updatePaymentMethod({ data: { id: initial.id, ...data } });
+			return createPaymentMethod({ data });
+		},
+	});
+	async function submit(values: PaymentMethodFormValues) {
+		setSubmitError(null);
+		try {
+			await savePaymentMethod.mutateAsync(values);
 			onSaved();
 		} catch (cause) {
-			setError(
+			setSubmitError(
 				cause instanceof Error ? cause.message : "Não foi possível salvar.",
 			);
-		} finally {
-			setSaving(false);
 		}
 	}
 	return (
-		<form className="grid gap-4" onSubmit={submit}>
-			<div>
-				<Label htmlFor="payment-name">Nome</Label>
+		<form
+			className="grid gap-4"
+			noValidate
+			onSubmit={form.handleSubmit(submit)}
+		>
+			<Field data-invalid={Boolean(form.formState.errors.name)}>
+				<FieldLabel htmlFor="payment-name">Nome</FieldLabel>
 				<Input
+					aria-invalid={Boolean(form.formState.errors.name)}
+					{...form.register("name")}
 					id="payment-name"
 					maxLength={80}
-					onChange={(event) => setName(event.target.value)}
 					required
-					value={name}
 				/>
-			</div>
-			<div>
-				<Label htmlFor="payment-kind">Tipo</Label>
-				<Select
-					onValueChange={(value) => setKind(value as PaymentMethodDto["kind"])}
-					value={kind}
-				>
-					<SelectTrigger className="w-full" id="payment-kind">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="credit_card">Cartão de crédito</SelectItem>
-						<SelectItem value="debit_card">Cartão de débito</SelectItem>
-						<SelectItem value="pix">Pix</SelectItem>
-						<SelectItem value="cash">Dinheiro</SelectItem>
-						<SelectItem value="bank_transfer">Transferência</SelectItem>
-						<SelectItem value="boleto">Boleto</SelectItem>
-						<SelectItem value="other">Outro</SelectItem>
-					</SelectContent>
-				</Select>
-			</div>
-			<div>
-				<Label htmlFor="payment-color">Cor</Label>
-				<ColorSelect
-					id="payment-color"
-					onValueChange={(value) => setColorKey(value as typeof colorKey)}
-					value={colorKey}
-				/>
-			</div>
-			<div>
-				<Label htmlFor="payment-icon">Ícone</Label>
-				<IconSelect
-					id="payment-icon"
-					onValueChange={(value) => setIconKey(value as typeof iconKey)}
-					value={iconKey}
-				/>
-			</div>
+				<FieldError errors={[form.formState.errors.name]} />
+			</Field>
+			<Controller
+				control={form.control}
+				name="kind"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="payment-kind">Tipo</FieldLabel>
+						<Select onValueChange={field.onChange} value={field.value}>
+							<SelectTrigger
+								aria-invalid={fieldState.invalid}
+								className="w-full"
+								id="payment-kind"
+							>
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="credit_card">Cartão de crédito</SelectItem>
+								<SelectItem value="debit_card">Cartão de débito</SelectItem>
+								<SelectItem value="pix">Pix</SelectItem>
+								<SelectItem value="cash">Dinheiro</SelectItem>
+								<SelectItem value="bank_transfer">Transferência</SelectItem>
+								<SelectItem value="boleto">Boleto</SelectItem>
+								<SelectItem value="other">Outro</SelectItem>
+							</SelectContent>
+						</Select>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
+			<Controller
+				control={form.control}
+				name="colorKey"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="payment-color">Cor</FieldLabel>
+						<ColorSelect
+							id="payment-color"
+							onValueChange={field.onChange}
+							value={field.value}
+						/>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
+			<Controller
+				control={form.control}
+				name="iconKey"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="payment-icon">Ícone</FieldLabel>
+						<IconSelect
+							id="payment-icon"
+							onValueChange={field.onChange}
+							value={field.value}
+						/>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
 			{kind === "credit_card" && (
-				<label className="flex items-center gap-2 text-sm font-medium">
-					<input
-						checked={invoiceControl}
-						onChange={(event) => setInvoiceControl(event.target.checked)}
-						type="checkbox"
-					/>{" "}
-					Controlar faturas
-				</label>
+				<Controller
+					control={form.control}
+					name="invoiceControl"
+					render={({ field, fieldState }) => (
+						<Field
+							className="flex-row items-center gap-2"
+							data-invalid={fieldState.invalid}
+						>
+							<Switch
+								aria-invalid={fieldState.invalid}
+								checked={field.value}
+								id="payment-invoice-control"
+								onCheckedChange={field.onChange}
+							/>
+							<FieldLabel htmlFor="payment-invoice-control">
+								Controlar faturas
+							</FieldLabel>
+							<FieldError errors={[fieldState.error]} />
+						</Field>
+					)}
+				/>
 			)}
 			{canInvoice && (
 				<div className="grid grid-cols-2 gap-3">
-					<div>
-						<Label htmlFor="payment-closing-day">Fechamento</Label>
+					<Field data-invalid={Boolean(form.formState.errors.closingDay)}>
+						<FieldLabel htmlFor="payment-closing-day">Fechamento</FieldLabel>
 						<Input
+							aria-invalid={Boolean(form.formState.errors.closingDay)}
+							{...form.register("closingDay")}
 							id="payment-closing-day"
 							max="31"
 							min="1"
-							onChange={(event) => setClosingDay(event.target.value)}
 							required
 							type="number"
-							value={closingDay}
 						/>
-					</div>
-					<div>
-						<Label htmlFor="payment-due-day">Vencimento</Label>
+						<FieldError errors={[form.formState.errors.closingDay]} />
+					</Field>
+					<Field data-invalid={Boolean(form.formState.errors.dueDay)}>
+						<FieldLabel htmlFor="payment-due-day">Vencimento</FieldLabel>
 						<Input
+							aria-invalid={Boolean(form.formState.errors.dueDay)}
+							{...form.register("dueDay")}
 							id="payment-due-day"
 							max="31"
 							min="1"
-							onChange={(event) => setDueDay(event.target.value)}
 							required
 							type="number"
-							value={dueDay}
 						/>
-					</div>
+						<FieldError errors={[form.formState.errors.dueDay]} />
+					</Field>
 				</div>
 			)}
-			{error && <Notice>{error}</Notice>}
+			{submitError && <Notice>{submitError}</Notice>}
 			<DialogFooter>
-				<Button disabled={saving} type="submit">
-					{saving ? "Salvando…" : "Salvar forma"}
+				<Button disabled={form.formState.isSubmitting} type="submit">
+					{form.formState.isSubmitting ? "Salvando…" : "Salvar forma"}
 				</Button>
 				<Button onClick={onCancel} type="button" variant="outline">
 					Cancelar
@@ -1255,21 +1312,32 @@ function PaymentMethodForm({
 }
 
 function Payments() {
+	const queryClient = useQueryClient();
 	const [tab, setTab] = useState<"methods" | "invoices">("methods");
-	const [refresh, setRefresh] = useState(0);
 	const [editing, setEditing] = useState<PaymentMethodDto | null>(null);
-	const methods = useAsyncData(
-		() => listPaymentMethods({ data: { status: "all" } }),
-		[refresh],
-	);
-	const invoices = useAsyncData(() => listInvoices(), [refresh]);
+	const methods = useQuery({
+		queryKey: [...financeQueryKey, "payment-methods", "all"],
+		queryFn: () => listPaymentMethods({ data: { status: "all" } }),
+	});
+	const invoices = useQuery({
+		queryKey: [...financeQueryKey, "invoices"],
+		queryFn: listInvoices,
+	});
+	const archiveMutation = useMutation({
+		mutationFn: (id: string) => archivePaymentMethod({ data: { id } }),
+		onSuccess: () =>
+			queryClient.invalidateQueries({ queryKey: financeQueryKey }),
+	});
+	const restoreMutation = useMutation({
+		mutationFn: (id: string) => restorePaymentMethod({ data: { id } }),
+		onSuccess: () =>
+			queryClient.invalidateQueries({ queryKey: financeQueryKey }),
+	});
 	async function archive(method: PaymentMethodDto) {
-		await archivePaymentMethod({ data: { id: method.id } });
-		setRefresh((value) => value + 1);
+		await archiveMutation.mutateAsync(method.id);
 	}
 	async function restore(method: PaymentMethodDto) {
-		await restorePaymentMethod({ data: { id: method.id } });
-		setRefresh((value) => value + 1);
+		await restoreMutation.mutateAsync(method.id);
 	}
 	return (
 		<>
@@ -1300,7 +1368,9 @@ function Payments() {
 							onCancel={() => setEditing(null)}
 							onSaved={() => {
 								setEditing(null);
-								setRefresh((value) => value + 1);
+								void queryClient.invalidateQueries({
+									queryKey: financeQueryKey,
+								});
 							}}
 						/>
 					)}
@@ -1317,10 +1387,10 @@ function Payments() {
 				</TabsList>
 			</Tabs>
 			{tab === "methods" &&
-				(methods.loading ? (
+				(methods.isPending ? (
 					<Loading />
 				) : methods.error || !methods.data ? (
-					<Notice>{methods.error ?? "Dados indisponíveis."}</Notice>
+					<Notice>{errorMessage(methods.error)}</Notice>
 				) : (
 					<FinanceCard className="p-5">
 						<ul className="divide-y divide-border">
@@ -1373,10 +1443,10 @@ function Payments() {
 					</FinanceCard>
 				))}
 			{tab === "invoices" &&
-				(invoices.loading ? (
+				(invoices.isPending ? (
 					<Loading />
 				) : invoices.error || !invoices.data ? (
-					<Notice>{invoices.error ?? "Dados indisponíveis."}</Notice>
+					<Notice>{errorMessage(invoices.error)}</Notice>
 				) : (
 					<div className="grid gap-4">
 						{invoices.data.length === 0 ? (
@@ -1428,53 +1498,50 @@ function Payments() {
 	);
 }
 
-function Archive({
-	refreshKey,
-	onView,
-}: {
-	refreshKey: number;
-	onView: (item: TransactionDto) => void;
-}) {
-	const [refresh, setRefresh] = useState(0);
-	const result = useAsyncData(
-		() => listTransactions({ data: { scope: "archived" } }),
-		[refresh, refreshKey],
-	);
+function Archive({ onView }: { onView: (item: TransactionDto) => void }) {
+	const queryClient = useQueryClient();
+	const result = useInfiniteQuery({
+		queryKey: [...financeQueryKey, "transactions", "archived"],
+		initialPageParam: undefined as string | undefined,
+		queryFn: ({ pageParam }) =>
+			listTransactions({
+				data: pageParam
+					? { scope: "archived", cursor: pageParam }
+					: { scope: "archived" },
+			}),
+		getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+	});
+	const restoreMutation = useMutation({
+		mutationFn: (id: string) => restoreTransaction({ data: { id } }),
+		onSuccess: () =>
+			queryClient.invalidateQueries({ queryKey: financeQueryKey }),
+	});
 	async function restore(item: TransactionDto) {
-		await restoreTransaction({ data: { id: item.id } });
-		setRefresh((value) => value + 1);
+		await restoreMutation.mutateAsync(item.id);
 	}
-	async function loadMore() {
-		if (!result.data?.nextCursor) return;
-		const next = await listTransactions({
-			data: { scope: "archived", cursor: result.data.nextCursor },
-		});
-		result.setData({
-			items: [...result.data.items, ...next.items],
-			nextCursor: next.nextCursor,
-		});
-	}
+	const transactions = result.data?.pages.flatMap((page) => page.items) ?? [];
 	return (
 		<>
 			<PageTitle eyebrow="arquivo" title="Lançamentos arquivados" />
-			{result.loading ? (
+			{result.isPending ? (
 				<Loading />
 			) : result.error || !result.data ? (
-				<Notice>{result.error ?? "Dados indisponíveis."}</Notice>
+				<Notice>{errorMessage(result.error)}</Notice>
 			) : (
 				<FinanceCard className="p-5">
 					<TransactionRows
-						items={result.data.items}
+						items={transactions}
 						onRestore={restore}
 						onView={onView}
 					/>
-					{result.data.nextCursor && (
+					{result.hasNextPage && (
 						<Button
 							className="mt-4"
-							onClick={() => void loadMore()}
+							disabled={result.isFetchingNextPage}
+							onClick={() => void result.fetchNextPage()}
 							variant="outline"
 						>
-							Carregar mais
+							{result.isFetchingNextPage ? "Carregando…" : "Carregar mais"}
 						</Button>
 					)}
 				</FinanceCard>
@@ -1559,15 +1626,15 @@ function ExpenseCategoryTreeNodeRow({
 	);
 }
 
-function Reports({ refreshKey }: { refreshKey: number }) {
+function Reports() {
 	const [granularity, setGranularity] = useState<"day" | "week" | "month">(
 		"month",
 	);
 	const [anchorDate, setAnchorDate] = useState(saoPauloToday());
-	const result = useAsyncData(
-		() => getReport({ data: { granularity, anchorDate } }),
-		[granularity, anchorDate, refreshKey],
-	);
+	const result = useQuery({
+		queryKey: [...financeQueryKey, "report", granularity, anchorDate],
+		queryFn: () => getReport({ data: { granularity, anchorDate } }),
+	});
 	const report = result.data;
 	const chartColors: Record<string, string> = {
 		emerald: "#10b981",
@@ -1619,10 +1686,10 @@ function Reports({ refreshKey }: { refreshKey: number }) {
 					value={anchorDate}
 				/>
 			</FinanceCard>
-			{result.loading ? (
+			{result.isPending ? (
 				<Loading />
 			) : result.error || !result.data ? (
-				<Notice>{result.error ?? "Dados indisponíveis."}</Notice>
+				<Notice>{errorMessage(result.error)}</Notice>
 			) : (
 				<>
 					<section className="grid gap-4 md:grid-cols-3">
@@ -1717,17 +1784,17 @@ function Reports({ refreshKey }: { refreshKey: number }) {
 }
 
 export function FinancePage({ kind }: { kind: FinancePageKind }) {
+	const queryClient = useQueryClient();
 	const logout = async () => {
 		await authClient.signOut();
 		window.location.assign("/login");
 	};
-	const [refreshKey, setRefreshKey] = useState(0);
 	const [editing, setEditing] = useState<TransactionDto | null>(null);
 	const [viewing, setViewing] = useState<TransactionDto | null>(null);
 	const openNewTransaction = () => setEditing({} as TransactionDto);
 	const handleSaved = () => {
 		setEditing(null);
-		setRefreshKey((value) => value + 1);
+		void queryClient.invalidateQueries({ queryKey: financeQueryKey });
 	};
 	return (
 		<AppShell
@@ -1757,21 +1824,17 @@ export function FinancePage({ kind }: { kind: FinancePageKind }) {
 				transaction={viewing}
 			/>
 			{kind === "dashboard" ? (
-				<Dashboard onView={setViewing} refreshKey={refreshKey} />
+				<Dashboard onView={setViewing} />
 			) : kind === "transactions" ? (
-				<Transactions
-					onEdit={setEditing}
-					onView={setViewing}
-					refreshKey={refreshKey}
-				/>
+				<Transactions onEdit={setEditing} onView={setViewing} />
 			) : kind === "categories" ? (
 				<Categories />
 			) : kind === "payments" ? (
 				<Payments />
 			) : kind === "archive" ? (
-				<Archive onView={setViewing} refreshKey={refreshKey} />
+				<Archive onView={setViewing} />
 			) : (
-				<Reports refreshKey={refreshKey} />
+				<Reports />
 			)}
 		</AppShell>
 	);

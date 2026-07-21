@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
-import { createElement, type ReactNode } from "react";
+import { createElement, type ComponentProps, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
@@ -26,6 +27,17 @@ vi.mock("recharts", () => ({
 
 import { FinancePage } from "#/components/finance/finance-page.tsx";
 
+function renderFinancePage(kind: ComponentProps<typeof FinancePage>["kind"]) {
+	const queryClient = new QueryClient({
+		defaultOptions: { queries: { retry: false } },
+	});
+	return render(
+		<QueryClientProvider client={queryClient}>
+			<FinancePage kind={kind} />
+		</QueryClientProvider>,
+	);
+}
+
 const expenseCategory = { id: "22222222-2222-4222-8222-222222222222", type: "expense", name: "Mercado", colorKey: "orange", iconKey: "Utensils", parentCategoryId: null, level: 1 as const, path: ["22222222-2222-4222-8222-222222222222"], archivedAt: null, createdAt: "2024-01-01T00:00:00.000Z", updatedAt: "2024-01-01T00:00:00.000Z" };
 const incomeCategory = { ...expenseCategory, id: "11111111-1111-4111-8111-111111111111", type: "income", name: "Salário", colorKey: "emerald", iconKey: "BriefcaseBusiness" };
 const transaction = { id: "33333333-3333-4333-8333-333333333333", type: "expense", categoryId: expenseCategory.id, category: expenseCategory, paymentMethodId: null, paymentMethod: null, amountCents: 1200, currency: "BRL" as const, occurredAt: "2024-02-10", description: "antes", invoiceCycleClosingDate: null, invoiceCycleDueDate: null, archivedAt: null, createdAt: "2024-02-10T00:00:00.000Z", updatedAt: "2024-02-10T00:00:00.000Z" };
@@ -43,7 +55,7 @@ describe("FinancePage", () => {
 
 	it("requires an explicit type before allowing a new transaction", async () => {
 		const user = userEvent.setup();
-		render(<FinancePage kind="dashboard" />);
+		renderFinancePage("dashboard");
 		await screen.findByText("Seu mês em movimento");
 		await user.click(screen.getByRole("button", { name: /novo lançamento/i }));
 		await waitFor(() => expect(api.listCategories).toHaveBeenCalled());
@@ -55,10 +67,23 @@ describe("FinancePage", () => {
 		expect(type).toHaveAttribute("aria-invalid", "true");
 	});
 
+	it("uses a mobile drawer and a double-height description textarea", async () => {
+		const user = userEvent.setup();
+		renderFinancePage("dashboard");
+		await screen.findByText("Seu mês em movimento");
+		await user.click(screen.getByRole("button", { name: /novo lançamento/i }));
+
+		const drawer = await screen.findByRole("dialog");
+		expect(drawer).toHaveAttribute("data-slot", "sheet-content");
+		const description = screen.getByLabelText("Descrição opcional");
+		expect(description).toHaveAttribute("data-slot", "textarea");
+		expect(description).toHaveClass("min-h-18");
+	});
+
 	it("preserves the persisted type while editing", async () => {
 		const user = userEvent.setup();
 		api.updateTransaction.mockResolvedValue(transaction);
-		render(<FinancePage kind="transactions" />);
+		renderFinancePage("transactions");
 		await waitFor(() => expect(api.listTransactions).toHaveBeenCalled());
 		await screen.findByText(/antes/);
 		await user.click(screen.getByRole("button", { name: "Editar lançamento" }));
@@ -76,7 +101,7 @@ describe("FinancePage", () => {
 
 	it("opens the shared transaction details dialog from a transaction row", async () => {
 		const user = userEvent.setup();
-		render(<FinancePage kind="transactions" />);
+		renderFinancePage("transactions");
 		await screen.findByText(/antes/);
 		await user.click(
 			screen.getByRole("button", { name: "Ver lançamento Mercado" }),
@@ -94,7 +119,7 @@ describe("FinancePage", () => {
 	});
 
 	it("exposes the real mobile Archive navigation", async () => {
-		render(<FinancePage kind="dashboard" />);
+		renderFinancePage("dashboard");
 		const nav = screen.getByRole("navigation", { name: "Navegação mobile" });
 		const link = within(nav).getByRole("link", { name: "Arquivo" });
 		expect(link).toHaveAttribute("href", "/archive");
@@ -111,13 +136,13 @@ describe("FinancePage", () => {
 			path: [expenseCategory.id, "55555555-5555-4555-8555-555555555555"],
 		};
 		api.listCategories.mockResolvedValue([expenseCategory, child]);
-		render(<FinancePage kind="categories" />);
+		renderFinancePage("categories");
 		expect(await screen.findByText("— Restaurante")).toBeInTheDocument();
 	});
 
 	it("shows each category icon in the shared category selectors", async () => {
 		const user = userEvent.setup();
-		render(<FinancePage kind="transactions" />);
+		renderFinancePage("transactions");
 		await screen.findByText(/antes/);
 		await user.click(screen.getByRole("button", { name: /novo lançamento/i }));
 		const transactionType = document.querySelector("#transaction-type");
@@ -132,7 +157,7 @@ describe("FinancePage", () => {
 
 		await user.keyboard("{Escape}");
 		await user.click(screen.getByRole("button", { name: "Cancelar" }));
-		render(<FinancePage kind="categories" />);
+		renderFinancePage("categories");
 		await user.click(screen.getByRole("button", { name: /nova/i }));
 		await user.click(screen.getByLabelText("Categoria pai (opcional)"));
 		const parentOption = await screen.findByRole("option", {
@@ -160,7 +185,7 @@ describe("FinancePage", () => {
 			incomeByPaymentMethod: [],
 		});
 		const user = userEvent.setup();
-		render(<FinancePage kind="reports" />);
+		renderFinancePage("reports");
 		await screen.findByText("Mercado");
 		expect(screen.getByText("Restaurante")).toBeInTheDocument();
 		expect(screen.getByText(/Direto: R\$ 10,00 · Agregado: R\$ 30,00/)).toBeInTheDocument();

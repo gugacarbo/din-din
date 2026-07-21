@@ -1,4 +1,5 @@
 import { CircleAlert, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
 	type ComponentProps,
 	useEffect,
@@ -6,7 +7,9 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { Controller, useForm } from "react-hook-form";
 import { Cell, Pie, PieChart } from "recharts";
+import { z } from "zod";
 
 import { Alert, AlertDescription } from "#/components/ui/alert.tsx";
 import {
@@ -35,8 +38,12 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "#/components/ui/dialog.tsx";
+import {
+	Field,
+	FieldError,
+	FieldLabel,
+} from "#/components/ui/field.tsx";
 import { Input } from "#/components/ui/input.tsx";
-import { Label } from "#/components/ui/label.tsx";
 import {
 	Select,
 	SelectContent,
@@ -45,6 +52,7 @@ import {
 	SelectValue,
 } from "#/components/ui/select.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import { Switch } from "#/components/ui/switch.tsx";
 import { Tabs, TabsList, TabsTrigger } from "#/components/ui/tabs.tsx";
 import { authClient } from "#/lib/auth-client.ts";
 import {
@@ -94,6 +102,80 @@ type FinancePageKind =
 	| "categories"
 	| "payments"
 	| "archive";
+
+const transactionFormSchema = z.object({
+	paymentMethodId: z.string(),
+	type: z.enum(["income", "expense"], {
+		error: "Escolha o tipo do lançamento antes de salvar.",
+	}),
+	categoryId: z.string().min(1, "Escolha uma categoria."),
+	amount: z
+		.string()
+		.refine(
+			(value) => {
+				const amountCents = Math.round(Number(value.replace(",", ".")) * 100);
+				return Number.isSafeInteger(amountCents) && amountCents > 0;
+			},
+			"Informe um valor maior que zero.",
+		),
+	occurredAt: z.string().min(1, "Informe a data do lançamento."),
+	description: z.string().max(280, "Use no máximo 280 caracteres."),
+});
+type TransactionFormValues = z.infer<typeof transactionFormSchema>;
+
+const categoryFormSchema = z.object({
+	parentCategoryId: z.string(),
+	type: z.enum(["income", "expense"]),
+	name: z
+		.string()
+		.trim()
+		.min(1, "Informe o nome da categoria.")
+		.max(40, "Use no máximo 40 caracteres."),
+	colorKey: z.string().min(1, "Escolha uma cor."),
+	iconKey: z.string().min(1, "Escolha um ícone."),
+});
+type CategoryFormValues = z.infer<typeof categoryFormSchema>;
+
+const paymentMethodKinds = [
+	"credit_card",
+	"debit_card",
+	"pix",
+	"cash",
+	"bank_transfer",
+	"boleto",
+	"other",
+] as const;
+const paymentMethodFormSchema = z
+	.object({
+		name: z
+			.string()
+			.trim()
+			.min(1, "Informe o nome da forma de pagamento.")
+			.max(80, "Use no máximo 80 caracteres."),
+		kind: z.enum(paymentMethodKinds),
+		colorKey: z.string().min(1, "Escolha uma cor."),
+		iconKey: z.string().min(1, "Escolha um ícone."),
+		invoiceControl: z.boolean(),
+		closingDay: z.string(),
+		dueDay: z.string(),
+	})
+	.superRefine((values, context) => {
+		if (values.kind !== "credit_card" || !values.invoiceControl) return;
+		for (const [field, label] of [
+			["closingDay", "fechamento"],
+			["dueDay", "vencimento"],
+		] as const) {
+			const day = Number(values[field]);
+			if (!Number.isInteger(day) || day < 1 || day > 31) {
+				context.addIssue({
+					code: "custom",
+					message: `Informe um dia de ${label} entre 1 e 31.`,
+					path: [field],
+				});
+			}
+		}
+	});
+type PaymentMethodFormValues = z.infer<typeof paymentMethodFormSchema>;
 
 const money = new Intl.NumberFormat("pt-BR", {
 	style: "currency",
@@ -396,28 +478,27 @@ function TransactionForm({
 	onSaved: () => void;
 	onCancel?: () => void;
 }) {
-	const [type, setType] = useState<Kind | undefined>(initial?.type);
+	const form = useForm<TransactionFormValues>({
+		defaultValues: {
+			paymentMethodId: initial?.paymentMethodId ?? "",
+			type: initial?.type,
+			categoryId: initial?.categoryId ?? "",
+			amount: initial ? String(initial.amountCents / 100) : "",
+			occurredAt: initial?.occurredAt ?? saoPauloToday(),
+			description: initial?.description ?? "",
+		},
+		resolver: zodResolver(transactionFormSchema),
+	});
+	const type = form.watch("type");
 	const categoriesResult = useAsyncData(
 		() => listCategories({ data: { status: "active" } }),
 		[],
-	);
-	const [categoryId, setCategoryId] = useState(initial?.categoryId ?? "");
-	const [paymentMethodId, setPaymentMethodId] = useState(
-		initial?.paymentMethodId ?? "",
 	);
 	const paymentMethodsResult = useAsyncData(
 		() => listPaymentMethods({ data: { status: "all" } }),
 		[],
 	);
-	const [amount, setAmount] = useState(
-		initial ? String(initial.amountCents / 100) : "",
-	);
-	const [occurredAt, setOccurredAt] = useState(
-		initial?.occurredAt ?? saoPauloToday(),
-	);
-	const [description, setDescription] = useState(initial?.description ?? "");
-	const [error, setError] = useState<string | null>(null);
-	const [saving, setSaving] = useState(false);
+	const [submitError, setSubmitError] = useState<string | null>(null);
 	const choices = useMemo(
 		() =>
 			categoriesResult.data?.filter((category) => category.type === type) ?? [],
@@ -431,132 +512,146 @@ function TransactionForm({
 		);
 	}, [paymentMethodsResult.data, initial?.paymentMethodId]);
 	useEffect(() => {
-		if (!choices.some((category) => category.id === categoryId))
-			setCategoryId(choices[0]?.id ?? "");
-	}, [choices, categoryId]);
-	async function submit(event: React.FormEvent) {
-		event.preventDefault();
-		if (!type) {
-			setError("Escolha o tipo do lançamento antes de salvar.");
-			return;
-		}
-		const amountCents = Math.round(Number(amount.replace(",", ".")) * 100);
-		if (!categoryId || !Number.isSafeInteger(amountCents) || amountCents <= 0) {
-			setError("Informe uma categoria e um valor maior que zero.");
-			return;
-		}
-		setSaving(true);
-		setError(null);
+		if (!choices.some((category) => category.id === form.getValues("categoryId")))
+			form.setValue("categoryId", choices[0]?.id ?? "", {
+				shouldValidate: form.formState.isSubmitted,
+			});
+	}, [choices, form]);
+	async function submit(values: TransactionFormValues) {
+		setSubmitError(null);
 		try {
 			const data = {
-				type,
-				categoryId,
-				amountCents,
-				occurredAt,
-				description: description || null,
-				paymentMethodId: paymentMethodId || null,
+				type: values.type,
+				categoryId: values.categoryId,
+				amountCents: Math.round(
+					Number(values.amount.replace(",", ".")) * 100,
+				),
+				occurredAt: values.occurredAt,
+				description: values.description || null,
+				paymentMethodId: values.paymentMethodId || null,
 			};
 			if (initial)
 				await updateTransaction({ data: { ...data, id: initial.id } });
 			else await createTransaction({ data });
 			onSaved();
 		} catch (cause) {
-			setError(
+			setSubmitError(
 				cause instanceof Error ? cause.message : "Não foi possível salvar.",
 			);
-		} finally {
-			setSaving(false);
 		}
 	}
 	return (
-		<form className="grid gap-4" noValidate onSubmit={submit}>
-			<div>
-				<Label htmlFor="transaction-payment-method">
+		<form className="grid gap-4" noValidate onSubmit={form.handleSubmit(submit)}>
+			<Controller
+				control={form.control}
+				name="paymentMethodId"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="transaction-payment-method">
 					Forma de pagamento (opcional)
-				</Label>
-				<Select
-					onValueChange={(value) =>
-						setPaymentMethodId(value === "none" ? "" : value)
-					}
-					value={paymentMethodId || "none"}
-				>
-					<SelectTrigger className="w-full" id="transaction-payment-method">
-						<SelectValue placeholder="Não informado" />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="none">Não informado</SelectItem>
-						{paymentChoices.map((method: PaymentMethodDto) => (
-							<SelectItem key={method.id} value={method.id}>
-								{method.name}
-								{method.archivedAt ? " (arquivada)" : ""}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
-			</div>
-			<div>
-				<Label htmlFor="transaction-type">Tipo</Label>
-				<KindSelect
-					aria-describedby={
-						error && !type ? "transaction-type-error" : undefined
-					}
-					aria-invalid={!type}
-					id="transaction-type"
-					onValueChange={setType}
-					value={type}
-				/>
-			</div>
-			<div>
-				<Label htmlFor="transaction-category">Categoria</Label>
-				<CategorySelect
-					categories={choices}
-					disabled={!type}
-					id="transaction-category"
-					onValueChange={setCategoryId}
-					value={categoryId}
-				/>
-			</div>
-			<div>
-				<Label htmlFor="transaction-amount">Valor (R$)</Label>
+						</FieldLabel>
+						<Select
+							onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
+							value={field.value || "none"}
+						>
+							<SelectTrigger
+								aria-invalid={fieldState.invalid}
+								className="w-full"
+								id="transaction-payment-method"
+							>
+								<SelectValue placeholder="Não informado" />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="none">Não informado</SelectItem>
+								{paymentChoices.map((method: PaymentMethodDto) => (
+									<SelectItem key={method.id} value={method.id}>
+										{method.name}
+										{method.archivedAt ? " (arquivada)" : ""}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
+			<Controller
+				control={form.control}
+				name="type"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="transaction-type">Tipo</FieldLabel>
+						<KindSelect
+							aria-invalid={fieldState.invalid}
+							id="transaction-type"
+							onValueChange={field.onChange}
+							value={field.value as Kind | undefined}
+						/>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
+			<Controller
+				control={form.control}
+				name="categoryId"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="transaction-category">Categoria</FieldLabel>
+						<CategorySelect
+							aria-invalid={fieldState.invalid}
+							categories={choices}
+							disabled={!type}
+							id="transaction-category"
+							onValueChange={field.onChange}
+							value={field.value}
+						/>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
+			<Field data-invalid={Boolean(form.formState.errors.amount)}>
+				<FieldLabel htmlFor="transaction-amount">Valor (R$)</FieldLabel>
 				<Input
+					aria-invalid={Boolean(form.formState.errors.amount)}
+					{...form.register("amount")}
 					id="transaction-amount"
 					inputMode="decimal"
-					onChange={(event) => setAmount(event.target.value)}
 					required
 					step="0.01"
 					type="number"
-					value={amount}
 				/>
-			</div>
-			<div>
-				<Label htmlFor="transaction-date">Data</Label>
+				<FieldError errors={[form.formState.errors.amount]} />
+			</Field>
+			<Field data-invalid={Boolean(form.formState.errors.occurredAt)}>
+				<FieldLabel htmlFor="transaction-date">Data</FieldLabel>
 				<Input
+					aria-invalid={Boolean(form.formState.errors.occurredAt)}
+					{...form.register("occurredAt")}
 					id="transaction-date"
-					onChange={(event) => setOccurredAt(event.target.value)}
 					required
 					type="date"
-					value={occurredAt}
 				/>
-			</div>
-			<div>
-				<Label htmlFor="transaction-description">Descrição opcional</Label>
+				<FieldError errors={[form.formState.errors.occurredAt]} />
+			</Field>
+			<Field data-invalid={Boolean(form.formState.errors.description)}>
+				<FieldLabel htmlFor="transaction-description">
+					Descrição opcional
+				</FieldLabel>
 				<Input
+					aria-invalid={Boolean(form.formState.errors.description)}
+					{...form.register("description")}
 					id="transaction-description"
 					maxLength={280}
-					onChange={(event) => setDescription(event.target.value)}
-					value={description}
 				/>
-			</div>
-			{error && (
-				<Notice>
-					<span id={!type ? "transaction-type-error" : undefined} role="alert">
-						{error}
-					</span>
-				</Notice>
-			)}
+				<FieldError errors={[form.formState.errors.description]} />
+			</Field>
+			{submitError && <Notice>{submitError}</Notice>}
 			<DialogFooter className="flex-row justify-end">
-				<Button disabled={saving || categoriesResult.loading} type="submit">
-					{saving
+				<Button
+					disabled={form.formState.isSubmitting || categoriesResult.loading}
+					type="submit"
+				>
+					{form.formState.isSubmitting
 						? "Salvando…"
 						: initial
 							? "Salvar alterações"
@@ -691,18 +786,17 @@ function CategoryForm({
 	onSaved: () => void;
 	onCancel?: () => void;
 }) {
-	const [type, setType] = useState<Kind>(initial?.type ?? "expense");
-	const [name, setName] = useState(initial?.name ?? "");
-	const [colorKey, setColorKey] = useState<(typeof CATEGORY_COLORS)[number]>(
-		(initial?.colorKey as (typeof CATEGORY_COLORS)[number]) ??
-			CATEGORY_COLORS[0],
-	);
-	const [iconKey, setIconKey] = useState<(typeof CATEGORY_ICONS)[number]>(
-		(initial?.iconKey as (typeof CATEGORY_ICONS)[number]) ?? CATEGORY_ICONS[0],
-	);
-	const [parentCategoryId, setParentCategoryId] = useState(
-		initial?.parentCategoryId ?? "",
-	);
+	const form = useForm<CategoryFormValues>({
+		defaultValues: {
+			parentCategoryId: initial?.parentCategoryId ?? "root",
+			type: initial?.type ?? "expense",
+			name: initial?.name ?? "",
+			colorKey: initial?.colorKey ?? CATEGORY_COLORS[0],
+			iconKey: initial?.iconKey ?? CATEGORY_ICONS[0],
+		},
+		resolver: zodResolver(categoryFormSchema),
+	});
+	const type = form.watch("type");
 	const categoriesResult = useAsyncData(
 		() => listCategories({ data: { status: "active" } }),
 		[],
@@ -717,96 +811,128 @@ function CategoryForm({
 			),
 		[categoriesResult.data, type, initial?.id],
 	);
-	const [error, setError] = useState<string | null>(null);
-	const [saving, setSaving] = useState(false);
-	async function submit(event: React.FormEvent) {
-		event.preventDefault();
-		setSaving(true);
-		setError(null);
+	const [submitError, setSubmitError] = useState<string | null>(null);
+	async function submit(values: CategoryFormValues) {
+		setSubmitError(null);
 		try {
 			if (initial)
 				await updateCategory({
 					data: {
 						id: initial.id,
-						name,
-						colorKey,
-						iconKey,
-						parentCategoryId: parentCategoryId || null,
+						name: values.name,
+						colorKey: values.colorKey,
+						iconKey: values.iconKey,
+						parentCategoryId:
+							values.parentCategoryId === "root"
+								? null
+								: values.parentCategoryId,
 					},
 				});
 			else
 				await createCategory({
 					data: {
-						type,
-						name,
-						colorKey,
-						iconKey,
-						parentCategoryId: parentCategoryId || null,
+						type: values.type,
+						name: values.name,
+						colorKey: values.colorKey,
+						iconKey: values.iconKey,
+						parentCategoryId:
+							values.parentCategoryId === "root"
+								? null
+								: values.parentCategoryId,
 					},
 				});
 			onSaved();
 		} catch (cause) {
-			setError(
+			setSubmitError(
 				cause instanceof Error ? cause.message : "Não foi possível salvar.",
 			);
-		} finally {
-			setSaving(false);
 		}
 	}
 	return (
-		<form className="grid gap-4" onSubmit={submit}>
-			<div>
-				<Label htmlFor="category-parent">Categoria pai (opcional)</Label>
-				<CategorySelect
-					categories={parentChoices}
-					id="category-parent"
-					onValueChange={(value) =>
-						setParentCategoryId(value === "root" ? "" : value)
-					}
-					placeholder="Categoria raiz"
-					rootOption={{ label: "Categoria raiz", value: "root" }}
-					value={parentCategoryId || "root"}
-				/>
-			</div>
-			<div>
-				<Label htmlFor="category-type">Tipo</Label>
-				<KindSelect
-					disabled={Boolean(initial)}
-					id="category-type"
-					onValueChange={setType}
-					value={type}
-				/>
-			</div>
-			<div>
-				<Label htmlFor="category-name">Nome</Label>
+		<form className="grid gap-4" noValidate onSubmit={form.handleSubmit(submit)}>
+			<Controller
+				control={form.control}
+				name="parentCategoryId"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="category-parent">
+							Categoria pai (opcional)
+						</FieldLabel>
+						<CategorySelect
+							aria-invalid={fieldState.invalid}
+							categories={parentChoices}
+							id="category-parent"
+							onValueChange={field.onChange}
+							placeholder="Categoria raiz"
+							rootOption={{ label: "Categoria raiz", value: "root" }}
+							value={field.value}
+						/>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
+			<Controller
+				control={form.control}
+				name="type"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="category-type">Tipo</FieldLabel>
+						<KindSelect
+							aria-invalid={fieldState.invalid}
+							disabled={Boolean(initial)}
+							id="category-type"
+							onValueChange={field.onChange}
+							value={field.value}
+						/>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
+			<Field data-invalid={Boolean(form.formState.errors.name)}>
+				<FieldLabel htmlFor="category-name">Nome</FieldLabel>
 				<Input
+					aria-invalid={Boolean(form.formState.errors.name)}
+					{...form.register("name")}
 					id="category-name"
 					maxLength={40}
-					onChange={(event) => setName(event.target.value)}
 					required
-					value={name}
 				/>
-			</div>
-			<div>
-				<Label htmlFor="category-color">Cor</Label>
-				<ColorSelect
-					id="category-color"
-					onValueChange={(value) => setColorKey(value as typeof colorKey)}
-					value={colorKey}
-				/>
-			</div>
-			<div>
-				<Label htmlFor="category-icon">Ícone</Label>
-				<IconSelect
-					id="category-icon"
-					onValueChange={(value) => setIconKey(value as typeof iconKey)}
-					value={iconKey}
-				/>
-			</div>
-			{error && <Notice>{error}</Notice>}
+				<FieldError errors={[form.formState.errors.name]} />
+			</Field>
+			<Controller
+				control={form.control}
+				name="colorKey"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="category-color">Cor</FieldLabel>
+						<ColorSelect
+							id="category-color"
+							onValueChange={field.onChange}
+							value={field.value}
+						/>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
+			<Controller
+				control={form.control}
+				name="iconKey"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="category-icon">Ícone</FieldLabel>
+						<IconSelect
+							id="category-icon"
+							onValueChange={field.onChange}
+							value={field.value}
+						/>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
+			{submitError && <Notice>{submitError}</Notice>}
 			<DialogFooter>
-				<Button disabled={saving} type="submit">
-					{saving
+				<Button disabled={form.formState.isSubmitting} type="submit">
+					{form.formState.isSubmitting
 						? "Salvando…"
 						: initial
 							? "Salvar alterações"

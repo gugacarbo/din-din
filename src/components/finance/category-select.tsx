@@ -24,6 +24,8 @@ export function CategorySelect({
 	disabled,
 	placeholder = "Selecione uma categoria",
 	rootOption,
+	"aria-describedby": ariaDescribedBy,
+	"aria-invalid": ariaInvalid,
 }: {
 	categories: CategoryDto[];
 	value: string;
@@ -33,10 +35,17 @@ export function CategorySelect({
 	disabled?: boolean;
 	placeholder?: string;
 	rootOption?: RootOption;
+	"aria-describedby"?: string;
+	"aria-invalid"?: boolean;
 }) {
 	return (
 		<Select disabled={disabled} onValueChange={onValueChange} value={value}>
-			<SelectTrigger className={cn("w-full", className)} id={id}>
+			<SelectTrigger
+				aria-describedby={ariaDescribedBy}
+				aria-invalid={ariaInvalid}
+				className={cn("w-full", className)}
+				id={id}
+			>
 				<SelectValue placeholder={placeholder} />
 			</SelectTrigger>
 			<SelectContent>

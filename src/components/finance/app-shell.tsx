@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
 import { PwaInstallButton } from "#/components/pwa-install-button.tsx";
+import { SupportDialog } from "#/components/support-dialog.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
 	DropdownMenu,
@@ -300,6 +301,7 @@ export function AppShell({
 								<PwaInstallButton />
 							</div>
 							<div className="flex items-center gap-2">
+								<SupportDialog offline={offline} />
 								<Button onClick={onNewTransaction} size="sm">
 									<Plus />{" "}
 									<span className="hidden sm:inline">Novo lançamento</span>

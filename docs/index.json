@@ -1,0 +1,18 @@
+[
+  {
+    "id": "SPEC-0010",
+    "path": "docs/specs/0010-support-reports.md",
+    "layer": "specs",
+    "title": "Relatos de suporte privados com triagem pública sanitizada",
+    "status": "implemented",
+    "builds-on": [],
+    "superseded-by": null,
+    "implemented-by": [
+      "src/components/support-dialog.tsx",
+      "src/lib/support-diagnostics.ts",
+      "src/server/support-service.ts",
+      "src/server/support-queue.ts",
+      "drizzle/0004_support_reports.sql"
+    ]
+  }
+]

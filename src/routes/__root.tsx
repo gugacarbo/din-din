@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { PwaRegistration } from "#/components/pwa-registration.tsx";
+import { installSupportDiagnostics } from "#/lib/support-diagnostics.ts";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import appCss from "../styles.css?url";
 
@@ -96,6 +97,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			</head>
 			<body>
 				<ScriptOnce>{themeScript}</ScriptOnce>
+				<SupportDiagnosticsBootstrap />
 				{children}
 				<PwaRegistration />
 				<TanStackDevtools
@@ -114,4 +116,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			</body>
 		</html>
 	);
+}
+
+function SupportDiagnosticsBootstrap() {
+	if (typeof window !== "undefined") installSupportDiagnostics();
+	return null;
 }

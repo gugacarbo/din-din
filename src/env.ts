@@ -14,12 +14,18 @@ export const env = createEnv({
 		BETTER_AUTH_URL: z.url(),
 		GOOGLE_CLIENT_ID: z.string().min(1),
 		GOOGLE_CLIENT_SECRET: z.string().min(1),
+		GITHUB_APP_ID: z.string().min(1),
+		GITHUB_APP_INSTALLATION_ID: z.string().min(1),
+		GITHUB_APP_PRIVATE_KEY: z.string().min(1),
 	},
 	runtimeEnvStrict: {
 		BETTER_AUTH_SECRET: runtimeEnv.BETTER_AUTH_SECRET,
 		BETTER_AUTH_URL: runtimeEnv.BETTER_AUTH_URL,
 		GOOGLE_CLIENT_ID: runtimeEnv.GOOGLE_CLIENT_ID,
 		GOOGLE_CLIENT_SECRET: runtimeEnv.GOOGLE_CLIENT_SECRET,
+		GITHUB_APP_ID: runtimeEnv.GITHUB_APP_ID,
+		GITHUB_APP_INSTALLATION_ID: runtimeEnv.GITHUB_APP_INSTALLATION_ID,
+		GITHUB_APP_PRIVATE_KEY: runtimeEnv.GITHUB_APP_PRIVATE_KEY,
 	},
 	emptyStringAsUndefined: true,
 });

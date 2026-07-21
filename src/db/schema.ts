@@ -86,6 +86,95 @@ export const userBootstrap = sqliteTable("user_bootstrap", {
 	seededAt: integer("seeded_at", { mode: "number" }).notNull(),
 });
 
+/** O pai deliberadamente não guarda identidade nem conteúdo privado. */
+export const supportReports = sqliteTable(
+	"support_reports",
+	{
+		reportId: text("report_id").primaryKey(),
+		category: text("category", {
+			enum: ["problem", "question", "suggestion"],
+		}).notNull(),
+		status: text("status", {
+			enum: [
+				"pending",
+				"queued",
+				"processing",
+				"published",
+				"manual_review",
+				"failed",
+			],
+		})
+			.notNull()
+			.default("pending"),
+		attempts: integer("attempts").notNull().default(0),
+		issueNumber: integer("issue_number"),
+		issueUrl: text("issue_url"),
+		safeReason: text("safe_reason"),
+		createdAt: integer("created_at", { mode: "number" }).notNull(),
+		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+	},
+	(table) => [
+		index("support_reports_status_index").on(table.status, table.createdAt),
+	],
+);
+
+/** Esta linha inteira é apagada após a retenção; não se deve nulificar campos. */
+export const supportReportPayloads = sqliteTable(
+	"support_report_payloads",
+	{
+		reportId: text("report_id")
+			.primaryKey()
+			.references(() => supportReports.reportId, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		clientRequestId: text("client_request_id").notNull(),
+		fingerprint: text("fingerprint").notNull(),
+		message: text("message").notNull(),
+		diagnostics: text("diagnostics").notNull(),
+		metadata: text("metadata").notNull(),
+		screenshotKey: text("screenshot_key"),
+		receivedAt: integer("received_at", { mode: "number" }).notNull(),
+		expiresAt: integer("expires_at", { mode: "number" }).notNull(),
+	},
+	(table) => [
+		uniqueIndex("support_payload_user_request_unique").on(
+			table.userId,
+			table.clientRequestId,
+		),
+		index("support_payload_user_received_index").on(
+			table.userId,
+			table.receivedAt,
+		),
+		index("support_payload_expiry_index").on(table.expiresAt),
+	],
+);
+
+export const supportReviewTasks = sqliteTable(
+	"support_review_tasks",
+	{
+		eventId: text("event_id").primaryKey(),
+		reportId: text("report_id")
+			.notNull()
+			.references(() => supportReports.reportId, { onDelete: "cascade" }),
+		kind: text("kind", {
+			enum: ["manual_review", "transient_failure"],
+		}).notNull(),
+		reason: text("reason").notNull(),
+		status: text("status", { enum: ["pending", "sent", "observed"] })
+			.notNull()
+			.default("pending"),
+		createdAt: integer("created_at", { mode: "number" }).notNull(),
+		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+	},
+	(table) => [
+		index("support_review_tasks_status_index").on(
+			table.status,
+			table.createdAt,
+		),
+	],
+);
+
 export const categories = sqliteTable(
 	"categories",
 	{

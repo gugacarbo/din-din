@@ -63,6 +63,9 @@ placeholder `YOUR_DATABASE_ID`.
 
 - `transactions` possui FK composta para `categories` que garante usuário e tipo
   compatíveis; não contorne essa regra com SQL manual.
+- Workers AI não é simulado pelo Miniflare. Os testes Workers usam
+  `test/fixtures/wrangler-workers-test.jsonc`, sem binding `AI`, e doubles para
+  fluxos de suporte; não aponte a suite para recursos remotos.
 
 ## Mapa de contexto
 

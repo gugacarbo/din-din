@@ -26,7 +26,8 @@ export default defineConfig(async () => {
 		plugins: [
 			cloudflareTest({
 				main: "./test/workers/worker.ts",
-				wrangler: { configPath: "wrangler.jsonc" },
+				remoteBindings: false,
+				wrangler: { configPath: "test/fixtures/wrangler-workers-test.jsonc" },
 				miniflare: {
 					bindings: {
 						TEST_MIGRATIONS: migrations,
@@ -35,6 +36,9 @@ export default defineConfig(async () => {
 						BETTER_AUTH_URL: "http://localhost:3000",
 						GOOGLE_CLIENT_ID: "test-google-client-id",
 						GOOGLE_CLIENT_SECRET: "test-google-client-secret",
+						GITHUB_APP_ID: "123",
+						GITHUB_APP_INSTALLATION_ID: "456",
+						GITHUB_APP_PRIVATE_KEY: "test-private-key",
 					},
 				},
 			}),

@@ -7,3 +7,7 @@ BETTER_AUTH_URL=http://localhost:3000
 BETTER_AUTH_SECRET=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+GITHUB_APP_ID=
+GITHUB_APP_INSTALLATION_ID=
+# PEM em uma linha, com \n literais em vez de quebras de linha.
+GITHUB_APP_PRIVATE_KEY=

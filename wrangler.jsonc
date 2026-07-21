@@ -5,7 +5,7 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
-	"main": "@tanstack/react-start/server-entry",
+	"main": "src/worker.ts",
 	"workers_dev": false,
 	"routes": [
 		{
@@ -18,6 +18,9 @@
 "GOOGLE_CLIENT_ID",
 "GOOGLE_CLIENT_SECRET",
 "BETTER_AUTH_SECRET",
+"GITHUB_APP_ID",
+"GITHUB_APP_INSTALLATION_ID",
+"GITHUB_APP_PRIVATE_KEY",
 		]
 	},
 	"vars": {
@@ -31,6 +34,30 @@
 			"migrations_dir": "drizzle"
 		}
 	],
+	"r2_buckets": [
+		{
+			"binding": "SUPPORT_SCREENSHOTS",
+			"bucket_name": "din-din-support-screenshots"
+		}
+	],
+	"queues": {
+		"producers": [
+			{ "binding": "SUPPORT_REPORTS_QUEUE", "queue": "din-din-support-reports" },
+			{ "binding": "SUPPORT_REPORTS_DLQ", "queue": "din-din-support-reports-dlq" }
+		],
+		"consumers": [
+			{
+				"queue": "din-din-support-reports",
+				"max_batch_size": 10,
+				"max_batch_timeout": 30,
+				"max_retries": 3,
+				"dead_letter_queue": "din-din-support-reports-dlq"
+			},
+			{ "queue": "din-din-support-reports-dlq", "max_batch_size": 10, "max_batch_timeout": 30, "max_retries": 3 }
+		]
+	},
+	"ai": { "binding": "AI", "remote": false },
+	"triggers": { "crons": ["17 3 * * *"] },
 	"observability": {
     "logs": {
       "enabled": true,

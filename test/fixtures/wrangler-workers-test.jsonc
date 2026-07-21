@@ -1,0 +1,10 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "din-din-workers-test",
+  "main": "../workers/worker.ts",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "din-din-workers-test", "database_id": "local", "migrations_dir": "../../drizzle" }
+  ]
+}

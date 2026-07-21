@@ -1,19 +1,16 @@
 import { Laptop, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { Button } from "#/components/ui/button.tsx";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuLabel,
-	DropdownMenuRadioGroup,
-	DropdownMenuRadioItem,
-	DropdownMenuTrigger,
-} from "#/components/ui/dropdown-menu.tsx";
+import { DropdownMenuItem } from "#/components/ui/dropdown-menu.tsx";
 
 type Theme = "light" | "dark" | "system";
 
 const storageKey = "din-din-theme";
+const themeLabels = {
+	light: "Claro",
+	dark: "Escuro",
+	system: "Sistema",
+} as const;
 
 function resolveTheme(theme: Theme) {
 	return theme === "system"
@@ -30,7 +27,7 @@ function applyTheme(theme: Theme) {
 	);
 }
 
-export function ThemeToggle() {
+function useThemeSelection() {
 	const [theme, setTheme] = useState<Theme>("system");
 
 	useEffect(() => {
@@ -57,36 +54,18 @@ export function ThemeToggle() {
 		applyTheme(nextTheme);
 	}
 
+	return { theme, updateTheme };
+}
+
+export function ThemeToggle() {
+	const { theme, updateTheme } = useThemeSelection();
 	const Icon = theme === "light" ? Sun : theme === "dark" ? Moon : Laptop;
+	const nextTheme =
+		theme === "system" ? "light" : theme === "light" ? "dark" : "system";
+
 	return (
-		<DropdownMenu>
-			<DropdownMenuTrigger asChild>
-				<Button
-					aria-label={`Tema atual: ${theme}. Escolher tema.`}
-					size="icon-sm"
-					title={`Tema: ${theme}`}
-					variant="ghost"
-				>
-					<Icon />
-				</Button>
-			</DropdownMenuTrigger>
-			<DropdownMenuContent align="end">
-				<DropdownMenuLabel>Tema</DropdownMenuLabel>
-				<DropdownMenuRadioGroup
-					onValueChange={(value) => updateTheme(value as Theme)}
-					value={theme}
-				>
-					<DropdownMenuRadioItem value="light">
-						<Sun /> Claro
-					</DropdownMenuRadioItem>
-					<DropdownMenuRadioItem value="dark">
-						<Moon /> Escuro
-					</DropdownMenuRadioItem>
-					<DropdownMenuRadioItem value="system">
-						<Laptop /> Sistema
-					</DropdownMenuRadioItem>
-				</DropdownMenuRadioGroup>
-			</DropdownMenuContent>
-		</DropdownMenu>
+		<DropdownMenuItem onSelect={() => updateTheme(nextTheme)}>
+			<Icon /> Tema: {themeLabels[theme]}
+		</DropdownMenuItem>
 	);
 }

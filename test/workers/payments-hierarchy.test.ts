@@ -9,6 +9,29 @@ function serviceFor(cookieHeader: string) {
 }
 
 describe("payment methods and category hierarchy", () => {
+	it("accepts animal icons for categories and payment methods", async () => {
+		const { a } = await createAuthedPair();
+		const service = serviceFor(a.cookieHeader);
+		const suffix = crypto.randomUUID().slice(0, 8);
+
+		const category = await service.createCategory({
+			type: "expense",
+			name: `Pets ${suffix}`,
+			colorKey: "orange",
+			iconKey: "CatSitting",
+		});
+		const paymentMethod = await service.createPaymentMethod({
+			name: `Pet card ${suffix}`,
+			kind: "other",
+			colorKey: "orange",
+			iconKey: "Fish",
+			invoiceControl: false,
+		});
+
+		expect(category.iconKey).toBe("CatSitting");
+		expect(paymentMethod.iconKey).toBe("Fish");
+	});
+
 	it("seeds the four standard payment methods once per user", async () => {
 		const { a } = await createAuthedPair();
 		const service = serviceFor(a.cookieHeader);

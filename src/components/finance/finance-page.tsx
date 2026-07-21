@@ -5,12 +5,23 @@ import {
 	useQuery,
 	useQueryClient,
 } from "@tanstack/react-query";
-import { CircleAlert, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import {
+	ArchiveRestore,
+	ArrowLeft,
+	CircleAlert,
+	Pencil,
+	Plus,
+	RotateCcw,
+	Settings2,
+	Trash2,
+} from "lucide-react";
 import { type ComponentProps, useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { Cell, Pie, PieChart } from "recharts";
 import { z } from "zod";
 
+import { DrawerAwareForm } from "#/components/drawer-aware-form.tsx";
 import { ResizableDrawer } from "#/components/resizable-drawer.tsx";
 import { Alert, AlertDescription } from "#/components/ui/alert.tsx";
 import {
@@ -35,7 +46,6 @@ import {
 	Dialog,
 	DialogContent,
 	DialogDescription,
-	DialogFooter,
 	DialogHeader,
 	DialogTitle,
 } from "#/components/ui/dialog.tsx";
@@ -53,6 +63,13 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "#/components/ui/select.tsx";
+import {
+	Sheet,
+	SheetContent,
+	SheetDescription,
+	SheetHeader,
+	SheetTitle,
+} from "#/components/ui/sheet.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
 import { Tabs, TabsList, TabsTrigger } from "#/components/ui/tabs.tsx";
@@ -72,6 +89,7 @@ import {
 	invoicesQueryOptions,
 	paymentMethodsQueryOptions,
 	reportQueryOptions,
+	sessionQueryOptions,
 	transactionsQueryOptions,
 } from "#/lib/finance-query-options.ts";
 import { clearNavigationCache } from "#/lib/pwa.ts";
@@ -108,8 +126,10 @@ type FinancePageKind =
 	| "dashboard"
 	| "transactions"
 	| "reports"
+	| "settings"
 	| "categories"
 	| "payments"
+	| "profile"
 	| "archive";
 
 const transactionFormSchema = z.object({
@@ -259,16 +279,28 @@ function PageTitle({
 	eyebrow,
 	title,
 	children,
+	compact = false,
 }: {
 	eyebrow: string;
 	title: string;
 	children?: React.ReactNode;
+	compact?: boolean;
 }) {
 	return (
-		<header className="mb-7 flex flex-wrap items-end justify-between gap-4">
+		<header
+			className={cn(
+				"flex flex-wrap items-end justify-between",
+				compact ? "mb-5 gap-3" : "mb-7 gap-4",
+			)}
+		>
 			<div>
 				<p className="island-kicker">{eyebrow}</p>
-				<h1 className="display-title mt-1 text-4xl font-bold text-foreground">
+				<h1
+					className={cn(
+						"display-title mt-1 font-bold text-foreground",
+						compact ? "text-3xl md:text-4xl" : "text-4xl",
+					)}
+				>
 					{title}
 				</h1>
 			</div>
@@ -374,14 +406,29 @@ function Dashboard({ onView }: { onView: (item: TransactionDto) => void }) {
 	const { month, recentTransactions, incomeByPaymentMethod } = result.data;
 	return (
 		<>
-			<PageTitle eyebrow="visão geral" title="Seu mês em movimento" />
-			<section className="grid gap-4 md:grid-cols-3">
-				<Summary label="Entradas" value={month.incomeCents} tone="income" />
-				<Summary label="Saídas" value={month.expenseCents} tone="expense" />
-				<Summary label="Saldo" value={month.balanceCents} tone="balance" />
+			<PageTitle compact eyebrow="visão geral" title="Seu mês em movimento" />
+			<section className="grid grid-cols-3 gap-2 md:gap-4">
+				<Summary
+					compact
+					label="Entradas"
+					value={month.incomeCents}
+					tone="income"
+				/>
+				<Summary
+					compact
+					label="Saídas"
+					value={month.expenseCents}
+					tone="expense"
+				/>
+				<Summary
+					compact
+					label="Saldo"
+					value={month.balanceCents}
+					tone="balance"
+				/>
 			</section>
-			<FinanceCard className="mt-7 p-5">
-				<h2 className="display-title text-2xl font-bold">
+			<FinanceCard className="mt-5 p-4 md:mt-7 md:p-5">
+				<h2 className="display-title text-xl font-bold md:text-2xl">
 					De onde vieram as entradas
 				</h2>
 				<ul className="mt-3 divide-y divide-border">
@@ -396,9 +443,9 @@ function Dashboard({ onView }: { onView: (item: TransactionDto) => void }) {
 					))}
 				</ul>
 			</FinanceCard>
-			<FinanceCard className="mt-7 p-5">
-				<div className="mb-3 flex items-center justify-between">
-					<h2 className="display-title text-2xl font-bold">
+			<FinanceCard className="mt-5 p-4 md:mt-7 md:p-5">
+				<div className="mb-2 flex items-center justify-between md:mb-3">
+					<h2 className="display-title text-xl font-bold md:text-2xl">
 						Últimos lançamentos
 					</h2>
 					<a className="text-sm font-bold" href="/transactions">
@@ -415,10 +462,12 @@ function Summary({
 	label,
 	value,
 	tone,
+	compact = false,
 }: {
 	label: string;
 	value: number;
 	tone: "income" | "expense" | "balance";
+	compact?: boolean;
 }) {
 	const className =
 		tone === "income"
@@ -427,9 +476,15 @@ function Summary({
 				? "text-destructive"
 				: "text-foreground";
 	return (
-		<FinanceCard className="p-5">
+		<FinanceCard className={compact ? "p-3 md:p-5" : "p-5"}>
 			<p className="island-kicker">{label}</p>
-			<p className={`mt-2 text-2xl font-extrabold ${className}`}>
+			<p
+				className={cn(
+					"font-extrabold",
+					compact ? "mt-1 text-lg md:mt-2 md:text-2xl" : "mt-2 text-2xl",
+					className,
+				)}
+			>
 				{moneyFromCents(value)}
 			</p>
 		</FinanceCard>
@@ -535,145 +590,126 @@ function TransactionForm({
 		</>
 	);
 	return (
-		<form
-			className={cn(
-				"grid gap-4",
-				mobileDrawer && "h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]",
-			)}
+		<DrawerAwareForm
+			actions={actions}
+			mobileDrawer={mobileDrawer}
 			noValidate
 			onSubmit={form.handleSubmit(submit)}
 		>
-			<div
-				className={cn(
-					"grid gap-4",
-					mobileDrawer && "min-h-0 overflow-y-auto pb-4",
-				)}
-			>
-				<Controller
-					control={form.control}
-					name="paymentMethodId"
-					render={({ field, fieldState }) => (
-						<Field data-invalid={fieldState.invalid}>
-							<FieldLabel htmlFor="transaction-payment-method">
-								Forma de pagamento (opcional)
-							</FieldLabel>
-							<Select
-								onValueChange={(value) =>
-									field.onChange(value === "none" ? "" : value)
-								}
-								value={field.value || "none"}
+			<Controller
+				control={form.control}
+				name="paymentMethodId"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="transaction-payment-method">
+							Forma de pagamento (opcional)
+						</FieldLabel>
+						<Select
+							onValueChange={(value) =>
+								field.onChange(value === "none" ? "" : value)
+							}
+							value={field.value || "none"}
+						>
+							<SelectTrigger
+								aria-invalid={fieldState.invalid}
+								className="w-full"
+								id="transaction-payment-method"
 							>
-								<SelectTrigger
-									aria-invalid={fieldState.invalid}
-									className="w-full"
-									id="transaction-payment-method"
-								>
-									<SelectValue placeholder="Não informado" />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="none">Não informado</SelectItem>
-									{paymentChoices.map((method: PaymentMethodDto) => (
-										<SelectItem key={method.id} value={method.id}>
-											{method.name}
-											{method.archivedAt ? " (arquivada)" : ""}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-							<FieldError errors={[fieldState.error]} />
-						</Field>
-					)}
+								<SelectValue placeholder="Não informado" />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="none">Não informado</SelectItem>
+								{paymentChoices.map((method: PaymentMethodDto) => (
+									<SelectItem key={method.id} value={method.id}>
+										{method.name}
+										{method.archivedAt ? " (arquivada)" : ""}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
+			<Controller
+				control={form.control}
+				name="type"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="transaction-type">Tipo</FieldLabel>
+						<KindSelect
+							aria-invalid={fieldState.invalid}
+							id="transaction-type"
+							onValueChange={field.onChange}
+							value={field.value as Kind | undefined}
+						/>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
+			<Controller
+				control={form.control}
+				name="categoryId"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="transaction-category">Categoria</FieldLabel>
+						<CategorySelect
+							aria-invalid={fieldState.invalid}
+							categories={choices}
+							disabled={!type}
+							id="transaction-category"
+							onValueChange={field.onChange}
+							value={field.value}
+						/>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
+			<Controller
+				control={form.control}
+				name="amount"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={fieldState.invalid}>
+						<FieldLabel htmlFor="transaction-amount">Valor (R$)</FieldLabel>
+						<MoneyInput
+							aria-invalid={fieldState.invalid}
+							id="transaction-amount"
+							onBlur={field.onBlur}
+							onValueChange={field.onChange}
+							required
+							value={field.value}
+						/>
+						<FieldError errors={[fieldState.error]} />
+					</Field>
+				)}
+			/>
+			<Field data-invalid={Boolean(form.formState.errors.occurredAt)}>
+				<FieldLabel htmlFor="transaction-date">Data</FieldLabel>
+				<Input
+					aria-invalid={Boolean(form.formState.errors.occurredAt)}
+					{...form.register("occurredAt")}
+					id="transaction-date"
+					required
+					type="date"
 				/>
-				<Controller
-					control={form.control}
-					name="type"
-					render={({ field, fieldState }) => (
-						<Field data-invalid={fieldState.invalid}>
-							<FieldLabel htmlFor="transaction-type">Tipo</FieldLabel>
-							<KindSelect
-								aria-invalid={fieldState.invalid}
-								id="transaction-type"
-								onValueChange={field.onChange}
-								value={field.value as Kind | undefined}
-							/>
-							<FieldError errors={[fieldState.error]} />
-						</Field>
-					)}
+				<FieldError errors={[form.formState.errors.occurredAt]} />
+			</Field>
+			<Field data-invalid={Boolean(form.formState.errors.description)}>
+				<FieldLabel htmlFor="transaction-description">
+					Descrição opcional
+				</FieldLabel>
+				<Textarea
+					aria-invalid={Boolean(form.formState.errors.description)}
+					{...form.register("description")}
+					className="min-h-18"
+					id="transaction-description"
+					maxLength={280}
+					rows={2}
 				/>
-				<Controller
-					control={form.control}
-					name="categoryId"
-					render={({ field, fieldState }) => (
-						<Field data-invalid={fieldState.invalid}>
-							<FieldLabel htmlFor="transaction-category">Categoria</FieldLabel>
-							<CategorySelect
-								aria-invalid={fieldState.invalid}
-								categories={choices}
-								disabled={!type}
-								id="transaction-category"
-								onValueChange={field.onChange}
-								value={field.value}
-							/>
-							<FieldError errors={[fieldState.error]} />
-						</Field>
-					)}
-				/>
-				<Controller
-					control={form.control}
-					name="amount"
-					render={({ field, fieldState }) => (
-						<Field data-invalid={fieldState.invalid}>
-							<FieldLabel htmlFor="transaction-amount">Valor (R$)</FieldLabel>
-							<MoneyInput
-								aria-invalid={fieldState.invalid}
-								id="transaction-amount"
-								onBlur={field.onBlur}
-								onValueChange={field.onChange}
-								required
-								value={field.value}
-							/>
-							<FieldError errors={[fieldState.error]} />
-						</Field>
-					)}
-				/>
-				<Field data-invalid={Boolean(form.formState.errors.occurredAt)}>
-					<FieldLabel htmlFor="transaction-date">Data</FieldLabel>
-					<Input
-						aria-invalid={Boolean(form.formState.errors.occurredAt)}
-						{...form.register("occurredAt")}
-						id="transaction-date"
-						required
-						type="date"
-					/>
-					<FieldError errors={[form.formState.errors.occurredAt]} />
-				</Field>
-				<Field data-invalid={Boolean(form.formState.errors.description)}>
-					<FieldLabel htmlFor="transaction-description">
-						Descrição opcional
-					</FieldLabel>
-					<Textarea
-						aria-invalid={Boolean(form.formState.errors.description)}
-						{...form.register("description")}
-						className="min-h-18"
-						id="transaction-description"
-						maxLength={280}
-						rows={2}
-					/>
-					<FieldError errors={[form.formState.errors.description]} />
-				</Field>
-				{submitError && <Notice>{submitError}</Notice>}
-			</div>
-			{mobileDrawer ? (
-				<div
-					className="-mx-6 grid grid-cols-2 gap-3 border-t bg-background px-6 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]"
-					data-slot="transaction-form-actions"
-				>
-					{actions}
-				</div>
-			) : (
-				<DialogFooter className="flex-row justify-end">{actions}</DialogFooter>
-			)}
-		</form>
+				<FieldError errors={[form.formState.errors.description]} />
+			</Field>
+			{submitError && <Notice>{submitError}</Notice>}
+		</DrawerAwareForm>
 	);
 }
 
@@ -756,7 +792,13 @@ function Transactions({
 	const transactions = result.data?.pages.flatMap((page) => page.items) ?? [];
 	return (
 		<>
-			<PageTitle eyebrow="histórico" title="Lançamentos" />
+			<PageTitle eyebrow="histórico" title="Lançamentos">
+				<Button asChild variant="outline">
+					<Link to="/transactions/archive">
+						<ArchiveRestore /> Arquivo
+					</Link>
+				</Button>
+			</PageTitle>
 			<ArchiveConfirmation
 				itemName={archiving?.category.name ?? "este lançamento"}
 				onConfirm={() => void archive()}
@@ -795,10 +837,12 @@ function Transactions({
 
 function CategoryForm({
 	initial,
+	mobileDrawer = false,
 	onSaved,
 	onCancel,
 }: {
 	initial?: CategoryDto;
+	mobileDrawer?: boolean;
 	onSaved: () => void;
 	onCancel?: () => void;
 }) {
@@ -853,9 +897,34 @@ function CategoryForm({
 			);
 		}
 	}
+	const submitLabel = form.formState.isSubmitting
+		? "Salvando…"
+		: initial
+			? "Salvar alterações"
+			: "Criar categoria";
+	const actions = (
+		<>
+			<Button
+				className={mobileDrawer ? "h-12 w-full" : undefined}
+				onClick={onCancel}
+				type="button"
+				variant="outline"
+			>
+				Cancelar
+			</Button>
+			<Button
+				className={mobileDrawer ? "h-12 w-full" : undefined}
+				disabled={form.formState.isSubmitting}
+				type="submit"
+			>
+				{submitLabel}
+			</Button>
+		</>
+	);
 	return (
-		<form
-			className="grid gap-4"
+		<DrawerAwareForm
+			actions={actions}
+			mobileDrawer={mobileDrawer}
 			noValidate
 			onSubmit={form.handleSubmit(submit)}
 		>
@@ -939,19 +1008,7 @@ function CategoryForm({
 				)}
 			/>
 			{submitError && <Notice>{submitError}</Notice>}
-			<DialogFooter>
-				<Button disabled={form.formState.isSubmitting} type="submit">
-					{form.formState.isSubmitting
-						? "Salvando…"
-						: initial
-							? "Salvar alterações"
-							: "Criar categoria"}
-				</Button>
-				<Button onClick={onCancel} type="button" variant="outline">
-					Cancelar
-				</Button>
-			</DialogFooter>
-		</form>
+		</DrawerAwareForm>
 	);
 }
 
@@ -964,35 +1021,48 @@ function CategoryDialog({
 	onOpenChange: (open: boolean) => void;
 	onSaved: () => void;
 }) {
+	const isMobile = useIsMobile();
 	const isEdit = Boolean(editing?.id);
-	return (
-		<Dialog
-			onOpenChange={(open) => {
-				if (!open) onOpenChange(false);
+	const title = isEdit ? "Editar categoria" : "Nova categoria";
+	const description = isEdit
+		? "Ajuste os dados da categoria abaixo."
+		: "Preencha os dados para criar uma nova categoria.";
+	const form = editing && (
+		<CategoryForm
+			initial={isEdit ? editing : undefined}
+			mobileDrawer={isMobile}
+			onCancel={() => onOpenChange(false)}
+			onSaved={() => {
+				onOpenChange(false);
+				onSaved();
 			}}
-			open={Boolean(editing)}
-		>
+		/>
+	);
+	const onDialogOpenChange = (open: boolean) => {
+		if (!open) onOpenChange(false);
+	};
+
+	if (isMobile)
+		return (
+			<ResizableDrawer
+				className="pb-0"
+				description={description}
+				onOpenChange={onDialogOpenChange}
+				open={Boolean(editing)}
+				title={title}
+			>
+				{form}
+			</ResizableDrawer>
+		);
+
+	return (
+		<Dialog onOpenChange={onDialogOpenChange} open={Boolean(editing)}>
 			<DialogContent>
 				<DialogHeader>
-					<DialogTitle>
-						{isEdit ? "Editar categoria" : "Nova categoria"}
-					</DialogTitle>
-					<DialogDescription>
-						{isEdit
-							? "Ajuste os dados da categoria abaixo."
-							: "Preencha os dados para criar uma nova categoria."}
-					</DialogDescription>
+					<DialogTitle>{title}</DialogTitle>
+					<DialogDescription>{description}</DialogDescription>
 				</DialogHeader>
-				{editing && (
-					<CategoryForm
-						initial={isEdit ? editing : undefined}
-						onCancel={() => onOpenChange(false)}
-						onSaved={() => {
-							onOpenChange(false);
-							onSaved();
-						}}
-					/>
-				)}
+				{form}
 			</DialogContent>
 		</Dialog>
 	);
@@ -1025,9 +1095,17 @@ function Categories() {
 	return (
 		<>
 			<PageTitle eyebrow="organização" title="Categorias">
-				<Button onClick={() => setEditing({} as CategoryDto)}>
-					<Plus /> Nova
-				</Button>
+				<div className="flex gap-2">
+					<Button asChild variant="outline">
+						<Link to="/profile">
+							<ArrowLeft />
+							Voltar
+						</Link>
+					</Button>
+					<Button onClick={() => setEditing({} as CategoryDto)}>
+						<Plus /> Nova
+					</Button>
+				</div>
 			</PageTitle>
 			<CategoryDialog
 				editing={editing}
@@ -1115,10 +1193,12 @@ function Categories() {
 
 function PaymentMethodForm({
 	initial,
+	mobileDrawer = false,
 	onSaved,
 	onCancel,
 }: {
 	initial?: PaymentMethodDto;
+	mobileDrawer?: boolean;
 	onSaved: () => void;
 	onCancel: () => void;
 }) {
@@ -1174,9 +1254,29 @@ function PaymentMethodForm({
 			);
 		}
 	}
+	const actions = (
+		<>
+			<Button
+				className={mobileDrawer ? "h-12 w-full" : undefined}
+				onClick={onCancel}
+				type="button"
+				variant="outline"
+			>
+				Cancelar
+			</Button>
+			<Button
+				className={mobileDrawer ? "h-12 w-full" : undefined}
+				disabled={form.formState.isSubmitting}
+				type="submit"
+			>
+				{form.formState.isSubmitting ? "Salvando…" : "Salvar forma"}
+			</Button>
+		</>
+	);
 	return (
-		<form
-			className="grid gap-4"
+		<DrawerAwareForm
+			actions={actions}
+			mobileDrawer={mobileDrawer}
 			noValidate
 			onSubmit={form.handleSubmit(submit)}
 		>
@@ -1303,15 +1403,59 @@ function PaymentMethodForm({
 				</div>
 			)}
 			{submitError && <Notice>{submitError}</Notice>}
-			<DialogFooter>
-				<Button disabled={form.formState.isSubmitting} type="submit">
-					{form.formState.isSubmitting ? "Salvando…" : "Salvar forma"}
-				</Button>
-				<Button onClick={onCancel} type="button" variant="outline">
-					Cancelar
-				</Button>
-			</DialogFooter>
-		</form>
+		</DrawerAwareForm>
+	);
+}
+
+function PaymentMethodDialog({
+	editing,
+	onOpenChange,
+	onSaved,
+}: {
+	editing: PaymentMethodDto | null;
+	onOpenChange: (open: boolean) => void;
+	onSaved: () => void;
+}) {
+	const isMobile = useIsMobile();
+	const isEdit = Boolean(editing?.id);
+	const title = isEdit ? "Editar forma" : "Nova forma de pagamento";
+	const description =
+		"Vincule receitas e despesas a este meio. A configuração de fatura é opcional.";
+	const form = editing && (
+		<PaymentMethodForm
+			initial={isEdit ? editing : undefined}
+			mobileDrawer={isMobile}
+			onCancel={() => onOpenChange(false)}
+			onSaved={onSaved}
+		/>
+	);
+	const onDialogOpenChange = (open: boolean) => {
+		if (!open) onOpenChange(false);
+	};
+
+	if (isMobile)
+		return (
+			<ResizableDrawer
+				className="pb-0"
+				description={description}
+				onOpenChange={onDialogOpenChange}
+				open={Boolean(editing)}
+				title={title}
+			>
+				{form}
+			</ResizableDrawer>
+		);
+
+	return (
+		<Dialog onOpenChange={onDialogOpenChange} open={Boolean(editing)}>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>{title}</DialogTitle>
+					<DialogDescription>{description}</DialogDescription>
+				</DialogHeader>
+				{form}
+			</DialogContent>
+		</Dialog>
 	);
 }
 
@@ -1340,40 +1484,28 @@ function Payments() {
 	return (
 		<>
 			<PageTitle eyebrow="pagamentos" title="Formas e faturas">
-				<Button onClick={() => setEditing({} as PaymentMethodDto)}>
-					<Plus /> Nova forma
-				</Button>
+				<div className="flex gap-2">
+					<Button asChild variant="outline">
+						<Link to="/profile">
+							<ArrowLeft />
+							Voltar
+						</Link>
+					</Button>
+					<Button onClick={() => setEditing({} as PaymentMethodDto)}>
+						<Plus /> Nova forma
+					</Button>
+				</div>
 			</PageTitle>
-			<Dialog
+			<PaymentMethodDialog
+				editing={editing}
 				onOpenChange={(open) => {
 					if (!open) setEditing(null);
 				}}
-				open={Boolean(editing)}
-			>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>
-							{editing?.id ? "Editar forma" : "Nova forma de pagamento"}
-						</DialogTitle>
-						<DialogDescription>
-							Vincule receitas e despesas a este meio. A configuração de fatura
-							é opcional.
-						</DialogDescription>
-					</DialogHeader>
-					{editing && (
-						<PaymentMethodForm
-							initial={editing.id ? editing : undefined}
-							onCancel={() => setEditing(null)}
-							onSaved={() => {
-								setEditing(null);
-								void queryClient.invalidateQueries({
-									queryKey: financeQueryKey,
-								});
-							}}
-						/>
-					)}
-				</DialogContent>
-			</Dialog>
+				onSaved={() => {
+					setEditing(null);
+					void queryClient.invalidateQueries({ queryKey: financeQueryKey });
+				}}
+			/>
 			<Tabs
 				className="mb-4"
 				onValueChange={(value) => setTab(value as typeof tab)}
@@ -1496,6 +1628,100 @@ function Payments() {
 	);
 }
 
+function Settings() {
+	return (
+		<>
+			<PageTitle eyebrow="organização" title="Configurações" />
+			<SettingsList />
+		</>
+	);
+}
+
+function SettingsList({ onSelect }: { onSelect?: () => void }) {
+	return (
+		<div className="grid gap-2">
+			<Link
+				className="rounded-lg border border-border px-4 py-3 font-medium transition-colors hover:bg-muted"
+				onClick={onSelect}
+				to="/categories"
+			>
+				Categorias
+			</Link>
+			<Link
+				className="rounded-lg border border-border px-4 py-3 font-medium transition-colors hover:bg-muted"
+				onClick={onSelect}
+				to="/payments"
+			>
+				Formas de pagamento
+			</Link>
+		</div>
+	);
+}
+
+function SettingsSheet() {
+	const [open, setOpen] = useState(false);
+
+	return (
+		<Sheet onOpenChange={setOpen} open={open}>
+			<Button
+				aria-label="Configurações"
+				onClick={() => setOpen(true)}
+				size="icon"
+				variant="outline"
+			>
+				<Settings2 />
+			</Button>
+			<SheetContent className="w-80 gap-6 p-6" side="right">
+				<SheetHeader className="p-0 pr-10 text-left">
+					<SheetTitle>Configurações</SheetTitle>
+					<SheetDescription>
+						Organize suas categorias e formas de pagamento.
+					</SheetDescription>
+				</SheetHeader>
+				<SettingsList onSelect={() => setOpen(false)} />
+			</SheetContent>
+		</Sheet>
+	);
+}
+
+function Profile({
+	user,
+}: {
+	user: { name: string; email: string; image?: string | null } | null;
+}) {
+	const userName = user?.name || user?.email || "Usuário";
+	const userInitial = userName.trim().charAt(0).toUpperCase() || "U";
+
+	return (
+		<>
+			<PageTitle eyebrow="conta" title="Perfil">
+				<SettingsSheet />
+			</PageTitle>
+			<FinanceCard className="p-5">
+				<div className="flex items-center gap-4">
+					{user?.image ? (
+						<img
+							alt=""
+							className="size-16 rounded-2xl object-cover"
+							src={user.image}
+						/>
+					) : (
+						<span className="flex size-16 items-center justify-center rounded-2xl bg-primary text-xl font-bold text-primary-foreground">
+							{userInitial}
+						</span>
+					)}
+					<div className="min-w-0">
+						<h2 className="truncate text-lg font-bold">{userName}</h2>
+						<p className="truncate text-sm text-muted-foreground">
+							{user?.email || "E-mail não disponível"}
+						</p>
+					</div>
+				</div>
+			</FinanceCard>
+		</>
+	);
+}
+
 function Archive({ onView }: { onView: (item: TransactionDto) => void }) {
 	const queryClient = useQueryClient();
 	const result = useInfiniteQuery(transactionsQueryOptions("archived"));
@@ -1510,7 +1736,14 @@ function Archive({ onView }: { onView: (item: TransactionDto) => void }) {
 	const transactions = result.data?.pages.flatMap((page) => page.items) ?? [];
 	return (
 		<>
-			<PageTitle eyebrow="arquivo" title="Lançamentos arquivados" />
+			<PageTitle eyebrow="arquivo" title="Lançamentos arquivados">
+				<Button asChild variant="outline">
+					<Link to="/transactions">
+						<ArrowLeft />
+						Voltar para lançamentos
+					</Link>
+				</Button>
+			</PageTitle>
 			{result.isPending ? (
 				<Loading />
 			) : result.error || !result.data ? (
@@ -1770,6 +2003,7 @@ function Reports() {
 
 export function FinancePage({ kind }: { kind: FinancePageKind }) {
 	const queryClient = useQueryClient();
+	const { data: sessionUser } = useQuery(sessionQueryOptions());
 	const online = useOnlineStatus();
 	const logout = async () => {
 		await authClient.signOut();
@@ -1791,6 +2025,7 @@ export function FinancePage({ kind }: { kind: FinancePageKind }) {
 	return (
 		<AppShell
 			offline={!online}
+			user={sessionUser ?? null}
 			onLogout={() => void logout()}
 			onNewTransaction={openNewTransaction}
 		>
@@ -1820,10 +2055,14 @@ export function FinancePage({ kind }: { kind: FinancePageKind }) {
 				<Dashboard onView={setViewing} />
 			) : kind === "transactions" ? (
 				<Transactions onEdit={setEditing} onView={setViewing} />
+			) : kind === "settings" ? (
+				<Settings />
 			) : kind === "categories" ? (
 				<Categories />
 			) : kind === "payments" ? (
 				<Payments />
+			) : kind === "profile" ? (
+				<Profile user={sessionUser ?? null} />
 			) : kind === "archive" ? (
 				<Archive onView={setViewing} />
 			) : (

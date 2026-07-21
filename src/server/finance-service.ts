@@ -659,7 +659,16 @@ export function createFinanceService({
 	}
 	return {
 		async getSessionUser() {
-			return { id: await userId() };
+			const current = await session;
+			if (!current?.user)
+				throw new FinanceError("UNAUTHENTICATED", "Faça login para continuar.");
+
+			return {
+				id: current.user.id,
+				name: current.user.name,
+				email: current.user.email,
+				image: current.user.image,
+			};
 		},
 		async listCategories(data: z.infer<typeof financeSchemas.listCategories>) {
 			const id = await userId();

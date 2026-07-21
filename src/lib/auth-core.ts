@@ -27,6 +27,9 @@ export function createAuthOptions(d1: D1Database = database) {
 			google: {
 				clientId: env.GOOGLE_CLIENT_ID,
 				clientSecret: env.GOOGLE_CLIENT_SECRET,
+				// Persist Google's `picture` in `user.image` for new users and refresh
+				// it whenever an existing user signs in again.
+				overrideUserInfoOnSignIn: true,
 			},
 		},
 		plugins: isDevelopment ? [devDirectLogin()] : [],

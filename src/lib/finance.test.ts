@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { isCivilDate, normalizeCategoryName, periodFor } from "./finance.ts";
+import {
+	CATEGORY_ICONS,
+	isCivilDate,
+	normalizeCategoryName,
+	periodFor,
+} from "./finance.ts";
 
 describe("finance helpers", () => {
 	it("normalizes accents and repeated spaces for category uniqueness", () => {
@@ -31,5 +36,20 @@ describe("finance helpers", () => {
 			startDate: "2024-12-01",
 			endDate: "2025-01-01",
 		});
+	});
+
+	it("includes several animal icons among the choices available to categories and payments", () => {
+		expect(CATEGORY_ICONS).toEqual(
+			expect.arrayContaining([
+				"Cat",
+				"CatFace",
+				"CatSitting",
+				"CatPlay",
+				"Bird",
+				"Fish",
+				"Rabbit",
+				"Turtle",
+			]),
+		);
 	});
 });

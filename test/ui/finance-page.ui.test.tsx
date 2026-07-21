@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
 	archiveCategory: vi.fn(), archiveTransaction: vi.fn(), archivePaymentMethod: vi.fn(), createCategory: vi.fn(), createPaymentMethod: vi.fn(), createTransaction: vi.fn(),
-	getDashboard: vi.fn(), getReport: vi.fn(), listCategories: vi.fn(), listTransactions: vi.fn(),
+	getDashboard: vi.fn(), getReport: vi.fn(), getSessionUser: vi.fn(), listCategories: vi.fn(), listTransactions: vi.fn(),
 	listPaymentMethods: vi.fn(), listInvoices: vi.fn(), restoreCategory: vi.fn(), restorePaymentMethod: vi.fn(), restoreTransaction: vi.fn(), updateCategory: vi.fn(), updatePaymentMethod: vi.fn(), updateTransaction: vi.fn(),
 }));
 
@@ -55,6 +55,7 @@ describe("FinancePage", () => {
 		vi.clearAllMocks();
 		setOnline(true);
 		api.getDashboard.mockResolvedValue({ month: { incomeCents: 0, expenseCents: 0, balanceCents: 0 }, incomeByPaymentMethod: [], recentTransactions: [] });
+		api.getSessionUser.mockResolvedValue({ id: "user-1", name: "Ana Silva", email: "ana@example.com", image: null });
 		api.listCategories.mockResolvedValue([incomeCategory, expenseCategory]);
 		api.listTransactions.mockResolvedValue({ items: [transaction], nextCursor: null });
 		api.listPaymentMethods.mockResolvedValue([]);
@@ -89,7 +90,7 @@ describe("FinancePage", () => {
 				name: "Ajustar altura do drawer",
 			}),
 		).toBeInTheDocument();
-		const actions = drawer.querySelector('[data-slot="transaction-form-actions"]');
+		const actions = drawer.querySelector('[data-slot="drawer-form-actions"]');
 		if (!actions) throw new Error("Ações do formulário ausentes.");
 		const actionButtons = within(actions).getAllByRole("button");
 		expect(actionButtons.map((button) => button.textContent)).toEqual([
@@ -140,13 +141,83 @@ describe("FinancePage", () => {
 		expect(within(dialog).getByText("antes")).toBeInTheDocument();
 	});
 
-	it("exposes the real mobile Archive navigation", async () => {
+	it("uses the account menu for Profile and keeps the mobile navigation icon-only", async () => {
+		const user = userEvent.setup();
 		renderFinancePage("dashboard");
 		const nav = screen.getByRole("navigation", { name: "Navegação mobile" });
-		const link = within(nav).getByRole("link", { name: "Arquivo" });
-		expect(link).toHaveAttribute("href", "/archive");
-		expect(nav).toHaveClass("md:hidden");
+		const links = within(nav).getAllByRole("link");
+
+		expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
+			"Dashboard",
+			"Histórico",
+			"Relatórios",
+			"Perfil",
+		]);
+		expect(links.map((link) => link.textContent)).toEqual(["", "", "", "U"]);
+		expect(links.map((link) => link.getAttribute("href"))).toEqual([
+			"/",
+			"/transactions",
+			"/reports",
+			"/profile",
+		]);
+		expect(nav).toHaveClass("fixed", "bottom-0");
+		expect(nav.firstElementChild).toHaveClass("grid", "grid-cols-4");
+		const dashboardLink = within(nav).getByRole("link", {
+			name: "Dashboard",
+		});
+		expect(dashboardLink).toHaveClass("text-foreground", "hover:text-foreground");
+		expect(dashboardLink).not.toHaveClass("bg-primary/10");
+		expect(dashboardLink).not.toHaveClass("hover:bg-muted");
+		expect(dashboardLink.querySelector("svg")).toHaveClass(
+		"fill-foreground",
+		"stroke-foreground",
+	);
+		await waitFor(() =>
+			expect(
+				screen.queryByRole("button", { name: "Toggle Sidebar" }),
+			).not.toBeInTheDocument(),
+		);
 	});
+
+	it("opens settings choices from the Profile page", async () => {
+		const user = userEvent.setup();
+		renderFinancePage("profile");
+
+		expect(await screen.findByRole("heading", { name: "Perfil" })).toBeInTheDocument();
+		expect(await screen.findByText("Ana Silva")).toBeInTheDocument();
+		expect(await screen.findByText("ana@example.com")).toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "Configurações" }));
+		const sheet = await screen.findByRole("dialog");
+		expect(within(sheet).getByRole("link", { name: "Categorias" })).toHaveAttribute(
+			"href",
+			"/categories",
+		);
+		expect(
+			within(sheet).getByRole("link", { name: "Formas de pagamento" }),
+		).toHaveAttribute("href", "/payments");
+	});
+
+	it("offers the Archive from History instead of the mobile navigation", async () => {
+		renderFinancePage("transactions");
+		const archiveLink = await screen.findByRole("link", { name: "Arquivo" });
+
+    expect(archiveLink).toHaveAttribute("href", "/transactions/archive");
+		expect(
+			within(
+				screen.getByRole("navigation", { name: "Navegação mobile" }),
+			).queryByRole("link", { name: "Arquivo" }),
+		).not.toBeInTheDocument();
+  });
+
+  it("returns from Archive to History", async () => {
+    renderFinancePage("archive");
+
+    const backLink = await screen.findByRole("link", {
+      name: "Voltar para lançamentos",
+    });
+
+    expect(backLink).toHaveAttribute("href", "/transactions");
+  });
 
 	it("prefetches the data for every item exposed by the sidebar", async () => {
 		renderFinancePage("dashboard");
@@ -192,6 +263,63 @@ describe("FinancePage", () => {
 		api.listCategories.mockResolvedValue([expenseCategory, child]);
 		renderFinancePage("categories");
 		expect(await screen.findByText("— Restaurante")).toBeInTheDocument();
+	});
+
+	it("returns to Profile from both configuration pages", async () => {
+		const categoriesPage = renderFinancePage("categories");
+		expect(await screen.findByRole("link", { name: "Voltar" })).toHaveAttribute(
+			"href",
+			"/profile",
+		);
+
+		categoriesPage.unmount();
+		renderFinancePage("payments");
+		expect(screen.getByRole("link", { name: "Voltar" })).toHaveAttribute(
+			"href",
+			"/profile",
+		);
+	});
+
+	it("uses the shared drawer and fixed actions for category forms", async () => {
+		const user = userEvent.setup();
+		renderFinancePage("categories");
+		await user.click(screen.getByRole("button", { name: "Nova" }));
+
+		const drawer = await screen.findByRole("dialog");
+		expect(within(drawer).getByText("Nova categoria")).toBeInTheDocument();
+		expect(
+			within(drawer).getByRole("slider", {
+				name: "Ajustar altura do drawer",
+			}),
+		).toBeInTheDocument();
+		const actions = drawer.querySelector('[data-slot="drawer-form-actions"]');
+		if (!actions) throw new Error("Ações da categoria ausentes.");
+		expect(within(actions).getAllByRole("button").map((button) => button.textContent)).toEqual([
+			"Cancelar",
+			"Criar categoria",
+		]);
+	});
+
+	it("uses the shared drawer and fixed actions for payment method forms", async () => {
+		const user = userEvent.setup();
+		renderFinancePage("payments");
+		await user.click(screen.getByRole("button", { name: "Nova forma" }));
+
+		const drawer = await screen.findByRole("dialog");
+		expect(
+			within(drawer).getByText("Nova forma de pagamento"),
+		).toBeInTheDocument();
+		expect(
+			within(drawer).getByRole("slider", {
+				name: "Ajustar altura do drawer",
+			}),
+		).toBeInTheDocument();
+		const actions = drawer.querySelector('[data-slot="drawer-form-actions"]');
+		if (!actions) throw new Error("Ações da forma de pagamento ausentes.");
+		expect(within(actions).getAllByRole("button").map((button) => button.textContent)).toEqual([
+			"Cancelar",
+			"Salvar forma",
+		]);
 	});
 
 	it("shows each category icon in the shared category selectors", async () => {

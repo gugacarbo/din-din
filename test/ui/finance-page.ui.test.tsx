@@ -68,6 +68,19 @@ describe("FinancePage", () => {
 		await waitFor(() => expect(api.updateTransaction).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: "expense" }) })));
 	});
 
+	it("opens the shared transaction details dialog from a transaction row", async () => {
+		const user = userEvent.setup();
+		render(<FinancePage kind="transactions" />);
+		await screen.findByText(/antes/);
+		await user.click(
+			screen.getByRole("button", { name: "Ver lançamento Mercado" }),
+		);
+		const dialog = await screen.findByRole("dialog");
+		expect(within(dialog).getByText("Detalhes do lançamento")).toBeInTheDocument();
+		expect(within(dialog).getByText("Não informado")).toBeInTheDocument();
+		expect(within(dialog).getByText("antes")).toBeInTheDocument();
+	});
+
 	it("exposes the real mobile Archive navigation", async () => {
 		render(<FinancePage kind="dashboard" />);
 		const nav = screen.getByRole("navigation", { name: "Navegação mobile" });

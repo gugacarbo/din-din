@@ -27,7 +27,7 @@
     "lint-staged": "lint-staged",
     "test-staged": "test-staged",
     "release:verify": "pnpm run types:wrangler:check && pnpm run types:wrangler:negative && pnpm run check && pnpm run typecheck && pnpm test && pnpm run build",
-    "deploy": "pnpm run db:migrate:remote && pnpm run build && wrangler deploy",
+    "deploy": "pnpm run build && pnpm run db:migrate:remote && wrangler deploy",
     "db:create": "wrangler d1 create din-din",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply din-din --local",

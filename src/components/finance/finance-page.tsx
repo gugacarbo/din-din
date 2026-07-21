@@ -85,6 +85,7 @@ import { ColorSelect } from "./color-select.tsx";
 import { IconSelect } from "./icon-select.tsx";
 import { type Kind, KindSelect } from "./kind-select.tsx";
 import { CategoryMark } from "./presentation.tsx";
+import { TransactionDetailsDialog } from "./transaction-details-dialog.tsx";
 
 type FinancePageKind =
 	| "dashboard"
@@ -226,11 +227,13 @@ function TransactionRows({
 	onEdit,
 	onArchive,
 	onRestore,
+	onView,
 }: {
 	items: TransactionDto[];
 	onEdit?: (item: TransactionDto) => void;
 	onArchive?: (item: TransactionDto) => void;
 	onRestore?: (item: TransactionDto) => void;
+	onView?: (item: TransactionDto) => void;
 }) {
 	if (!items.length)
 		return (
@@ -242,29 +245,36 @@ function TransactionRows({
 		<ul className="divide-y divide-border">
 			{items.map((item) => (
 				<li className="flex items-center gap-3 py-3" key={item.id}>
-					<CategoryMark
-						colorKey={item.category.colorKey}
-						iconKey={item.category.iconKey}
-					/>
-					<div className="min-w-0 flex-1">
-						<p className="font-semibold text-foreground">
-							{item.category.name}
-						</p>
-						<p className="truncate text-xs text-muted-foreground">
-							{item.occurredAt}
-							{item.description ? ` · ${item.description}` : ""}
-						</p>
-					</div>
-					<p
-						className={
-							item.type === "income"
-								? "font-bold text-income"
-								: "font-bold text-destructive"
-						}
+					<button
+						aria-label={`Ver lançamento ${item.category.name}`}
+						className="flex min-w-0 flex-1 items-center gap-3 text-left"
+						onClick={() => onView?.(item)}
+						type="button"
 					>
-						{item.type === "income" ? "+" : "−"}
-						{moneyFromCents(item.amountCents)}
-					</p>
+						<CategoryMark
+							colorKey={item.category.colorKey}
+							iconKey={item.category.iconKey}
+						/>
+						<div className="min-w-0 flex-1">
+							<p className="font-semibold text-foreground">
+								{item.category.name}
+							</p>
+							<p className="truncate text-xs text-muted-foreground">
+								{item.occurredAt}
+								{item.description ? ` · ${item.description}` : ""}
+							</p>
+						</div>
+						<p
+							className={
+								item.type === "income"
+									? "font-bold text-income"
+									: "font-bold text-destructive"
+							}
+						>
+							{item.type === "income" ? "+" : "−"}
+							{moneyFromCents(item.amountCents)}
+						</p>
+					</button>
 					{onEdit && (
 						<Button
 							aria-label="Editar lançamento"
@@ -301,7 +311,13 @@ function TransactionRows({
 	);
 }
 
-function Dashboard({ refreshKey }: { refreshKey: number }) {
+function Dashboard({
+	refreshKey,
+	onView,
+}: {
+	refreshKey: number;
+	onView: (item: TransactionDto) => void;
+}) {
 	const result = useAsyncData(() => getDashboard(), [refreshKey]);
 	if (result.loading) return <Loading />;
 	if (result.error || !result.data)
@@ -340,7 +356,7 @@ function Dashboard({ refreshKey }: { refreshKey: number }) {
 						Ver histórico
 					</a>
 				</div>
-				<TransactionRows items={recentTransactions} />
+				<TransactionRows items={recentTransactions} onView={onView} />
 			</FinanceCard>
 		</>
 	);
@@ -600,9 +616,11 @@ function TransactionDialog({
 function Transactions({
 	refreshKey,
 	onEdit,
+	onView,
 }: {
 	refreshKey: number;
 	onEdit: (item: TransactionDto) => void;
+	onView: (item: TransactionDto) => void;
 }) {
 	const [refresh, setRefresh] = useState(0);
 	const [archiving, setArchiving] = useState<TransactionDto | null>(null);
@@ -647,6 +665,7 @@ function Transactions({
 						items={result.data.items}
 						onArchive={setArchiving}
 						onEdit={onEdit}
+						onView={onView}
 					/>
 					{result.data.nextCursor && (
 						<Button
@@ -1283,7 +1302,13 @@ function Payments() {
 	);
 }
 
-function Archive({ refreshKey }: { refreshKey: number }) {
+function Archive({
+	refreshKey,
+	onView,
+}: {
+	refreshKey: number;
+	onView: (item: TransactionDto) => void;
+}) {
 	const [refresh, setRefresh] = useState(0);
 	const result = useAsyncData(
 		() => listTransactions({ data: { scope: "archived" } }),
@@ -1312,7 +1337,11 @@ function Archive({ refreshKey }: { refreshKey: number }) {
 				<Notice>{result.error ?? "Dados indisponíveis."}</Notice>
 			) : (
 				<FinanceCard className="p-5">
-					<TransactionRows items={result.data.items} onRestore={restore} />
+					<TransactionRows
+						items={result.data.items}
+						onRestore={restore}
+						onView={onView}
+					/>
 					{result.data.nextCursor && (
 						<Button
 							className="mt-4"
@@ -1568,6 +1597,7 @@ export function FinancePage({ kind }: { kind: FinancePageKind }) {
 	};
 	const [refreshKey, setRefreshKey] = useState(0);
 	const [editing, setEditing] = useState<TransactionDto | null>(null);
+	const [viewing, setViewing] = useState<TransactionDto | null>(null);
 	const openNewTransaction = () => setEditing({} as TransactionDto);
 	const handleSaved = () => {
 		setEditing(null);
@@ -1585,16 +1615,35 @@ export function FinancePage({ kind }: { kind: FinancePageKind }) {
 				}}
 				onSaved={handleSaved}
 			/>
+			<TransactionDetailsDialog
+				onEdit={
+					viewing?.archivedAt
+						? undefined
+						: (transaction) => {
+								setViewing(null);
+								setEditing(transaction);
+							}
+				}
+				onOpenChange={(open) => {
+					if (!open) setViewing(null);
+				}}
+				open={Boolean(viewing)}
+				transaction={viewing}
+			/>
 			{kind === "dashboard" ? (
-				<Dashboard refreshKey={refreshKey} />
+				<Dashboard onView={setViewing} refreshKey={refreshKey} />
 			) : kind === "transactions" ? (
-				<Transactions refreshKey={refreshKey} onEdit={setEditing} />
+				<Transactions
+					onEdit={setEditing}
+					onView={setViewing}
+					refreshKey={refreshKey}
+				/>
 			) : kind === "categories" ? (
 				<Categories />
 			) : kind === "payments" ? (
 				<Payments />
 			) : kind === "archive" ? (
-				<Archive refreshKey={refreshKey} />
+				<Archive onView={setViewing} refreshKey={refreshKey} />
 			) : (
 				<Reports refreshKey={refreshKey} />
 			)}

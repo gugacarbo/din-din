@@ -1,0 +1,28 @@
+<svg
+	role="img"
+	aria-labelledby="title desc"
+	viewBox="0 0 100 100"
+	xmlns="http://www.w3.org/2000/svg"
+>
+	<title id="title">Din Din</title>
+	<desc id="desc">Monograma de dois d envolvendo um cifrão</desc>
+	<g
+		fill="none"
+		stroke="#102a43"
+		stroke-linecap="round"
+		stroke-linejoin="round"
+		stroke-width="8"
+	>
+		<path d="M46 24v31c0-14-10-25-24-25S10 41 10 55s10 25 24 25c4 0 8-1 12-3" />
+		<path d="M58 14v41c0-14 10-25 24-25s24 11 24 25-10 25-24 25c-4 0-8-1-12-3" transform="translate(-16 0)" />
+	</g>
+	<text
+		x="50"
+		y="72"
+		fill="#ffffff"
+		font-family="Arial Rounded MT Bold, Arial, sans-serif"
+		font-size="48"
+		font-weight="700"
+		text-anchor="middle"
+	>$</text>
+</svg>

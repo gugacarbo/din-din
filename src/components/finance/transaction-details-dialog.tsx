@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-
+import { ResizableDrawer } from "#/components/resizable-drawer.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
 	Dialog,
@@ -9,14 +8,6 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "#/components/ui/dialog.tsx";
-import {
-	Sheet,
-	SheetContent,
-	SheetDescription,
-	SheetFooter,
-	SheetHeader,
-	SheetTitle,
-} from "#/components/ui/sheet.tsx";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import type { TransactionDto } from "#/server/finance.ts";
 
@@ -27,18 +18,6 @@ const money = new Intl.NumberFormat("pt-BR", {
 	currency: "BRL",
 });
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
-const drawerInitialHeight = (viewportHeight: number) =>
-	Math.round(viewportHeight * 0.9);
-const drawerMinimumHeight = (viewportHeight: number) =>
-	Math.round(viewportHeight * 0.72);
-
-function clampDrawerHeight(height: number, viewportHeight: number) {
-	return Math.min(
-		viewportHeight,
-		Math.max(drawerMinimumHeight(viewportHeight), height),
-	);
-}
-
 function Detail({
 	label,
 	children,
@@ -67,20 +46,6 @@ export function TransactionDetailsDialog({
 	open: boolean;
 }) {
 	const isMobile = useIsMobile();
-	const [drawerHeight, setDrawerHeight] = useState(0);
-	const dragStart = useRef<{
-		pointerId: number;
-		startHeight: number;
-		startY: number;
-	} | null>(null);
-	useEffect(() => {
-		if (!isMobile || !open) return;
-		const resetHeight = () =>
-			setDrawerHeight(drawerInitialHeight(window.innerHeight));
-		resetHeight();
-		window.addEventListener("resize", resetHeight);
-		return () => window.removeEventListener("resize", resetHeight);
-	}, [isMobile, open]);
 	if (!transaction) return null;
 	const isIncome = transaction.type === "income";
 	const paymentMethod = transaction.paymentMethod;
@@ -148,70 +113,17 @@ export function TransactionDetailsDialog({
 			</dl>
 		</>
 	);
-	const drawerMaxHeight =
-		typeof window === "undefined" ? 0 : window.innerHeight;
-	const drawerValue = drawerHeight || drawerInitialHeight(drawerMaxHeight);
-	const resizeDrawer = (height: number) => {
-		setDrawerHeight(clampDrawerHeight(height, window.innerHeight));
-	};
-
 	if (isMobile)
 		return (
-			<Sheet onOpenChange={onOpenChange} open={open}>
-				<SheetContent
-					className="max-h-dvh min-h-[72dvh] overflow-y-auto rounded-t-2xl px-6 pt-1 pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
-					side="bottom"
-					style={{ height: `${drawerValue}px` }}
-				>
-					<div
-						aria-label="Ajustar altura do drawer"
-						aria-valuemax={drawerMaxHeight}
-						aria-valuemin={drawerMinimumHeight(drawerMaxHeight)}
-						aria-valuenow={drawerValue}
-						className="mx-auto flex h-8 w-16 touch-none cursor-ns-resize items-center justify-center"
-						onKeyDown={(event) => {
-							if (event.key === "ArrowUp") {
-								event.preventDefault();
-								resizeDrawer(drawerValue + 64);
-							}
-							if (event.key === "ArrowDown") {
-								event.preventDefault();
-								resizeDrawer(drawerValue - 64);
-							}
-						}}
-						onPointerDown={(event) => {
-							event.currentTarget.setPointerCapture(event.pointerId);
-							dragStart.current = {
-								pointerId: event.pointerId,
-								startHeight: drawerValue,
-								startY: event.clientY,
-							};
-						}}
-						onPointerMove={(event) => {
-							const start = dragStart.current;
-							if (!start || start.pointerId !== event.pointerId) return;
-							resizeDrawer(start.startHeight + start.startY - event.clientY);
-						}}
-						onPointerUp={(event) => {
-							if (dragStart.current?.pointerId !== event.pointerId) return;
-							event.currentTarget.releasePointerCapture(event.pointerId);
-							dragStart.current = null;
-						}}
-						role="slider"
-						tabIndex={0}
-					>
-						<span className="h-1.5 w-12 rounded-full bg-muted" />
-					</div>
-					<SheetHeader className="p-0 text-left">
-						<SheetTitle>Detalhes do lançamento</SheetTitle>
-						<SheetDescription>{description}</SheetDescription>
-					</SheetHeader>
-					{details}
-					{editAction && (
-						<SheetFooter className="p-0 pt-2">{editAction}</SheetFooter>
-					)}
-				</SheetContent>
-			</Sheet>
+			<ResizableDrawer
+				description={description}
+				footer={editAction}
+				onOpenChange={onOpenChange}
+				open={open}
+				title="Detalhes do lançamento"
+			>
+				{details}
+			</ResizableDrawer>
 		);
 
 	return (

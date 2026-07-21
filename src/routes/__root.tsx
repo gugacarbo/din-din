@@ -7,6 +7,7 @@ import {
 	Scripts,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
+import { PwaRegistration } from "#/components/pwa-registration.tsx";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import appCss from "../styles.css?url";
 
@@ -34,13 +35,29 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 				content: "width=device-width, initial-scale=1",
 			},
 			{
+				name: "theme-color",
+				content: "#4fb8b2",
+			},
+			{
+				name: "apple-mobile-web-app-capable",
+				content: "yes",
+			},
+			{
+				name: "apple-mobile-web-app-status-bar-style",
+				content: "default",
+			},
+			{
 				title: "Din Din · finanças pessoais",
 			},
 		],
 		links: [
 			{
 				rel: "manifest",
-				href: "/manifest.json",
+				href: "/manifest.webmanifest",
+			},
+			{
+				rel: "apple-touch-icon",
+				href: "/logo192.png",
 			},
 			{
 				rel: "stylesheet",
@@ -60,6 +77,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			<body>
 				<ScriptOnce>{themeScript}</ScriptOnce>
 				{children}
+				<PwaRegistration />
 				<TanStackDevtools
 					config={{
 						position: "bottom-right",

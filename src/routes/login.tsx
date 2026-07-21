@@ -12,6 +12,7 @@ import { Field, FieldError, FieldLabel } from "#/components/ui/field.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import { authClient } from "#/lib/auth-client.ts";
 import { sessionQueryOptions } from "#/lib/finance-query-options.ts";
+import { isOfflineNavigation } from "#/lib/pwa.ts";
 
 const devLoginSchema = z.object({
 	email: z.string().trim().email("Informe um e-mail válido."),
@@ -20,6 +21,7 @@ type DevLoginValues = z.infer<typeof devLoginSchema>;
 
 export const Route = createFileRoute("/login")({
 	beforeLoad: async ({ context }) => {
+		if (isOfflineNavigation()) return;
 		try {
 			await context.queryClient.ensureQueryData(sessionQueryOptions());
 			throw redirect({ to: "/" });

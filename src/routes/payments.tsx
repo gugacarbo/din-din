@@ -1,15 +1,9 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 
 import { FinancePage } from "#/components/finance/finance-page.tsx";
-import { sessionQueryOptions } from "#/lib/finance-query-options.ts";
+import { requireFinanceSession } from "#/lib/route-session.ts";
 
 export const Route = createFileRoute("/payments")({
-	beforeLoad: async ({ context }) => {
-		try {
-			await context.queryClient.ensureQueryData(sessionQueryOptions());
-		} catch {
-			throw redirect({ to: "/login" });
-		}
-	},
+	beforeLoad: ({ context }) => requireFinanceSession(context.queryClient),
 	component: () => <FinancePage kind="payments" />,
 });

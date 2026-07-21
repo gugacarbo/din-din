@@ -38,6 +38,14 @@ function renderFinancePage(kind: ComponentProps<typeof FinancePage>["kind"]) {
 	);
 }
 
+function setOnline(value: boolean) {
+	Object.defineProperty(window.navigator, "onLine", {
+		configurable: true,
+		value,
+	});
+	window.dispatchEvent(new Event(value ? "online" : "offline"));
+}
+
 const expenseCategory = { id: "22222222-2222-4222-8222-222222222222", type: "expense", name: "Mercado", colorKey: "orange", iconKey: "Utensils", parentCategoryId: null, level: 1 as const, path: ["22222222-2222-4222-8222-222222222222"], archivedAt: null, createdAt: "2024-01-01T00:00:00.000Z", updatedAt: "2024-01-01T00:00:00.000Z" };
 const incomeCategory = { ...expenseCategory, id: "11111111-1111-4111-8111-111111111111", type: "income", name: "Salário", colorKey: "emerald", iconKey: "BriefcaseBusiness" };
 const transaction = { id: "33333333-3333-4333-8333-333333333333", type: "expense", categoryId: expenseCategory.id, category: expenseCategory, paymentMethodId: null, paymentMethod: null, amountCents: 1200, currency: "BRL" as const, occurredAt: "2024-02-10", description: "antes", invoiceCycleClosingDate: null, invoiceCycleDueDate: null, archivedAt: null, createdAt: "2024-02-10T00:00:00.000Z", updatedAt: "2024-02-10T00:00:00.000Z" };
@@ -45,6 +53,7 @@ const transaction = { id: "33333333-3333-4333-8333-333333333333", type: "expense
 describe("FinancePage", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		setOnline(true);
 		api.getDashboard.mockResolvedValue({ month: { incomeCents: 0, expenseCents: 0, balanceCents: 0 }, incomeByPaymentMethod: [], recentTransactions: [] });
 		api.listCategories.mockResolvedValue([incomeCategory, expenseCategory]);
 		api.listTransactions.mockResolvedValue({ items: [transaction], nextCursor: null });
@@ -75,6 +84,19 @@ describe("FinancePage", () => {
 
 		const drawer = await screen.findByRole("dialog");
 		expect(drawer).toHaveAttribute("data-slot", "sheet-content");
+		expect(
+			within(drawer).getByRole("slider", {
+				name: "Ajustar altura do drawer",
+			}),
+		).toBeInTheDocument();
+		const actions = drawer.querySelector('[data-slot="transaction-form-actions"]');
+		if (!actions) throw new Error("Ações do formulário ausentes.");
+		const actionButtons = within(actions).getAllByRole("button");
+		expect(actionButtons.map((button) => button.textContent)).toEqual([
+			"Cancelar",
+			"Adicionar lançamento",
+		]);
+		expect(actionButtons[0]).toHaveClass("h-12", "w-full");
 		const description = screen.getByLabelText("Descrição opcional");
 		expect(description).toHaveAttribute("data-slot", "textarea");
 		expect(description).toHaveClass("min-h-18");
@@ -94,7 +116,7 @@ describe("FinancePage", () => {
 		});
 		const footer = saveButton.parentElement;
 		if (!footer) throw new Error("Rodapé do formulário ausente.");
-		expect(footer).toHaveClass("flex-row");
+		expect(footer).toHaveClass("grid", "grid-cols-2");
 		await user.click(saveButton);
 		await waitFor(() => expect(api.updateTransaction).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: "expense" }) })));
 	});
@@ -124,6 +146,38 @@ describe("FinancePage", () => {
 		const link = within(nav).getByRole("link", { name: "Arquivo" });
 		expect(link).toHaveAttribute("href", "/archive");
 		expect(nav).toHaveClass("md:hidden");
+	});
+
+	it("prefetches the data for every item exposed by the sidebar", async () => {
+		renderFinancePage("dashboard");
+
+		await waitFor(() => {
+			expect(api.getDashboard).toHaveBeenCalled();
+			expect(api.getReport).toHaveBeenCalled();
+			expect(api.listCategories).toHaveBeenCalledWith({
+				data: { status: "active" },
+			});
+			expect(api.listPaymentMethods).toHaveBeenCalledWith({
+				data: { status: "all" },
+			});
+			expect(api.listInvoices).toHaveBeenCalled();
+			expect(api.listTransactions).toHaveBeenCalledWith({
+				data: { scope: "active" },
+			});
+			expect(api.listTransactions).toHaveBeenCalledWith({
+				data: { scope: "archived" },
+			});
+		});
+	});
+
+	it("keeps the cached finance view read-only while offline", async () => {
+		setOnline(false);
+		renderFinancePage("dashboard");
+
+		expect(
+			await screen.findByRole("status"),
+		).toHaveTextContent("Esta visualização é somente leitura.");
+		expect(document.querySelector("[inert]")).toHaveAttribute("inert", "");
 	});
 
 	it("shows the category hierarchy in the category manager", async () => {

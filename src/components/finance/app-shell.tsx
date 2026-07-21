@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
 	ArchiveRestore,
@@ -8,8 +9,9 @@ import {
 	LogOut,
 	Plus,
 	Tags,
+	WifiOff,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 
 import { Button } from "#/components/ui/button.tsx";
 import {
@@ -27,6 +29,15 @@ import {
 	SidebarSeparator,
 	SidebarTrigger,
 } from "#/components/ui/sidebar.tsx";
+
+import {
+	categoriesQueryOptions,
+	dashboardQueryOptions,
+	invoicesQueryOptions,
+	paymentMethodsQueryOptions,
+	reportQueryOptions,
+	transactionsQueryOptions,
+} from "#/lib/finance-query-options.ts";
 
 import { ThemeToggle } from "./theme-toggle.tsx";
 
@@ -69,85 +80,118 @@ function NavigationLink({
 
 export function AppShell({
 	children,
+	offline,
 	onLogout,
 	onNewTransaction,
 }: {
 	children: ReactNode;
+	offline: boolean;
 	onLogout: () => void;
 	onNewTransaction: () => void;
 }) {
+	const queryClient = useQueryClient();
+
+	useEffect(() => {
+		if (offline) return;
+		void Promise.allSettled([
+			queryClient.prefetchQuery(dashboardQueryOptions()),
+			queryClient.prefetchInfiniteQuery(transactionsQueryOptions("active")),
+			queryClient.prefetchQuery(reportQueryOptions()),
+			queryClient.prefetchQuery(categoriesQueryOptions("active")),
+			queryClient.prefetchQuery(paymentMethodsQueryOptions()),
+			queryClient.prefetchQuery(invoicesQueryOptions()),
+			queryClient.prefetchInfiniteQuery(transactionsQueryOptions("archived")),
+		]);
+	}, [offline, queryClient]);
+
 	return (
-		<SidebarProvider>
-			<Sidebar className="border-sidebar-border bg-sidebar/90 backdrop-blur">
-				<SidebarHeader className="px-4 py-6">
-					<Link className="px-2" to="/">
-						<p className="display-title text-3xl font-bold text-foreground">
-							Din Din
-						</p>
-						<p className="island-kicker mt-1">suas finanças, claras</p>
-					</Link>
-				</SidebarHeader>
-				<SidebarContent>
-					<SidebarGroup>
-						<SidebarGroupContent>
-							<SidebarMenu aria-label="Principal">
-								{primaryNavigation.map((item) => (
-									<NavigationLink item={item} key={item.to} />
-								))}
-							</SidebarMenu>
-						</SidebarGroupContent>
-					</SidebarGroup>
-					<SidebarGroup>
-						<SidebarGroupContent>
-							<SidebarMenu aria-label="Secundária">
-								{secondaryNavigation.map((item) => (
-									<NavigationLink item={item} key={item.to} />
-								))}
-							</SidebarMenu>
-						</SidebarGroupContent>
-					</SidebarGroup>
-				</SidebarContent>
-				<SidebarFooter>
-					<SidebarSeparator />
-					<div className="flex items-center justify-between px-2 pb-2">
-						<ThemeToggle />
-						<Button onClick={onLogout} size="sm" variant="ghost">
-							<LogOut /> Sair
-						</Button>
-					</div>
-				</SidebarFooter>
-			</Sidebar>
-			<SidebarInset className="bg-transparent">
-				<header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-2 border-b border-border bg-background/90 px-4 backdrop-blur">
-					<div className="flex items-center gap-2">
-						<SidebarTrigger />
-						<Link
-							className="display-title text-2xl font-bold text-foreground md:hidden"
-							to="/"
-						>
-							Din Din
-						</Link>
-					</div>
-					<div className="flex items-center gap-2">
-						<Button onClick={onNewTransaction} size="sm">
-							<Plus /> <span className="hidden sm:inline">Novo lançamento</span>
-							<span className="sm:hidden">Novo</span>
-						</Button>
-						<div className="md:hidden">
-							<ThemeToggle />
-						</div>
-					</div>
-				</header>
-				<nav
-					aria-label="Navegação mobile"
-					className="border-b border-border px-4 py-2 md:hidden"
+		<>
+			{offline && (
+				<div
+					className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-center text-sm font-semibold text-amber-950"
+					role="status"
 				>
-					<Link className="text-sm font-bold" to="/archive">
-						Arquivo
-					</Link>
-				</nav>
-				<main className="page-wrap py-6 md:max-w-none md:px-8">{children}</main>
-			</SidebarInset>
-		</SidebarProvider>
+					<WifiOff aria-hidden="true" className="size-4" />
+					Você está offline. Esta visualização é somente leitura.
+				</div>
+			)}
+			<div aria-disabled={offline || undefined} inert={offline}>
+				<SidebarProvider>
+					<Sidebar className="border-sidebar-border bg-sidebar/90 backdrop-blur">
+						<SidebarHeader className="px-4 py-6">
+							<Link className="px-2" to="/">
+								<p className="display-title text-3xl font-bold text-foreground">
+									Din Din
+								</p>
+								<p className="island-kicker mt-1">suas finanças, claras</p>
+							</Link>
+						</SidebarHeader>
+						<SidebarContent>
+							<SidebarGroup>
+								<SidebarGroupContent>
+									<SidebarMenu aria-label="Principal">
+										{primaryNavigation.map((item) => (
+											<NavigationLink item={item} key={item.to} />
+										))}
+									</SidebarMenu>
+								</SidebarGroupContent>
+							</SidebarGroup>
+							<SidebarGroup>
+								<SidebarGroupContent>
+									<SidebarMenu aria-label="Secundária">
+										{secondaryNavigation.map((item) => (
+											<NavigationLink item={item} key={item.to} />
+										))}
+									</SidebarMenu>
+								</SidebarGroupContent>
+							</SidebarGroup>
+						</SidebarContent>
+						<SidebarFooter>
+							<SidebarSeparator />
+							<div className="flex items-center justify-between px-2 pb-2">
+								<ThemeToggle />
+								<Button onClick={onLogout} size="sm" variant="ghost">
+									<LogOut /> Sair
+								</Button>
+							</div>
+						</SidebarFooter>
+					</Sidebar>
+					<SidebarInset className="bg-transparent">
+						<header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-2 border-b border-border bg-background/90 px-4 backdrop-blur">
+							<div className="flex items-center gap-2">
+								<SidebarTrigger />
+								<Link
+									className="display-title text-2xl font-bold text-foreground md:hidden"
+									to="/"
+								>
+									Din Din
+								</Link>
+							</div>
+							<div className="flex items-center gap-2">
+								<Button onClick={onNewTransaction} size="sm">
+									<Plus />{" "}
+									<span className="hidden sm:inline">Novo lançamento</span>
+									<span className="sm:hidden">Novo</span>
+								</Button>
+								<div className="md:hidden">
+									<ThemeToggle />
+								</div>
+							</div>
+						</header>
+						<nav
+							aria-label="Navegação mobile"
+							className="border-b border-border px-4 py-2 md:hidden"
+						>
+							<Link className="text-sm font-bold" to="/archive">
+								Arquivo
+							</Link>
+						</nav>
+						<main className="page-wrap py-6 md:max-w-none md:px-8">
+							{children}
+						</main>
+					</SidebarInset>
+				</SidebarProvider>
+			</div>
+		</>
 	);
 }

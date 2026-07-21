@@ -11,6 +11,7 @@ import { Controller, useForm } from "react-hook-form";
 import { Cell, Pie, PieChart } from "recharts";
 import { z } from "zod";
 
+import { ResizableDrawer } from "#/components/resizable-drawer.tsx";
 import { Alert, AlertDescription } from "#/components/ui/alert.tsx";
 import {
 	AlertDialog,
@@ -52,25 +53,28 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "#/components/ui/select.tsx";
-import {
-	Sheet,
-	SheetContent,
-	SheetDescription,
-	SheetHeader,
-	SheetTitle,
-} from "#/components/ui/sheet.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
 import { Tabs, TabsList, TabsTrigger } from "#/components/ui/tabs.tsx";
 import { Textarea } from "#/components/ui/textarea.tsx";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
+import { useOnlineStatus } from "#/hooks/use-online-status.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import {
 	CATEGORY_COLORS,
 	CATEGORY_ICONS,
 	saoPauloToday,
 } from "#/lib/finance.ts";
-import { financeQueryKey } from "#/lib/finance-query-options.ts";
+import {
+	categoriesQueryOptions,
+	dashboardQueryOptions,
+	financeQueryKey,
+	invoicesQueryOptions,
+	paymentMethodsQueryOptions,
+	reportQueryOptions,
+	transactionsQueryOptions,
+} from "#/lib/finance-query-options.ts";
+import { clearNavigationCache } from "#/lib/pwa.ts";
 import { cn } from "#/lib/utils.ts";
 import type {
 	CategoryDto,
@@ -84,12 +88,6 @@ import {
 	createCategory,
 	createPaymentMethod,
 	createTransaction,
-	getDashboard,
-	getReport,
-	listCategories,
-	listInvoices,
-	listPaymentMethods,
-	listTransactions,
 	restoreCategory,
 	restorePaymentMethod,
 	restoreTransaction,
@@ -369,10 +367,7 @@ function TransactionRows({
 }
 
 function Dashboard({ onView }: { onView: (item: TransactionDto) => void }) {
-	const result = useQuery({
-		queryKey: [...financeQueryKey, "dashboard"],
-		queryFn: getDashboard,
-	});
+	const result = useQuery(dashboardQueryOptions());
 	if (result.isPending) return <Loading />;
 	if (result.error || !result.data)
 		return <Notice>{errorMessage(result.error)}</Notice>;
@@ -443,10 +438,12 @@ function Summary({
 
 function TransactionForm({
 	initial,
+	mobileDrawer = false,
 	onSaved,
 	onCancel,
 }: {
 	initial?: TransactionDto;
+	mobileDrawer?: boolean;
 	onSaved: () => void;
 	onCancel?: () => void;
 }) {
@@ -462,14 +459,8 @@ function TransactionForm({
 		resolver: zodResolver(transactionFormSchema),
 	});
 	const type = form.watch("type");
-	const categoriesResult = useQuery({
-		queryKey: [...financeQueryKey, "categories", "active"],
-		queryFn: () => listCategories({ data: { status: "active" } }),
-	});
-	const paymentMethodsResult = useQuery({
-		queryKey: [...financeQueryKey, "payment-methods", "all"],
-		queryFn: () => listPaymentMethods({ data: { status: "all" } }),
-	});
+	const categoriesResult = useQuery(categoriesQueryOptions("active"));
+	const paymentMethodsResult = useQuery(paymentMethodsQueryOptions());
 	const [submitError, setSubmitError] = useState<string | null>(null);
 	const saveTransaction = useMutation({
 		mutationFn: async (values: TransactionFormValues) => {
@@ -517,140 +508,171 @@ function TransactionForm({
 			);
 		}
 	}
+	const submitDisabled =
+		form.formState.isSubmitting || categoriesResult.isPending;
+	const submitLabel = form.formState.isSubmitting
+		? "Salvando…"
+		: initial
+			? "Salvar alterações"
+			: "Adicionar lançamento";
+	const actions = (
+		<>
+			<Button
+				className={mobileDrawer ? "h-12 w-full" : undefined}
+				onClick={onCancel}
+				type="button"
+				variant="outline"
+			>
+				Cancelar
+			</Button>
+			<Button
+				className={mobileDrawer ? "h-12 w-full" : undefined}
+				disabled={submitDisabled}
+				type="submit"
+			>
+				{submitLabel}
+			</Button>
+		</>
+	);
 	return (
 		<form
-			className="grid gap-4"
+			className={cn(
+				"grid gap-4",
+				mobileDrawer && "h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]",
+			)}
 			noValidate
 			onSubmit={form.handleSubmit(submit)}
 		>
-			<Controller
-				control={form.control}
-				name="paymentMethodId"
-				render={({ field, fieldState }) => (
-					<Field data-invalid={fieldState.invalid}>
-						<FieldLabel htmlFor="transaction-payment-method">
-							Forma de pagamento (opcional)
-						</FieldLabel>
-						<Select
-							onValueChange={(value) =>
-								field.onChange(value === "none" ? "" : value)
-							}
-							value={field.value || "none"}
-						>
-							<SelectTrigger
-								aria-invalid={fieldState.invalid}
-								className="w-full"
-								id="transaction-payment-method"
+			<div
+				className={cn(
+					"grid gap-4",
+					mobileDrawer && "min-h-0 overflow-y-auto pb-4",
+				)}
+			>
+				<Controller
+					control={form.control}
+					name="paymentMethodId"
+					render={({ field, fieldState }) => (
+						<Field data-invalid={fieldState.invalid}>
+							<FieldLabel htmlFor="transaction-payment-method">
+								Forma de pagamento (opcional)
+							</FieldLabel>
+							<Select
+								onValueChange={(value) =>
+									field.onChange(value === "none" ? "" : value)
+								}
+								value={field.value || "none"}
 							>
-								<SelectValue placeholder="Não informado" />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="none">Não informado</SelectItem>
-								{paymentChoices.map((method: PaymentMethodDto) => (
-									<SelectItem key={method.id} value={method.id}>
-										{method.name}
-										{method.archivedAt ? " (arquivada)" : ""}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-						<FieldError errors={[fieldState.error]} />
-					</Field>
-				)}
-			/>
-			<Controller
-				control={form.control}
-				name="type"
-				render={({ field, fieldState }) => (
-					<Field data-invalid={fieldState.invalid}>
-						<FieldLabel htmlFor="transaction-type">Tipo</FieldLabel>
-						<KindSelect
-							aria-invalid={fieldState.invalid}
-							id="transaction-type"
-							onValueChange={field.onChange}
-							value={field.value as Kind | undefined}
-						/>
-						<FieldError errors={[fieldState.error]} />
-					</Field>
-				)}
-			/>
-			<Controller
-				control={form.control}
-				name="categoryId"
-				render={({ field, fieldState }) => (
-					<Field data-invalid={fieldState.invalid}>
-						<FieldLabel htmlFor="transaction-category">Categoria</FieldLabel>
-						<CategorySelect
-							aria-invalid={fieldState.invalid}
-							categories={choices}
-							disabled={!type}
-							id="transaction-category"
-							onValueChange={field.onChange}
-							value={field.value}
-						/>
-						<FieldError errors={[fieldState.error]} />
-					</Field>
-				)}
-			/>
-			<Controller
-				control={form.control}
-				name="amount"
-				render={({ field, fieldState }) => (
-					<Field data-invalid={fieldState.invalid}>
-						<FieldLabel htmlFor="transaction-amount">Valor (R$)</FieldLabel>
-						<MoneyInput
-							aria-invalid={fieldState.invalid}
-							id="transaction-amount"
-							onBlur={field.onBlur}
-							onValueChange={field.onChange}
-							required
-							value={field.value}
-						/>
-						<FieldError errors={[fieldState.error]} />
-					</Field>
-				)}
-			/>
-			<Field data-invalid={Boolean(form.formState.errors.occurredAt)}>
-				<FieldLabel htmlFor="transaction-date">Data</FieldLabel>
-				<Input
-					aria-invalid={Boolean(form.formState.errors.occurredAt)}
-					{...form.register("occurredAt")}
-					id="transaction-date"
-					required
-					type="date"
+								<SelectTrigger
+									aria-invalid={fieldState.invalid}
+									className="w-full"
+									id="transaction-payment-method"
+								>
+									<SelectValue placeholder="Não informado" />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="none">Não informado</SelectItem>
+									{paymentChoices.map((method: PaymentMethodDto) => (
+										<SelectItem key={method.id} value={method.id}>
+											{method.name}
+											{method.archivedAt ? " (arquivada)" : ""}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+							<FieldError errors={[fieldState.error]} />
+						</Field>
+					)}
 				/>
-				<FieldError errors={[form.formState.errors.occurredAt]} />
-			</Field>
-			<Field data-invalid={Boolean(form.formState.errors.description)}>
-				<FieldLabel htmlFor="transaction-description">
-					Descrição opcional
-				</FieldLabel>
-				<Textarea
-					aria-invalid={Boolean(form.formState.errors.description)}
-					{...form.register("description")}
-					className="min-h-18"
-					id="transaction-description"
-					maxLength={280}
-					rows={2}
+				<Controller
+					control={form.control}
+					name="type"
+					render={({ field, fieldState }) => (
+						<Field data-invalid={fieldState.invalid}>
+							<FieldLabel htmlFor="transaction-type">Tipo</FieldLabel>
+							<KindSelect
+								aria-invalid={fieldState.invalid}
+								id="transaction-type"
+								onValueChange={field.onChange}
+								value={field.value as Kind | undefined}
+							/>
+							<FieldError errors={[fieldState.error]} />
+						</Field>
+					)}
 				/>
-				<FieldError errors={[form.formState.errors.description]} />
-			</Field>
-			{submitError && <Notice>{submitError}</Notice>}
-			<DialogFooter className="flex-row justify-end">
-				<Button
-					disabled={form.formState.isSubmitting || categoriesResult.isPending}
-					type="submit"
+				<Controller
+					control={form.control}
+					name="categoryId"
+					render={({ field, fieldState }) => (
+						<Field data-invalid={fieldState.invalid}>
+							<FieldLabel htmlFor="transaction-category">Categoria</FieldLabel>
+							<CategorySelect
+								aria-invalid={fieldState.invalid}
+								categories={choices}
+								disabled={!type}
+								id="transaction-category"
+								onValueChange={field.onChange}
+								value={field.value}
+							/>
+							<FieldError errors={[fieldState.error]} />
+						</Field>
+					)}
+				/>
+				<Controller
+					control={form.control}
+					name="amount"
+					render={({ field, fieldState }) => (
+						<Field data-invalid={fieldState.invalid}>
+							<FieldLabel htmlFor="transaction-amount">Valor (R$)</FieldLabel>
+							<MoneyInput
+								aria-invalid={fieldState.invalid}
+								id="transaction-amount"
+								onBlur={field.onBlur}
+								onValueChange={field.onChange}
+								required
+								value={field.value}
+							/>
+							<FieldError errors={[fieldState.error]} />
+						</Field>
+					)}
+				/>
+				<Field data-invalid={Boolean(form.formState.errors.occurredAt)}>
+					<FieldLabel htmlFor="transaction-date">Data</FieldLabel>
+					<Input
+						aria-invalid={Boolean(form.formState.errors.occurredAt)}
+						{...form.register("occurredAt")}
+						id="transaction-date"
+						required
+						type="date"
+					/>
+					<FieldError errors={[form.formState.errors.occurredAt]} />
+				</Field>
+				<Field data-invalid={Boolean(form.formState.errors.description)}>
+					<FieldLabel htmlFor="transaction-description">
+						Descrição opcional
+					</FieldLabel>
+					<Textarea
+						aria-invalid={Boolean(form.formState.errors.description)}
+						{...form.register("description")}
+						className="min-h-18"
+						id="transaction-description"
+						maxLength={280}
+						rows={2}
+					/>
+					<FieldError errors={[form.formState.errors.description]} />
+				</Field>
+				{submitError && <Notice>{submitError}</Notice>}
+			</div>
+			{mobileDrawer ? (
+				<div
+					className="-mx-6 grid grid-cols-2 gap-3 border-t bg-background px-6 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+					data-slot="transaction-form-actions"
 				>
-					{form.formState.isSubmitting
-						? "Salvando…"
-						: initial
-							? "Salvar alterações"
-							: "Adicionar lançamento"}
-				</Button>
-				<Button onClick={onCancel} type="button" variant="outline">
-					Cancelar
-				</Button>
-			</DialogFooter>
+					{actions}
+				</div>
+			) : (
+				<DialogFooter className="flex-row justify-end">{actions}</DialogFooter>
+			)}
 		</form>
 	);
 }
@@ -673,6 +695,7 @@ function TransactionDialog({
 	const form = editing && (
 		<TransactionForm
 			initial={isEdit ? editing : undefined}
+			mobileDrawer={isMobile}
 			onCancel={() => onOpenChange(false)}
 			onSaved={() => {
 				onOpenChange(false);
@@ -686,18 +709,15 @@ function TransactionDialog({
 
 	if (isMobile)
 		return (
-			<Sheet onOpenChange={onSheetOpenChange} open={Boolean(editing)}>
-				<SheetContent
-					className="max-h-dvh min-h-[72dvh] overflow-y-auto rounded-t-2xl px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
-					side="bottom"
-				>
-					<SheetHeader className="p-0 text-left">
-						<SheetTitle>{title}</SheetTitle>
-						<SheetDescription>{description}</SheetDescription>
-					</SheetHeader>
-					{form}
-				</SheetContent>
-			</Sheet>
+			<ResizableDrawer
+				className="pb-0"
+				description={description}
+				onOpenChange={onSheetOpenChange}
+				open={Boolean(editing)}
+				title={title}
+			>
+				{form}
+			</ResizableDrawer>
 		);
 
 	return (
@@ -722,17 +742,7 @@ function Transactions({
 }) {
 	const queryClient = useQueryClient();
 	const [archiving, setArchiving] = useState<TransactionDto | null>(null);
-	const result = useInfiniteQuery({
-		queryKey: [...financeQueryKey, "transactions", "active"],
-		initialPageParam: undefined as string | undefined,
-		queryFn: ({ pageParam }) =>
-			listTransactions({
-				data: pageParam
-					? { scope: "active", cursor: pageParam }
-					: { scope: "active" },
-			}),
-		getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-	});
+	const result = useInfiniteQuery(transactionsQueryOptions("active"));
 	const archiveMutation = useMutation({
 		mutationFn: (id: string) => archiveTransaction({ data: { id } }),
 		onSuccess: () =>
@@ -807,10 +817,7 @@ function CategoryForm({
 		resolver: zodResolver(categoryFormSchema),
 	});
 	const type = form.watch("type");
-	const categoriesResult = useQuery({
-		queryKey: [...financeQueryKey, "categories", "active"],
-		queryFn: () => listCategories({ data: { status: "active" } }),
-	});
+	const categoriesResult = useQuery(categoriesQueryOptions("active"));
 	const parentChoices = useMemo(
 		() =>
 			(categoriesResult.data ?? []).filter(
@@ -996,10 +1003,7 @@ function Categories() {
 	const [status, setStatus] = useState<"active" | "archived">("active");
 	const [editing, setEditing] = useState<CategoryDto | null>(null);
 	const [archiving, setArchiving] = useState<CategoryDto | null>(null);
-	const result = useQuery({
-		queryKey: [...financeQueryKey, "categories", status],
-		queryFn: () => listCategories({ data: { status } }),
-	});
+	const result = useQuery(categoriesQueryOptions(status));
 	const archiveMutation = useMutation({
 		mutationFn: (id: string) => archiveCategory({ data: { id } }),
 		onSuccess: () =>
@@ -1315,14 +1319,8 @@ function Payments() {
 	const queryClient = useQueryClient();
 	const [tab, setTab] = useState<"methods" | "invoices">("methods");
 	const [editing, setEditing] = useState<PaymentMethodDto | null>(null);
-	const methods = useQuery({
-		queryKey: [...financeQueryKey, "payment-methods", "all"],
-		queryFn: () => listPaymentMethods({ data: { status: "all" } }),
-	});
-	const invoices = useQuery({
-		queryKey: [...financeQueryKey, "invoices"],
-		queryFn: listInvoices,
-	});
+	const methods = useQuery(paymentMethodsQueryOptions());
+	const invoices = useQuery(invoicesQueryOptions());
 	const archiveMutation = useMutation({
 		mutationFn: (id: string) => archivePaymentMethod({ data: { id } }),
 		onSuccess: () =>
@@ -1500,17 +1498,7 @@ function Payments() {
 
 function Archive({ onView }: { onView: (item: TransactionDto) => void }) {
 	const queryClient = useQueryClient();
-	const result = useInfiniteQuery({
-		queryKey: [...financeQueryKey, "transactions", "archived"],
-		initialPageParam: undefined as string | undefined,
-		queryFn: ({ pageParam }) =>
-			listTransactions({
-				data: pageParam
-					? { scope: "archived", cursor: pageParam }
-					: { scope: "archived" },
-			}),
-		getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-	});
+	const result = useInfiniteQuery(transactionsQueryOptions("archived"));
 	const restoreMutation = useMutation({
 		mutationFn: (id: string) => restoreTransaction({ data: { id } }),
 		onSuccess: () =>
@@ -1631,10 +1619,7 @@ function Reports() {
 		"month",
 	);
 	const [anchorDate, setAnchorDate] = useState(saoPauloToday());
-	const result = useQuery({
-		queryKey: [...financeQueryKey, "report", granularity, anchorDate],
-		queryFn: () => getReport({ data: { granularity, anchorDate } }),
-	});
+	const result = useQuery(reportQueryOptions(granularity, anchorDate));
 	const report = result.data;
 	const chartColors: Record<string, string> = {
 		emerald: "#10b981",
@@ -1785,12 +1770,19 @@ function Reports() {
 
 export function FinancePage({ kind }: { kind: FinancePageKind }) {
 	const queryClient = useQueryClient();
+	const online = useOnlineStatus();
 	const logout = async () => {
 		await authClient.signOut();
+		await clearNavigationCache().catch(() => undefined);
 		window.location.assign("/login");
 	};
 	const [editing, setEditing] = useState<TransactionDto | null>(null);
 	const [viewing, setViewing] = useState<TransactionDto | null>(null);
+	useEffect(() => {
+		if (online) return;
+		setEditing(null);
+		setViewing(null);
+	}, [online]);
 	const openNewTransaction = () => setEditing({} as TransactionDto);
 	const handleSaved = () => {
 		setEditing(null);
@@ -1798,6 +1790,7 @@ export function FinancePage({ kind }: { kind: FinancePageKind }) {
 	};
 	return (
 		<AppShell
+			offline={!online}
 			onLogout={() => void logout()}
 			onNewTransaction={openNewTransaction}
 		>

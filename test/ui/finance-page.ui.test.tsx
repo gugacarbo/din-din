@@ -76,6 +76,20 @@ describe("FinancePage", () => {
 		expect(nav).toHaveClass("md:hidden");
 	});
 
+	it("shows the category hierarchy in the category manager", async () => {
+		const child = {
+			...expenseCategory,
+			id: "55555555-5555-4555-8555-555555555555",
+			name: "Restaurante",
+			parentCategoryId: expenseCategory.id,
+			level: 2 as const,
+			path: [expenseCategory.id, "55555555-5555-4555-8555-555555555555"],
+		};
+		api.listCategories.mockResolvedValue([expenseCategory, child]);
+		render(<FinancePage kind="categories" />);
+		expect(await screen.findByText("— Restaurante")).toBeInTheDocument();
+	});
+
 	it("renders expense categories as an expandable tree with direct and aggregate totals", async () => {
 		const child = {
 			...expenseCategory,

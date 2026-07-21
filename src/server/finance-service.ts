@@ -258,6 +258,11 @@ function categoryDtos(rows: CategoryRow[]) {
 	return new Map(
 		rows.map((row) => {
 			const itemPath = path(row);
+			if (itemPath.length > 3)
+				throw new FinanceError(
+					"CONFLICT",
+					"Categorias aceitam no máximo três níveis.",
+				);
 			const dto: CategoryDto = {
 				id: row.id,
 				type: row.type as CategoryType,
@@ -265,7 +270,7 @@ function categoryDtos(rows: CategoryRow[]) {
 				colorKey: row.colorKey,
 				iconKey: row.iconKey,
 				parentCategoryId: row.parentCategoryId,
-				level: Math.min(itemPath.length, 3) as 1 | 2 | 3,
+				level: itemPath.length as 1 | 2 | 3,
 				path: itemPath,
 				archivedAt: iso(row.archivedAt),
 				createdAt: new Date(row.createdAt).toISOString(),
@@ -511,6 +516,51 @@ export function createFinanceService({
 			);
 		return walk(categoryId);
 	}
+	async function validateSubtreeDepth(
+		id: string,
+		categoryId: string,
+		parentCategoryId: string | null,
+	) {
+		const all = await db
+			.select()
+			.from(categories)
+			.where(eq(categories.userId, id));
+		const byId = new Map(all.map((item) => [item.id, item]));
+		const children = new Map<string, CategoryRow[]>();
+		for (const item of all) {
+			if (!item.parentCategoryId) continue;
+			children.set(item.parentCategoryId, [
+				...(children.get(item.parentCategoryId) ?? []),
+				item,
+			]);
+		}
+		let parentDepth = 0;
+		let cursor = parentCategoryId ? byId.get(parentCategoryId) : undefined;
+		const ancestors = new Set<string>([categoryId]);
+		while (cursor) {
+			if (ancestors.has(cursor.id))
+				throw new FinanceError(
+					"CONFLICT",
+					"A categoria não pode formar um ciclo.",
+				);
+			ancestors.add(cursor.id);
+			parentDepth += 1;
+			cursor = cursor.parentCategoryId
+				? byId.get(cursor.parentCategoryId)
+				: undefined;
+		}
+		const maxRelativeDepth = (current: string, relativeDepth: number): number =>
+			(children.get(current) ?? []).reduce(
+				(max, child) =>
+					Math.max(max, maxRelativeDepth(child.id, relativeDepth + 1)),
+				relativeDepth,
+			);
+		if (parentDepth + maxRelativeDepth(categoryId, 1) > 3)
+			throw new FinanceError(
+				"CONFLICT",
+				"Mover esta categoria deixaria um descendente acima do terceiro nível.",
+			);
+	}
 	async function cycleSnapshot(
 		type: CategoryType,
 		occurredAt: string,
@@ -628,6 +678,8 @@ export function createFinanceService({
 					"CONFLICT",
 					"Não mova categoria com descendente ativo.",
 				);
+			if (parentCategoryId !== previous.parentCategoryId)
+				await validateSubtreeDepth(id, previous.id, parentCategoryId);
 			const normalizedName = normalizeCategoryName(data.name);
 			const duplicate = (
 				await db
@@ -693,6 +745,7 @@ export function createFinanceService({
 						"Restaure primeiro as categorias ancestrais.",
 					);
 			}
+			await validateSubtreeDepth(id, category.id, category.parentCategoryId);
 			await db
 				.update(categories)
 				.set({ archivedAt: null, updatedAt: now() })

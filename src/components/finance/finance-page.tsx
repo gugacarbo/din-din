@@ -928,7 +928,10 @@ function Categories() {
 									iconKey={category.iconKey}
 								/>
 								<div className="flex-1">
-									<p className="font-semibold">{category.name}</p>
+									<p className="font-semibold">
+										{"— ".repeat(category.level - 1)}
+										{category.name}
+									</p>
 									<p className="text-xs text-muted-foreground">
 										{kindLabel(category.type)}
 									</p>

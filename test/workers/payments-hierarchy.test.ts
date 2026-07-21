@@ -29,4 +29,23 @@ describe("payment methods and category hierarchy", () => {
 		const invoices = await service.listInvoices();
 		expect(invoices).toEqual([expect.objectContaining({ paymentMethodId: card.id, totalCents: 2600, cycleClosingDate: "2024-03-10", cycleDueDate: "2024-03-20" })]);
 	});
+
+	it("rejects moves and restores that would make archived descendants exceed level three", async () => {
+		const { a } = await createAuthedPair();
+		const service = serviceFor(a.cookieHeader);
+		const suffix = crypto.randomUUID().slice(0, 8);
+		const root = await service.createCategory({ type: "expense", name: `Root ${suffix}`, colorKey: "orange", iconKey: "Utensils" });
+		const moving = await service.createCategory({ type: "expense", name: `Moving ${suffix}`, colorKey: "orange", iconKey: "Utensils", parentCategoryId: root.id });
+		const archivedGrandchild = await service.createCategory({ type: "expense", name: `Grand ${suffix}`, colorKey: "orange", iconKey: "Utensils", parentCategoryId: moving.id });
+		const targetRoot = await service.createCategory({ type: "expense", name: `Target ${suffix}`, colorKey: "orange", iconKey: "Utensils" });
+		const targetChild = await service.createCategory({ type: "expense", name: `Target child ${suffix}`, colorKey: "orange", iconKey: "Utensils", parentCategoryId: targetRoot.id });
+		await service.archiveCategory({ id: archivedGrandchild.id });
+		await service.archiveCategory({ id: moving.id });
+		await expect(service.updateCategory({ id: moving.id, name: moving.name, colorKey: moving.colorKey as "orange", iconKey: moving.iconKey as "Utensils", parentCategoryId: targetChild.id })).rejects.toMatchObject({ code: "CONFLICT" });
+
+		const fourthId = crypto.randomUUID();
+		await env.DB.prepare("insert into categories (id,user_id,type,name,normalized_name,color_key,icon_key,parent_category_id,archived_at,created_at,updated_at) values (?, ?, 'expense', ?, ?, 'orange', 'Utensils', ?, ?, ?, ?)").bind(fourthId, a.id, `Fourth ${suffix}`, `fourth ${suffix}`, archivedGrandchild.id, Date.now(), Date.now(), Date.now()).run();
+		await service.archiveCategory({ id: archivedGrandchild.id });
+		await expect(service.restoreCategory({ id: moving.id })).rejects.toMatchObject({ code: "CONFLICT" });
+	});
 });

@@ -47,17 +47,37 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 				content: "default",
 			},
 			{
+				name: "apple-mobile-web-app-title",
+				content: "Din Din",
+			},
+			{
 				title: "Din Din · finanças pessoais",
 			},
 		],
 		links: [
 			{
-				rel: "manifest",
-				href: "/manifest.webmanifest",
+				rel: "icon",
+				type: "image/png",
+				href: "/favicon-96x96.png",
+				sizes: "96x96",
+			},
+			{
+				rel: "icon",
+				type: "image/svg+xml",
+				href: "/favicon.svg",
+			},
+			{
+				rel: "shortcut icon",
+				href: "/favicon.ico",
 			},
 			{
 				rel: "apple-touch-icon",
-				href: "/logo192.png",
+				href: "/apple-touch-icon.png",
+				sizes: "180x180",
+			},
+			{
+				rel: "manifest",
+				href: "/site.webmanifest",
 			},
 			{
 				rel: "stylesheet",

@@ -95,7 +95,7 @@ PRAGMA defer_foreign_keys = OFF;
 
 try {
 	const migrationText = await readFile(feature, "utf8");
-	for (const value of ["BEGIN TRANSACTION", "categories__next", "transactions__next", "payment_methods", "transactions_payment_method_owner_fk", "PRAGMA foreign_key_check"]) {
+	for (const value of ["PRAGMA defer_foreign_keys = ON", "categories__next", "transactions__next", "payment_methods", "transactions_payment_method_owner_fk", "PRAGMA foreign_key_check"]) {
 		if (!migrationText.includes(value)) throw new Error(`Migration guard missing: ${value}`);
 	}
 	run(["--file", legacy]);

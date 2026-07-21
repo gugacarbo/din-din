@@ -64,7 +64,13 @@ describe("FinancePage", () => {
 		await user.click(screen.getByRole("button", { name: "Editar lançamento" }));
 		expect(screen.getByLabelText("Tipo")).toHaveTextContent("Despesa");
 		expect(screen.getByLabelText("Categoria")).toHaveTextContent("Mercado");
-		await user.click(screen.getByRole("button", { name: /salvar alterações/i }));
+		const saveButton = screen.getByRole("button", {
+			name: /salvar alterações/i,
+		});
+		const footer = saveButton.parentElement;
+		if (!footer) throw new Error("Rodapé do formulário ausente.");
+		expect(footer).toHaveClass("flex-row");
+		await user.click(saveButton);
 		await waitFor(() => expect(api.updateTransaction).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: "expense" }) })));
 	});
 
@@ -76,6 +82,12 @@ describe("FinancePage", () => {
 			screen.getByRole("button", { name: "Ver lançamento Mercado" }),
 		);
 		const dialog = await screen.findByRole("dialog");
+		expect(dialog).toHaveAttribute("data-slot", "sheet-content");
+		expect(
+			within(dialog).getByRole("slider", {
+				name: "Ajustar altura do drawer",
+			}),
+		).toBeInTheDocument();
 		expect(within(dialog).getByText("Detalhes do lançamento")).toBeInTheDocument();
 		expect(within(dialog).getByText("Não informado")).toBeInTheDocument();
 		expect(within(dialog).getByText("antes")).toBeInTheDocument();

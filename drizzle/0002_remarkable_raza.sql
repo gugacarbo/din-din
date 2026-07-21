@@ -1,7 +1,5 @@
 PRAGMA defer_foreign_keys = ON;
 --> statement-breakpoint
-BEGIN TRANSACTION;
---> statement-breakpoint
 CREATE TABLE `payment_methods__next` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
@@ -108,7 +106,5 @@ CREATE INDEX `transactions_archive_index` ON `transactions` (`user_id`,`archived
 CREATE INDEX `transactions_payment_cycle_index` ON `transactions` (`user_id`,`payment_method_id`,`invoice_cycle_closing_date`,`invoice_cycle_due_date`);
 --> statement-breakpoint
 PRAGMA foreign_key_check;
---> statement-breakpoint
-COMMIT;
 --> statement-breakpoint
 PRAGMA defer_foreign_keys = OFF;

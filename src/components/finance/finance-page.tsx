@@ -554,7 +554,7 @@ function TransactionForm({
 					</span>
 				</Notice>
 			)}
-			<DialogFooter>
+			<DialogFooter className="flex-row justify-end">
 				<Button disabled={saving || categoriesResult.loading} type="submit">
 					{saving
 						? "Salvando…"

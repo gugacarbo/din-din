@@ -51,6 +51,8 @@ const paymentMethodInput = z
 	.object({
 		name: z.string().trim().min(1).max(80),
 		kind: paymentKind,
+		colorKey: z.enum(CATEGORY_COLORS),
+		iconKey: z.enum(CATEGORY_ICONS),
 		invoiceControl: z.boolean().default(false),
 		closingDay: z.number().int().min(1).max(31).nullable().optional(),
 		dueDay: z.number().int().min(1).max(31).nullable().optional(),
@@ -94,6 +96,8 @@ export type PaymentMethodDto = {
 	id: string;
 	name: string;
 	kind: PaymentKind;
+	colorKey: string;
+	iconKey: string;
 	invoiceControl: boolean;
 	closingDay: number | null;
 	dueDay: number | null;
@@ -231,6 +235,8 @@ function paymentDto(row: PaymentRow): PaymentMethodDto {
 		id: row.id,
 		name: row.name,
 		kind: row.kind as PaymentKind,
+		colorKey: row.colorKey,
+		iconKey: row.iconKey,
 		invoiceControl: row.invoiceControl,
 		closingDay: row.closingDay,
 		dueDay: row.dueDay,
@@ -287,64 +293,138 @@ async function bootstrap(db: Database, d1: D1Database, userId: string) {
 		.from(userBootstrap)
 		.where(eq(userBootstrap.userId, userId))
 		.limit(1);
-	if (marker.length) return;
-	const defaults: Array<{
-		type: CategoryType;
+	if (!marker.length) {
+		const defaults: Array<{
+			type: CategoryType;
+			name: string;
+			colorKey: string;
+			iconKey: string;
+		}> = [
+			{
+				type: "income",
+				name: "Salário",
+				colorKey: "emerald",
+				iconKey: "BriefcaseBusiness",
+			},
+			{
+				type: "income",
+				name: "Extra",
+				colorKey: "cyan",
+				iconKey: "CircleDollarSign",
+			},
+			{ type: "income", name: "Outros", colorKey: "violet", iconKey: "Gift" },
+			{ type: "expense", name: "Moradia", colorKey: "blue", iconKey: "House" },
+			{
+				type: "expense",
+				name: "Alimentação",
+				colorKey: "orange",
+				iconKey: "Utensils",
+			},
+			{
+				type: "expense",
+				name: "Transporte",
+				colorKey: "amber",
+				iconKey: "Car",
+			},
+			{
+				type: "expense",
+				name: "Saúde",
+				colorKey: "rose",
+				iconKey: "HeartPulse",
+			},
+			{
+				type: "expense",
+				name: "Lazer",
+				colorKey: "violet",
+				iconKey: "Gamepad2",
+			},
+			{ type: "expense", name: "Outros", colorKey: "teal", iconKey: "Tags" },
+		];
+		const timestamp = now();
+		const statements = defaults.map((item) =>
+			d1
+				.prepare(
+					"insert or ignore into categories (id, user_id, type, name, normalized_name, color_key, icon_key, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				)
+				.bind(
+					crypto.randomUUID(),
+					userId,
+					item.type,
+					item.name,
+					normalizeCategoryName(item.name),
+					item.colorKey,
+					item.iconKey,
+					timestamp,
+					timestamp,
+				),
+		);
+		statements.push(
+			d1
+				.prepare(
+					"insert or ignore into user_bootstrap (user_id, seeded_at) values (?, ?)",
+				)
+				.bind(userId, timestamp),
+		);
+		await d1.batch(statements);
+	}
+
+	const existingMethods = await db
+		.select({ kind: paymentMethods.kind })
+		.from(paymentMethods)
+		.where(eq(paymentMethods.userId, userId));
+	const existingKinds = new Set(existingMethods.map((method) => method.kind));
+	const paymentDefaults: Array<{
 		name: string;
+		kind: PaymentKind;
 		colorKey: string;
 		iconKey: string;
 	}> = [
 		{
-			type: "income",
-			name: "Salário",
+			name: "Dinheiro",
+			kind: "cash",
 			colorKey: "emerald",
-			iconKey: "BriefcaseBusiness",
+			iconKey: "Banknote",
+		},
+		{ name: "Pix", kind: "pix", colorKey: "teal", iconKey: "QrCode" },
+		{
+			name: "Crédito",
+			kind: "credit_card",
+			colorKey: "indigo",
+			iconKey: "CreditCard",
 		},
 		{
-			type: "income",
-			name: "Extra",
-			colorKey: "cyan",
-			iconKey: "CircleDollarSign",
+			name: "Débito",
+			kind: "debit_card",
+			colorKey: "blue",
+			iconKey: "WalletCards",
 		},
-		{ type: "income", name: "Outros", colorKey: "violet", iconKey: "Gift" },
-		{ type: "expense", name: "Moradia", colorKey: "blue", iconKey: "House" },
-		{
-			type: "expense",
-			name: "Alimentação",
-			colorKey: "orange",
-			iconKey: "Utensils",
-		},
-		{ type: "expense", name: "Transporte", colorKey: "amber", iconKey: "Car" },
-		{ type: "expense", name: "Saúde", colorKey: "rose", iconKey: "HeartPulse" },
-		{ type: "expense", name: "Lazer", colorKey: "violet", iconKey: "Gamepad2" },
-		{ type: "expense", name: "Outros", colorKey: "teal", iconKey: "Tags" },
 	];
+	const missingDefaults = paymentDefaults.filter(
+		(method) => !existingKinds.has(method.kind),
+	);
+	if (!missingDefaults.length) return;
 	const timestamp = now();
-	const statements = defaults.map((item) =>
-		d1
-			.prepare(
-				"insert or ignore into categories (id, user_id, type, name, normalized_name, color_key, icon_key, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			)
-			.bind(
-				crypto.randomUUID(),
-				userId,
-				item.type,
-				item.name,
-				normalizeCategoryName(item.name),
-				item.colorKey,
-				item.iconKey,
-				timestamp,
-				timestamp,
-			),
+	await d1.batch(
+		missingDefaults.map((method) =>
+			d1
+				.prepare(
+					"insert into payment_methods (id, user_id, name, kind, color_key, icon_key, invoice_control, closing_day, due_day, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				)
+				.bind(
+					crypto.randomUUID(),
+					userId,
+					method.name,
+					method.kind,
+					method.colorKey,
+					method.iconKey,
+					false,
+					null,
+					null,
+					timestamp,
+					timestamp,
+				),
+		),
 	);
-	statements.push(
-		d1
-			.prepare(
-				"insert or ignore into user_bootstrap (user_id, seeded_at) values (?, ?)",
-			)
-			.bind(userId, timestamp),
-	);
-	await d1.batch(statements);
 }
 
 async function ownedCategory(
@@ -756,6 +836,7 @@ export function createFinanceService({
 			data: z.infer<typeof financeSchemas.listPaymentMethods>,
 		) {
 			const id = await userId();
+			await bootstrap(db, d1, id);
 			const rows = await db
 				.select()
 				.from(paymentMethods)
@@ -782,6 +863,8 @@ export function createFinanceService({
 				userId: id,
 				name: data.name,
 				kind: data.kind,
+				colorKey: data.colorKey,
+				iconKey: data.iconKey,
 				invoiceControl: configured,
 				closingDay: configured ? data.closingDay! : null,
 				dueDay: configured ? data.dueDay! : null,
@@ -801,6 +884,8 @@ export function createFinanceService({
 				.set({
 					name: data.name,
 					kind: data.kind,
+					colorKey: data.colorKey,
+					iconKey: data.iconKey,
 					invoiceControl: configured,
 					closingDay: configured ? data.closingDay! : null,
 					dueDay: configured ? data.dueDay! : null,

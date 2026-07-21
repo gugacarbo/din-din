@@ -9,6 +9,27 @@ function serviceFor(cookieHeader: string) {
 }
 
 describe("payment methods and category hierarchy", () => {
+	it("seeds the four standard payment methods once per user", async () => {
+		const { a } = await createAuthedPair();
+		const service = serviceFor(a.cookieHeader);
+
+		const methods = await service.listPaymentMethods({ status: "active" });
+		expect(methods.map((method) => [method.name, method.kind])).toEqual([
+			["Crédito", "credit_card"],
+			["Dinheiro", "cash"],
+			["Débito", "debit_card"],
+			["Pix", "pix"],
+		]);
+
+		const cash = methods.find((method) => method.kind === "cash")!;
+		await service.archivePaymentMethod({ id: cash.id });
+		const allMethods = await service.listPaymentMethods({ status: "all" });
+		expect(allMethods).toHaveLength(4);
+		expect(allMethods.find((method) => method.id === cash.id)?.archivedAt).not.toBe(
+			null,
+		);
+	});
+
 	it("limits categories to three levels and keeps an archived payment method only for historical retention", async () => {
 		const { a } = await createAuthedPair();
 		const service = serviceFor(a.cookieHeader);
@@ -19,7 +40,8 @@ describe("payment methods and category hierarchy", () => {
 		expect(grandchild).toMatchObject({ level: 3, path: [root.id, child.id, grandchild.id] });
 		await expect(service.createCategory({ type: "expense", name: `Deep ${suffix}`, colorKey: "orange", iconKey: "Utensils", parentCategoryId: grandchild.id })).rejects.toBeInstanceOf(FinanceError);
 
-		const card = await service.createPaymentMethod({ name: `Card ${suffix}`, kind: "credit_card", invoiceControl: true, closingDay: 10, dueDay: 20 });
+		const card = await service.createPaymentMethod({ name: `Card ${suffix}`, kind: "credit_card", colorKey: "indigo", iconKey: "CreditCard", invoiceControl: true, closingDay: 10, dueDay: 20 });
+		expect(card).toMatchObject({ colorKey: "indigo", iconKey: "CreditCard" });
 		const transaction = await service.createTransaction({ type: "expense", categoryId: grandchild.id, paymentMethodId: card.id, amountCents: 2500, occurredAt: "2024-02-10", description: "invoice item" });
 		expect(transaction).toMatchObject({ paymentMethodId: card.id, invoiceCycleClosingDate: "2024-02-10", invoiceCycleDueDate: "2024-02-20" });
 		await service.archivePaymentMethod({ id: card.id });

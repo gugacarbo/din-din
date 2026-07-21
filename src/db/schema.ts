@@ -126,11 +126,11 @@ export const categories = sqliteTable(
 		}),
 		check(
 			"categories_color_key_check",
-			sql`${table.colorKey} in ('emerald', 'cyan', 'violet', 'blue', 'orange', 'amber', 'rose', 'teal')`,
+			sql`${table.colorKey} in ('emerald', 'cyan', 'violet', 'blue', 'orange', 'amber', 'rose', 'teal', 'indigo', 'pink', 'lime', 'red', 'sky', 'fuchsia', 'slate')`,
 		),
 		check(
 			"categories_icon_key_check",
-			sql`${table.iconKey} in ('BriefcaseBusiness', 'CircleDollarSign', 'Gift', 'House', 'Utensils', 'Car', 'HeartPulse', 'Gamepad2', 'Tags', 'WalletCards', 'GraduationCap', 'ShoppingBag')`,
+			sql`${table.iconKey} in ('BriefcaseBusiness', 'CircleDollarSign', 'Gift', 'House', 'Utensils', 'Car', 'HeartPulse', 'Gamepad2', 'Tags', 'WalletCards', 'GraduationCap', 'ShoppingBag', 'Banknote', 'Dumbbell', 'PiggyBank', 'Plane', 'ReceiptText', 'Smartphone', 'TrendingUp', 'Coffee', 'Shirt', 'BookOpen', 'Dog', 'Bus', 'Music', 'CreditCard', 'Landmark', 'QrCode', 'Building2', 'BadgeDollarSign', 'Bitcoin', 'CircleEllipsis')`,
 		),
 	],
 );
@@ -154,6 +154,8 @@ export const paymentMethods = sqliteTable(
 				"other",
 			],
 		}).notNull(),
+		colorKey: text("color_key").notNull().default("indigo"),
+		iconKey: text("icon_key").notNull().default("CreditCard"),
 		invoiceControl: integer("invoice_control", { mode: "boolean" })
 			.notNull()
 			.default(false),
@@ -176,6 +178,14 @@ export const paymentMethods = sqliteTable(
 		check(
 			"payment_methods_name_length_check",
 			sql`length(${table.name}) between 1 and 80`,
+		),
+		check(
+			"payment_methods_color_key_check",
+			sql`${table.colorKey} in ('emerald', 'cyan', 'violet', 'blue', 'orange', 'amber', 'rose', 'teal', 'indigo', 'pink', 'lime', 'red', 'sky', 'fuchsia', 'slate')`,
+		),
+		check(
+			"payment_methods_icon_key_check",
+			sql`${table.iconKey} in ('BriefcaseBusiness', 'CircleDollarSign', 'Gift', 'House', 'Utensils', 'Car', 'HeartPulse', 'Gamepad2', 'Tags', 'WalletCards', 'GraduationCap', 'ShoppingBag', 'Banknote', 'Dumbbell', 'PiggyBank', 'Plane', 'ReceiptText', 'Smartphone', 'TrendingUp', 'Coffee', 'Shirt', 'BookOpen', 'Dog', 'Bus', 'Music', 'CreditCard', 'Landmark', 'QrCode', 'Building2', 'BadgeDollarSign', 'Bitcoin', 'CircleEllipsis')`,
 		),
 		check(
 			"payment_methods_invoice_configuration_check",

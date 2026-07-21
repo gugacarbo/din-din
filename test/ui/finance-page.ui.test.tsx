@@ -90,6 +90,26 @@ describe("FinancePage", () => {
 		expect(await screen.findByText("— Restaurante")).toBeInTheDocument();
 	});
 
+	it("shows each category icon in the shared category selectors", async () => {
+		const user = userEvent.setup();
+		render(<FinancePage kind="transactions" />);
+		await screen.findByText(/antes/);
+		await user.click(screen.getByLabelText("Categoria"));
+		const transactionOption = await screen.findByRole("option", {
+			name: "Mercado",
+		});
+		expect(transactionOption.querySelector("svg")).not.toBeNull();
+
+		await user.keyboard("{Escape}");
+		render(<FinancePage kind="categories" />);
+		await user.click(screen.getByRole("button", { name: /nova/i }));
+		await user.click(screen.getByLabelText("Categoria pai (opcional)"));
+		const parentOption = await screen.findByRole("option", {
+			name: "Mercado",
+		});
+		expect(parentOption.querySelector("svg")).not.toBeNull();
+	});
+
 	it("renders expense categories as an expandable tree with direct and aggregate totals", async () => {
 		const child = {
 			...expenseCategory,

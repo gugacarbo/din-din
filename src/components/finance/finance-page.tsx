@@ -80,6 +80,7 @@ import {
 } from "#/server/finance.ts";
 
 import { AppShell } from "./app-shell.tsx";
+import { CategorySelect } from "./category-select.tsx";
 import { ColorSelect } from "./color-select.tsx";
 import { IconSelect } from "./icon-select.tsx";
 import { type Kind, KindSelect } from "./kind-select.tsx";
@@ -491,24 +492,13 @@ function TransactionForm({
 			</div>
 			<div>
 				<Label htmlFor="transaction-category">Categoria</Label>
-				<Select
+				<CategorySelect
+					categories={choices}
 					disabled={!type}
+					id="transaction-category"
 					onValueChange={setCategoryId}
 					value={categoryId}
-				>
-					<SelectTrigger className="w-full" id="transaction-category">
-						<SelectValue placeholder="Selecione uma categoria" />
-					</SelectTrigger>
-					<SelectContent>
-						{choices.map((category) => (
-							<SelectItem key={category.id} value={category.id}>
-								{category.path.length > 1
-									? `${"— ".repeat(category.path.length - 1)}${category.name}`
-									: category.name}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
+				/>
 			</div>
 			<div>
 				<Label htmlFor="transaction-amount">Valor (R$)</Label>
@@ -748,25 +738,16 @@ function CategoryForm({
 		<form className="grid gap-4" onSubmit={submit}>
 			<div>
 				<Label htmlFor="category-parent">Categoria pai (opcional)</Label>
-				<Select
+				<CategorySelect
+					categories={parentChoices}
+					id="category-parent"
 					onValueChange={(value) =>
 						setParentCategoryId(value === "root" ? "" : value)
 					}
+					placeholder="Categoria raiz"
+					rootOption={{ label: "Categoria raiz", value: "root" }}
 					value={parentCategoryId || "root"}
-				>
-					<SelectTrigger className="w-full" id="category-parent">
-						<SelectValue placeholder="Categoria raiz" />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="root">Categoria raiz</SelectItem>
-						{parentChoices.map((category) => (
-							<SelectItem
-								key={category.id}
-								value={category.id}
-							>{`${"— ".repeat(category.level - 1)}${category.name}`}</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
+				/>
 			</div>
 			<div>
 				<Label htmlFor="category-type">Tipo</Label>
@@ -984,6 +965,13 @@ function PaymentMethodForm({
 	const [kind, setKind] = useState<PaymentMethodDto["kind"]>(
 		initial?.kind ?? "credit_card",
 	);
+	const [colorKey, setColorKey] = useState<(typeof CATEGORY_COLORS)[number]>(
+		(initial?.colorKey as (typeof CATEGORY_COLORS)[number]) ??
+			CATEGORY_COLORS[0],
+	);
+	const [iconKey, setIconKey] = useState<(typeof CATEGORY_ICONS)[number]>(
+		(initial?.iconKey as (typeof CATEGORY_ICONS)[number]) ?? "CreditCard",
+	);
 	const [invoiceControl, setInvoiceControl] = useState(
 		initial?.invoiceControl ?? false,
 	);
@@ -1004,6 +992,8 @@ function PaymentMethodForm({
 			const data = {
 				name,
 				kind,
+				colorKey,
+				iconKey,
 				invoiceControl: canInvoice,
 				closingDay: canInvoice ? Number(closingDay) : null,
 				dueDay: canInvoice ? Number(dueDay) : null,
@@ -1051,6 +1041,22 @@ function PaymentMethodForm({
 						<SelectItem value="other">Outro</SelectItem>
 					</SelectContent>
 				</Select>
+			</div>
+			<div>
+				<Label htmlFor="payment-color">Cor</Label>
+				<ColorSelect
+					id="payment-color"
+					onValueChange={(value) => setColorKey(value as typeof colorKey)}
+					value={colorKey}
+				/>
+			</div>
+			<div>
+				<Label htmlFor="payment-icon">Ícone</Label>
+				<IconSelect
+					id="payment-icon"
+					onValueChange={(value) => setIconKey(value as typeof iconKey)}
+					value={iconKey}
+				/>
 			</div>
 			{kind === "credit_card" && (
 				<label className="flex items-center gap-2 text-sm font-medium">
@@ -1175,6 +1181,10 @@ function Payments() {
 						<ul className="divide-y divide-border">
 							{methods.data.map((method) => (
 								<li className="flex items-center gap-3 py-3" key={method.id}>
+									<CategoryMark
+										colorKey={method.colorKey}
+										iconKey={method.iconKey}
+									/>
 									<div className="min-w-0 flex-1">
 										<p className="font-semibold">
 											{method.name}
@@ -1412,9 +1422,14 @@ function Reports({ refreshKey }: { refreshKey: number }) {
 		orange: "#f97316",
 		amber: "#f59e0b",
 		indigo: "#6366f1",
+		lime: "#84cc16",
 		pink: "#ec4899",
+		red: "#ef4444",
 		rose: "#f43f5e",
+		sky: "#0ea5e9",
+		slate: "#64748b",
 		teal: "#14b8a6",
+		fuchsia: "#d946ef",
 	};
 	const chartData =
 		report?.expenseByCategory.map((item) => ({

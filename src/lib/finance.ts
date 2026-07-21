@@ -7,6 +7,13 @@ export const CATEGORY_COLORS = [
 	"amber",
 	"rose",
 	"teal",
+	"indigo",
+	"pink",
+	"lime",
+	"red",
+	"sky",
+	"fuchsia",
+	"slate",
 ] as const;
 
 export const CATEGORY_ICONS = [
@@ -22,6 +29,26 @@ export const CATEGORY_ICONS = [
 	"WalletCards",
 	"GraduationCap",
 	"ShoppingBag",
+	"Banknote",
+	"Dumbbell",
+	"PiggyBank",
+	"Plane",
+	"ReceiptText",
+	"Smartphone",
+	"TrendingUp",
+	"Coffee",
+	"Shirt",
+	"BookOpen",
+	"Dog",
+	"Bus",
+	"Music",
+	"CreditCard",
+	"Landmark",
+	"QrCode",
+	"Building2",
+	"BadgeDollarSign",
+	"Bitcoin",
+	"CircleEllipsis",
 ] as const;
 
 export function normalizeCategoryName(value: string) {

@@ -6,12 +6,11 @@ import {
 	type CategoryDto,
 	createFinanceService,
 	financeSchemas,
-	type InvoiceDto,
 	type PaymentMethodDto,
 	type TransactionDto,
 } from "#/server/finance-service";
 
-export type { CategoryDto, InvoiceDto, PaymentMethodDto, TransactionDto };
+export type { CategoryDto, PaymentMethodDto, TransactionDto };
 
 async function service() {
 	return createFinanceService({ d1: database, headers: getRequestHeaders() });

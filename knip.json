@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/**/*.{ts,tsx}", "test/workers/worker.ts"],
+  "ignoreDependencies": [
+    "@tanstack/router-plugin",
+    "@tanstack/devtools-event-client",
+    "cloudflare"
+  ],
+  "ignoreExportsUsedInFile": {
+    "interface": true,
+    "type": true,
+    "function": true
+  }
+}

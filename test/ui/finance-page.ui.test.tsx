@@ -94,6 +94,11 @@ describe("FinancePage", () => {
 		const user = userEvent.setup();
 		render(<FinancePage kind="transactions" />);
 		await screen.findByText(/antes/);
+		await user.click(screen.getByRole("button", { name: /novo lançamento/i }));
+		const transactionType = document.querySelector("#transaction-type");
+		if (!transactionType) throw new Error("Seletor de tipo ausente.");
+		await user.click(transactionType);
+		await user.click(await screen.findByRole("option", { name: "Despesa" }));
 		await user.click(screen.getByLabelText("Categoria"));
 		const transactionOption = await screen.findByRole("option", {
 			name: "Mercado",
@@ -101,6 +106,7 @@ describe("FinancePage", () => {
 		expect(transactionOption.querySelector("svg")).not.toBeNull();
 
 		await user.keyboard("{Escape}");
+		await user.click(screen.getByRole("button", { name: "Cancelar" }));
 		render(<FinancePage kind="categories" />);
 		await user.click(screen.getByRole("button", { name: /nova/i }));
 		await user.click(screen.getByLabelText("Categoria pai (opcional)"));

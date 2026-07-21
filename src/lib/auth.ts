@@ -5,9 +5,10 @@ import { createAuthOptions } from "#/lib/auth-core";
 
 /** Creates an auth instance from the current Worker request's D1 binding. */
 export function createAuth(d1?: D1Database) {
+	const { plugins, ...options } = createAuthOptions(d1);
 	return betterAuth({
-		...createAuthOptions(d1),
-		plugins: [tanstackStartCookies() as BetterAuthPlugin],
+		...options,
+		plugins: [...plugins, tanstackStartCookies() as BetterAuthPlugin],
 	});
 }
 

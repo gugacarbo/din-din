@@ -20,9 +20,10 @@ export const Route = createFileRoute("/login")({
 	component: Login,
 });
 
-function Login() {
+export function Login() {
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
+	const [email, setEmail] = useState("");
 	async function login() {
 		setLoading(true);
 		setError(null);
@@ -32,6 +33,33 @@ function Login() {
 		});
 		if (result.error) {
 			setError(result.error.message ?? "Não foi possível iniciar o login.");
+			setLoading(false);
+		}
+	}
+	async function loginWithEmail() {
+		setLoading(true);
+		setError(null);
+		try {
+			const response = await fetch("/api/auth/dev-login", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ email }),
+			});
+			if (!response.ok) {
+				const body = (await response.json().catch(() => null)) as {
+					message?: string;
+				} | null;
+				throw new Error(
+					body?.message ?? "Não foi possível entrar com este e-mail.",
+				);
+			}
+			window.location.assign("/");
+		} catch (cause) {
+			setError(
+				cause instanceof Error
+					? cause.message
+					: "Não foi possível entrar com este e-mail.",
+			);
 			setLoading(false);
 		}
 	}
@@ -54,6 +82,38 @@ function Login() {
 					>
 						{loading ? "Redirecionando…" : "Entrar com Google"}
 					</Button>
+					{import.meta.env.DEV && (
+						<form
+							className="mt-4 grid gap-3"
+							onSubmit={(event) => {
+								event.preventDefault();
+								void loginWithEmail();
+							}}
+						>
+							<label className="sr-only" htmlFor="dev-login-email">
+								E-mail de desenvolvimento
+							</label>
+							<input
+								autoComplete="email"
+								className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+								disabled={loading}
+								id="dev-login-email"
+								onChange={(event) => setEmail(event.target.value)}
+								placeholder="voce@exemplo.com"
+								required
+								type="email"
+								value={email}
+							/>
+							<Button
+								disabled={loading}
+								size="lg"
+								type="submit"
+								variant="outline"
+							>
+								Entrar com e-mail (dev)
+							</Button>
+						</form>
+					)}
 					{error && (
 						<Alert className="mt-4 text-left" variant="destructive">
 							<AlertDescription>{error}</AlertDescription>

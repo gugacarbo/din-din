@@ -4,6 +4,9 @@ import { betterAuth } from "better-auth";
 import { createDb } from "#/db";
 import * as schema from "#/db/schema";
 import { database, env } from "#/env";
+import { devDirectLogin } from "#/lib/dev-direct-login";
+
+const isDevelopment = import.meta.env.DEV;
 
 /**
  * Creates the Better Auth core used to resolve a request session from D1.
@@ -26,6 +29,7 @@ export function createAuthOptions(d1: D1Database = database) {
 				clientSecret: env.GOOGLE_CLIENT_SECRET,
 			},
 		},
+		plugins: isDevelopment ? [devDirectLogin()] : [],
 	};
 }
 

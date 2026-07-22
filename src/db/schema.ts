@@ -181,6 +181,42 @@ export const supportReviewTasks = sqliteTable(
 	],
 );
 
+/**
+ * Registro de uso de LLM/AI — ADR-0011.
+ * Armazena somente metadados de invocação; nunca o conteúdo do prompt.
+ */
+export const aiInvocations = sqliteTable(
+	"ai_invocations",
+	{
+		id: text("id").primaryKey(),
+		model: text("model").notNull(),
+		/** Identifica qual agente/processo disparou a invocação (ex.: "issue-writer"). */
+		agentKey: text("agent_key").notNull(),
+		userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+		reportId: text("report_id").references(() => supportReports.reportId, {
+			onDelete: "set null",
+		}),
+		inputTokens: integer("input_tokens"),
+		outputTokens: integer("output_tokens"),
+		totalTokens: integer("total_tokens"),
+		ttftMs: integer("ttft_ms"),
+		durationMs: integer("duration_ms").notNull(),
+		success: integer("success").notNull(),
+		errorMessage: text("error_message"),
+		/** JSON livre para metadados adicionais do processo. */
+		metadata: text("metadata"),
+		createdAt: integer("created_at", { mode: "number" }).notNull(),
+	},
+	(table) => [
+		index("ai_invocations_model_created_index").on(
+			table.model,
+			table.createdAt,
+		),
+		index("ai_invocations_report_index").on(table.reportId),
+		index("ai_invocations_agent_user_index").on(table.agentKey, table.userId),
+	],
+);
+
 export const categories = sqliteTable(
 	"categories",
 	{

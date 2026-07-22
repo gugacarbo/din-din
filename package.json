@@ -34,7 +34,8 @@
     "db:migrate:remote": "wrangler d1 migrations apply din-din --remote",
     "db:migrate": "pnpm run db:migrate:local",
     "verify:migration-rollback": "node scripts/verify-migration-rollback.mjs",
-    "db:studio": "drizzle-kit studio",
+		"db:studio": "drizzle-kit studio",
+		"admin:invite": "tsx scripts/create-admin-invite.ts",
     "prepare": "husky"
   },
   "dependencies": {

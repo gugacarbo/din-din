@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { publishSupportIssue } from "#/server/github-support-publisher.ts";
+import {
+	pemBytes,
+	publishSupportIssue,
+} from "#/server/github-support-publisher.ts";
 
 const issue = {
 	title: "Falha ao salvar lançamento",
@@ -33,6 +36,14 @@ async function privateKey() {
 }
 
 describe("publishSupportIssue", () => {
+	it("rejects encrypted and malformed PEM without exposing its contents", () => {
+		expect(() =>
+			pemBytes(
+				"-----BEGIN ENCRYPTED PRIVATE KEY-----\nsecret\n-----END ENCRYPTED PRIVATE KEY-----",
+			),
+		).toThrow("github_private_key_encrypted");
+		expect(() => pemBytes("not-a-pem")).toThrow("github_private_key_format");
+	});
 	it("reconciles a timeout after POST without issuing a second POST", async () => {
 		let searches = 0;
 		const fetcher = vi.fn(async (input: RequestInfo | URL) => {

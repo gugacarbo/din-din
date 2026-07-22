@@ -48,6 +48,20 @@ O domínio de produção configurado é `dindin.gugacarbo.space`. Configure o Cl
 Build para construir apenas a branch `main` e rode `pnpm run deploy` como comando de
 deploy, para que a migration seja aplicada antes da versão do app.
 
+## Convites de administrador
+
+O primeiro administrador e os demais são criados somente pelo CLI, com um
+segredo `APP_SECRET` configurado no ambiente que executa o comando. O comando
+não recebe nem armazena e-mail: o primeiro acesso ao link vincula o e-mail uma
+única vez, antes do login Google verificado.
+
+```bash
+APP_SECRET='valor-seguro-com-pelo-menos-32-caracteres' pnpm admin:invite --remote https://dindin.gugacarbo.space
+```
+
+O terminal imprime o único link temporário. Trate-o como credencial e não o
+compartilhe em logs, issues ou histórico de shell.
+
 ## Preflight de produção
 
 Este runbook prepara uma futura publicação em

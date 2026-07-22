@@ -14,13 +14,63 @@ function base64url(value: Uint8Array | string) {
 		.replaceAll("/", "_")
 		.replaceAll("=", "");
 }
-function pemBytes(pem: string) {
-	const body = pem
+function derLength(length: number) {
+	if (length < 128) return Uint8Array.of(length);
+	const bytes: number[] = [];
+	for (let value = length; value > 0; value >>>= 8) bytes.unshift(value & 0xff);
+	return Uint8Array.of(0x80 | bytes.length, ...bytes);
+}
+function der(tag: number, body: Uint8Array) {
+	return Uint8Array.of(tag, ...derLength(body.length), ...body);
+}
+function pkcs1ToPkcs8(pkcs1: Uint8Array) {
+	const rsaEncryption = Uint8Array.of(
+		0x30,
+		0x0d,
+		0x06,
+		0x09,
+		0x2a,
+		0x86,
+		0x48,
+		0x86,
+		0xf7,
+		0x0d,
+		0x01,
+		0x01,
+		0x01,
+		0x05,
+		0x00,
+	);
+	return der(
+		0x30,
+		Uint8Array.of(0x02, 0x01, 0x00, ...rsaEncryption, ...der(0x04, pkcs1)),
+	);
+}
+export function pemBytes(pem: string) {
+	const normalized = pem.replaceAll("\\n", "\n").trim();
+	if (/BEGIN ENCRYPTED PRIVATE KEY|Proc-Type:|DEK-Info:/i.test(normalized))
+		throw new Error("github_private_key_encrypted");
+	const pkcs1 = normalized.startsWith("-----BEGIN RSA PRIVATE KEY-----");
+	const pkcs8 = normalized.startsWith("-----BEGIN PRIVATE KEY-----");
+	if (!pkcs1 && !pkcs8) throw new Error("github_private_key_format");
+	const footer = pkcs1
+		? "-----END RSA PRIVATE KEY-----"
+		: "-----END PRIVATE KEY-----";
+	if (!normalized.endsWith(footer))
+		throw new Error("github_private_key_format");
+	const body = normalized
 		.replaceAll("\\n", "\n")
 		.replace(/-----[^-]+-----/g, "")
 		.replace(/\s/g, "");
-	const binary = atob(body);
-	return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+	try {
+		const binary = atob(body);
+		const bytes = Uint8Array.from(binary, (character) =>
+			character.charCodeAt(0),
+		);
+		return pkcs1 ? pkcs1ToPkcs8(bytes) : bytes;
+	} catch {
+		throw new Error("github_private_key_format");
+	}
 }
 async function appJwt(appId: string, privateKey: string) {
 	const now = Math.floor(Date.now() / 1_000);

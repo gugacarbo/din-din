@@ -18,6 +18,8 @@ const feature = path.join(migrationDir, "0001_nice_payments.sql");
 const support = path.join(migrationDir, "0004_support_reports.sql");
 const supportLeases = path.join(migrationDir, "0005_support_report_leases.sql");
 const supportReservations = path.join(migrationDir, "0006_support_publication_reservations.sql");
+const aiLogging = path.join(migrationDir, "0007_ai_usage_logging.sql");
+const admin = path.join(migrationDir, "0008_admin_support_review.sql");
 const downFile = path.join(scratch, "down.sql");
 
 function run(args) {
@@ -62,11 +64,47 @@ function assertSafeToRemoveSupport() {
 	if (/"support_data_present"\s*:\s*1/.test(output)) throw new Error("Support rollback recusado: remova report, payload e task antes do down local.");
 }
 
+const adminTables = [
+	"admin_memberships",
+	"admin_invites",
+	"admin_invite_continuations",
+	"support_manual_publications",
+];
+
+function assertAdminSchemaPresent() {
+	const output = run([
+		"--command",
+		`select count(*) as admin_tables from sqlite_master where type='table' and name in (${adminTables.map((table) => `'${table}'`).join(",")});`,
+		"--json",
+	]);
+	if (!/"admin_tables"\s*:\s*4/.test(output))
+		throw new Error("Admin rollback guard removed schema before refusing data.");
+}
+
+function assertSafeToRemoveAdmin() {
+	const output = run([
+		"--command",
+		`select ${adminTables.map((table) => `exists(select 1 from ${table}) as ${table}_has_data`).join(", ")};`,
+		"--json",
+	]);
+	if (adminTables.some((table) => new RegExp(`"${table}_has_data"\\s*:\\s*1`).test(output))) {
+		throw new Error(
+			"Admin rollback recusado: remova memberships, invites, continuations e publicações manuais antes do down local.",
+		);
+	}
+}
+
 const supportDownSql = `
 DROP TRIGGER IF EXISTS support_payload_rate_limit;
 DROP TABLE IF EXISTS support_review_tasks;
 DROP TABLE IF EXISTS support_report_payloads;
 DROP TABLE IF EXISTS support_reports;
+`;
+const adminDownSql = `
+DROP TABLE IF EXISTS support_manual_publications;
+DROP TABLE IF EXISTS admin_invite_continuations;
+DROP TABLE IF EXISTS admin_invites;
+DROP TABLE IF EXISTS admin_memberships;
 `;
 
 const downSql = `
@@ -123,6 +161,45 @@ try {
 	run(["--file", support]);
 	run(["--file", supportLeases]);
 	run(["--file", supportReservations]);
+	run(["--file", aiLogging]);
+	run(["--file", admin]);
+	const adminInvite = "00000000-0000-4000-8000-000000000007";
+	const adminReport = "00000000-0000-4000-8000-000000000008";
+	const assertAdminRefusal = () => {
+		let refused = false;
+		try {
+			assertSafeToRemoveAdmin();
+		} catch (error) {
+			refused =
+				error instanceof Error &&
+				error.message.startsWith("Admin rollback recusado:");
+		}
+		if (!refused)
+			throw new Error("Admin rollback guard did not refuse administrative data.");
+		assertAdminSchemaPresent();
+	};
+
+	run(["--command", "insert into admin_memberships (user_id,created_at) values ('00000000-0000-4000-8000-000000000001',1);"]);
+	assertAdminRefusal();
+	run(["--command", "delete from admin_memberships;"]);
+
+	run(["--command", `insert into admin_invites (invite_id,token_hmac,email_normalized,expires_at,created_at) values ('${adminInvite}','hmac','admin@example.test',2,1);`]);
+	assertAdminRefusal();
+	run(["--command", `delete from admin_invites where invite_id='${adminInvite}';`]);
+
+	run(["--command", `insert into admin_invites (invite_id,token_hmac,email_normalized,expires_at,created_at) values ('${adminInvite}','hmac','admin@example.test',2,1); insert into admin_invite_continuations (continuation_hmac,invite_id,nonce,expires_at,created_at) values ('continuation','${adminInvite}','nonce',2,1);`]);
+	assertAdminRefusal();
+	run(["--command", `delete from admin_invite_continuations; delete from admin_invites where invite_id='${adminInvite}';`]);
+
+	run(["--command", `insert into support_reports (report_id,category,status,attempts,created_at,updated_at) values ('${adminReport}','problem','manual_review',0,1,1); insert into support_manual_publications (report_id,actor_user_id,content_hash,public_issue,created_at) values ('${adminReport}','00000000-0000-4000-8000-000000000001','hash','{}',1);`]);
+	assertAdminRefusal();
+	run(["--command", `delete from support_manual_publications where report_id='${adminReport}'; delete from support_reports where report_id='${adminReport}';`]);
+	assertSafeToRemoveAdmin();
+	await writeFile(downFile, adminDownSql);
+	run(["--file", downFile]);
+	const adminRemoved = run(["--command", "select count(*) as admin_tables from sqlite_master where type='table' and name in ('admin_memberships','admin_invites','admin_invite_continuations','support_manual_publications');", "--json"]);
+	if (!/"admin_tables"\s*:\s*0/.test(adminRemoved)) throw new Error("Admin down did not remove every admin table.");
+	run(["--file", admin]);
 	const supportReport = "00000000-0000-4000-8000-000000000005";
 	run(["--command", `insert into support_reports (report_id,category,status,attempts,created_at,updated_at) values ('${supportReport}','problem','queued',0,1,1); insert into support_report_payloads (report_id,user_id,client_request_id,fingerprint,message,diagnostics,metadata,received_at,expires_at) values ('${supportReport}','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000006','fingerprint','private message','{}','{}',1,2); insert into support_review_tasks (event_id,report_id,kind,reason,status,created_at,updated_at) values ('manual:${supportReport}','${supportReport}','manual_review','test','pending',1,1);`]);
 	let supportRefused = false;
@@ -132,7 +209,7 @@ try {
 	assertSafeToRemoveSupport();
 	await writeFile(downFile, supportDownSql);
 	run(["--file", downFile]);
-	const supportRemoved = run(["--command", "select count(*) as support_tables from sqlite_master where type='table' and name like 'support_%';", "--json"]);
+	const supportRemoved = run(["--command", "select count(*) as support_tables from sqlite_master where type='table' and name in ('support_reports','support_report_payloads','support_review_tasks');", "--json"]);
 	if (!/"support_tables"\s*:\s*0/.test(supportRemoved)) throw new Error("Support down did not remove every support table.");
 	run(["--file", support]);
 	run(["--file", supportLeases]);

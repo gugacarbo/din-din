@@ -21,6 +21,14 @@ const themeScript = `(() => {
 	} catch {}
 })();`;
 
+const inviteFragmentScript = `(() => {
+	if (location.pathname !== "/admin/convite" || !location.hash) return;
+	const token = location.hash.slice(1);
+	if (!token) return;
+	window.__DIN_DIN_ADMIN_INVITE_TOKEN = token;
+	history.replaceState(null, "", location.pathname + location.search);
+})();`;
+
 interface MyRouterContext {
 	queryClient: QueryClient;
 }
@@ -97,6 +105,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			</head>
 			<body>
 				<ScriptOnce>{themeScript}</ScriptOnce>
+				<ScriptOnce>{inviteFragmentScript}</ScriptOnce>
 				<SupportDiagnosticsBootstrap />
 				{children}
 				<PwaRegistration />

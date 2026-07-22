@@ -181,6 +181,75 @@ export const supportReviewTasks = sqliteTable(
 	],
 );
 
+/** Membership is the only authority for the protected support area. */
+export const adminMemberships = sqliteTable(
+	"admin_memberships",
+	{
+		userId: text("user_id")
+			.primaryKey()
+			.references(() => user.id, { onDelete: "cascade" }),
+		createdAt: integer("created_at", { mode: "number" }).notNull(),
+		createdByInviteId: text("created_by_invite_id"),
+	},
+	(table) => [index("admin_memberships_created_index").on(table.createdAt)],
+);
+
+export const adminInvites = sqliteTable(
+	"admin_invites",
+	{
+		inviteId: text("invite_id").primaryKey(),
+		tokenHmac: text("token_hmac").notNull().unique(),
+		/** Bound atomically by the person who first opens the bearer invite. */
+		emailNormalized: text("email_normalized"),
+		expiresAt: integer("expires_at", { mode: "number" }).notNull(),
+		consumedAt: integer("consumed_at", { mode: "number" }),
+		consumedByUserId: text("consumed_by_user_id").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		createdAt: integer("created_at", { mode: "number" }).notNull(),
+	},
+	(table) => [
+		index("admin_invites_expiry_index").on(table.expiresAt),
+		index("admin_invites_email_index").on(table.emailNormalized),
+	],
+);
+
+export const adminInviteContinuations = sqliteTable(
+	"admin_invite_continuations",
+	{
+		continuationHmac: text("continuation_hmac").primaryKey(),
+		inviteId: text("invite_id")
+			.notNull()
+			.references(() => adminInvites.inviteId, { onDelete: "cascade" }),
+		nonce: text("nonce").notNull(),
+		expiresAt: integer("expires_at", { mode: "number" }).notNull(),
+		createdAt: integer("created_at", { mode: "number" }).notNull(),
+	},
+	(table) => [index("admin_continuations_expiry_index").on(table.expiresAt)],
+);
+
+export const supportManualPublications = sqliteTable(
+	"support_manual_publications",
+	{
+		reportId: text("report_id")
+			.primaryKey()
+			.references(() => supportReports.reportId, { onDelete: "cascade" }),
+		actorUserId: text("actor_user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "restrict" }),
+		contentHash: text("content_hash").notNull(),
+		publicIssue: text("public_issue").notNull(),
+		createdAt: integer("created_at", { mode: "number" }).notNull(),
+		publishedAt: integer("published_at", { mode: "number" }),
+	},
+	(table) => [
+		index("support_manual_publications_actor_index").on(
+			table.actorUserId,
+			table.createdAt,
+		),
+	],
+);
+
 /**
  * Registro de uso de LLM/AI — ADR-0011.
  * Armazena somente metadados de invocação; nunca o conteúdo do prompt.

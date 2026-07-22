@@ -26,6 +26,7 @@ Permitir que usuários autenticados enviem um relato de problema, dúvida ou sug
 4. A fila usa AI somente para texto privado sanitizado; uma barreira determinística rejeita schema inválido, sintaxe ativa, PII, secrets ou eco de conteúdo privado.
 5. O publicador determinístico usa GitHub App de permissão mínima e cria issue em `gugacarbo/din-din` somente com texto aprovado e labels allowlisted.
 6. Aos 30 dias, o cron apaga o objeto R2 e a linha inteira `support_report_payloads`; pai e tasks preservam somente metadados operacionais opacos.
+7. Administradores atuais, concedidos somente por convite HMAC e OAuth Google com e-mail verificado, podem listar o estado seguro e publicar uma representação manual somente enquanto o payload filho estiver ativo. O painel nunca lê screenshot nem dados de identidade/diagnóstico privados.
 
 ## Contrato
 
@@ -38,6 +39,7 @@ Permitir que usuários autenticados enviem um relato de problema, dúvida ou sug
 - Cinco relatos aceitos por usuário em quinze minutos; chave idempotente divergente retorna conflito.
 - Em falha ambígua de rede/5xx, cliente reutiliza exatamente o payload serializado, diagnóstico, screenshot e UUID da tentativa lógica; um novo relato exige ação explícita.
 - Falhas de AI/publicação ambígua são `manual_review` e geram outbox/DLQ; não há retry cego de POST ao GitHub. Falha transitória anterior ao POST solicita retry para que a fila entregue automaticamente o envelope `triage` à DLQ após `max_retries`; somente o consumer da DLQ registra o esgotamento seguro. Falha de envio de uma task pendente permanece isolada, com log seguro, e não interrompe o cleanup de retenção.
+- Convites administrativos expiram em 24h; o token cru existe apenas no fragmento inicial, removido antes do router. O servidor persiste somente HMACs e uma continuação opaca HttpOnly/Secure/SameSite. `APP_SECRET` é exclusivo deste fluxo e não reutiliza o segredo Better Auth.
 - O consumer da DLQ só pode converter para `failed` um estado pendente/em fila ou um processamento sem reserva e com lease vencido; envelopes antigos não rebaixam `published`, `manual_review`, `failed`, processamento ativo ou reserva de publicação, nem criam task de falha espúria.
 - Antes de AI, o consumer obtém um lease condicional por relato. Reentregas enquanto o lease está válido reconhecem o trabalho em curso; lease vencido pode ser recuperado. Imediatamente antes de GitHub, uma reserva transacional durável renova/valida o lease e bloqueia qualquer segundo POST mesmo que o primeiro runtime ultrapasse o lease. Reentrega que encontra essa reserva sem resultado a encaminha para revisão manual/outbox, sem novo POST.
 - Todo campo produzido pela AI é normalizado em Unicode/espaços e rejeitado se tiver PII (CPF/CNPJ, e-mail, cartões ou telefone brasileiro/internacional plausível, inclusive sem `+` e com prefixo segmentado `0`/`00`), URL com ou sem protocolo, Markdown/HTML ativo, menção ou referência GitHub acionável (`#123`/`owner/repo#123`).

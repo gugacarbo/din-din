@@ -15,12 +15,12 @@
 	],
 	"secrets": {
 		"required": [
-"GOOGLE_CLIENT_ID",
-"GOOGLE_CLIENT_SECRET",
-"BETTER_AUTH_SECRET",
-"GITHUB_APP_ID",
-"GITHUB_APP_INSTALLATION_ID",
-"GITHUB_APP_PRIVATE_KEY",
+      "GOOGLE_CLIENT_ID",
+      "GOOGLE_CLIENT_SECRET",
+      "BETTER_AUTH_SECRET",
+      "GITHUB_APP_ID",
+      "GITHUB_APP_INSTALLATION_ID",
+      "GITHUB_APP_PRIVATE_KEY",
 		]
 	},
 	"vars": {
@@ -56,7 +56,7 @@
 			{ "queue": "din-din-support-reports-dlq", "max_batch_size": 10, "max_batch_timeout": 30, "max_retries": 3 }
 		]
 	},
-	"ai": { "binding": "AI", "remote": false },
+	"ai": { "binding": "AI", "remote": true },
 	"triggers": { "crons": ["17 3 * * *"] },
 	"observability": {
     "logs": {

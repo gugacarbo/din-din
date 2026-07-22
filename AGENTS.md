@@ -72,8 +72,8 @@ placeholder `YOUR_DATABASE_ID`.
 <!-- Índice dos capítulos (docs/context/), cada um com QUANDO carregar.
      Capítulo = estado atual, imperativo, atemporal. Decisão datada = ADR. -->
 
-| Capítulo       | Quando carregar |
-| -------------- | --------------- |
+| Capítulo                     | Quando carregar                                             |
+| ---------------------------- | ----------------------------------------------------------- |
 | `docs/context/CONVENIONS.md` | ao criar ou alterar formulários ou dados remotos do cliente |
 
 ## Mapa de docs

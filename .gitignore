@@ -50,3 +50,5 @@ todos.json
 .code-toolbox
 
 google-oauth-credentials.json
+
+*.private-key.pem

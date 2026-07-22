@@ -44,15 +44,15 @@ Permitir que usuários autenticados enviem um relato de problema, dúvida ou sug
 
 ## Casos de borda
 
-| # | QUANDO | o sistema DEVE |
-| --- | --- | --- |
-| 1 | usuário offline ou sem sessão | impedir/rejeitar sem confirmar recebimento |
-| 2 | captura do print falha ou excede limite | manter relato recuperável e informar erro local |
-| 3 | objeto/log possui segredo, ciclo ou query | redigir/truncar antes da persistência |
-| 4 | chegam mais de 50 eventos | conservar somente os 50 mais recentes |
-| 5 | AI retorna conteúdo inseguro ou eco | fixar `manual_review`, publicar task e não criar issue |
-| 6 | GitHub tem resultado ambíguo | não repetir POST; encaminhar para revisão manual |
-| 7 | payload privado vence | remover R2 e apagar a linha filha integralmente, de forma idempotente |
+| #   | QUANDO                                    | o sistema DEVE                                                        |
+| --- | ----------------------------------------- | --------------------------------------------------------------------- |
+| 1   | usuário offline ou sem sessão             | impedir/rejeitar sem confirmar recebimento                            |
+| 2   | captura do print falha ou excede limite   | manter relato recuperável e informar erro local                       |
+| 3   | objeto/log possui segredo, ciclo ou query | redigir/truncar antes da persistência                                 |
+| 4   | chegam mais de 50 eventos                 | conservar somente os 50 mais recentes                                 |
+| 5   | AI retorna conteúdo inseguro ou eco       | fixar `manual_review`, publicar task e não criar issue                |
+| 6   | GitHub tem resultado ambíguo              | não repetir POST; encaminhar para revisão manual                      |
+| 7   | payload privado vence                     | remover R2 e apagar a linha filha integralmente, de forma idempotente |
 
 ## Questões em aberto
 

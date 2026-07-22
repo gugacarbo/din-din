@@ -16,6 +16,7 @@ const scratch = await mkdtemp(path.join(tmpdir(), "din-din-migration-"));
 const legacy = path.join(migrationDir, "0000_lying_iceman.sql");
 const feature = path.join(migrationDir, "0001_nice_payments.sql");
 const support = path.join(migrationDir, "0004_support_reports.sql");
+const supportLeases = path.join(migrationDir, "0005_support_report_leases.sql");
 const downFile = path.join(scratch, "down.sql");
 
 function run(args) {
@@ -119,6 +120,7 @@ try {
 	run(["--command", "insert into user (id,name,email,email_verified,created_at,updated_at) values ('00000000-0000-4000-8000-000000000001','Legacy','legacy@example.test',1,1,1); insert into categories (id,user_id,type,name,normalized_name,color_key,icon_key,created_at,updated_at) values ('00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001','expense','Legacy','legacy','orange','Utensils',1,1); insert into transactions (id,user_id,category_id,type,amount_cents,currency,occurred_at,created_at,updated_at) values ('00000000-0000-4000-8000-000000000003','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','expense',100,'BRL','2024-01-01',1,1);"]);
 	run(["--file", feature]);
 	run(["--file", support]);
+	run(["--file", supportLeases]);
 	const supportReport = "00000000-0000-4000-8000-000000000005";
 	run(["--command", `insert into support_reports (report_id,category,status,attempts,created_at,updated_at) values ('${supportReport}','problem','queued',0,1,1); insert into support_report_payloads (report_id,user_id,client_request_id,fingerprint,message,diagnostics,metadata,received_at,expires_at) values ('${supportReport}','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000006','fingerprint','private message','{}','{}',1,2); insert into support_review_tasks (event_id,report_id,kind,reason,status,created_at,updated_at) values ('manual:${supportReport}','${supportReport}','manual_review','test','pending',1,1);`]);
 	let supportRefused = false;
@@ -131,6 +133,7 @@ try {
 	const supportRemoved = run(["--command", "select count(*) as support_tables from sqlite_master where type='table' and name like 'support_%';", "--json"]);
 	if (!/"support_tables"\s*:\s*0/.test(supportRemoved)) throw new Error("Support down did not remove every support table.");
 	run(["--file", support]);
+	run(["--file", supportLeases]);
 	run(["--command", "pragma foreign_key_check;", "--json"]);
 	run(["--command", "insert into payment_methods (id,user_id,name,kind,invoice_control,created_at,updated_at) values ('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000001','Synthetic Pix','pix',0,1,1);"]);
 	let refused = false;

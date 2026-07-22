@@ -33,6 +33,18 @@ describe("publicIssueFromModel", () => {
 				[],
 			),
 		).toMatchObject({ ok: false });
+		expect(
+			publicIssueFromModel(
+				{ ...valid, summary: "Cartão 4111 1111 1111 1111" },
+				[],
+			),
+		).toMatchObject({ ok: false });
+		expect(
+			publicIssueFromModel(
+				{ ...valid, summary: "## Cabeçalho\n**ênfase**" },
+				[],
+			),
+		).toMatchObject({ ok: false });
 	});
 	it("rejeita eco longo de conteúdo privado mesmo com schema válido", () => {
 		const secret =

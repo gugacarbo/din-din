@@ -16,9 +16,9 @@ const aiOutput = z
 export type PublicIssue = z.infer<typeof aiOutput>;
 
 const unsafe =
-	/(?:https?:\/\/|www\.|<[^>]+>|!\[|\]\(|@\w+|#\d+|`{1,3}|\[.+\]\(.+\))/i;
+	/(?:https?:\/\/|www\.|<[^>]+>|!\[|\]\(|@\w+|`|\*{1,3}|_{1,3}|~{2}|^\s{0,3}#{1,6}\s|^\s*>|^\s*(?:[-+]|\d+\.)\s)/im;
 const pii =
-	/\b(?:\d{3}[. -]?\d{3}[. -]?\d{3}[ -]?\d{2}|\d{11,14}|[\w.+-]+@[\w.-]+\.[a-z]{2,})\b/i;
+	/\b(?:\d{3}[. -]?\d{3}[. -]?\d{3}[ -]?\d{2}|\d{11,14}|(?:\d[ -]?){13,19}|[\w.+-]+@[\w.-]+\.[a-z]{2,})\b/i;
 function tokens(value: string) {
 	return value.toLocaleLowerCase("pt-BR").split(/\s+/).filter(Boolean);
 }

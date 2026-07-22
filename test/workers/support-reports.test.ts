@@ -19,9 +19,14 @@ function payload(requestId = crypto.randomUUID()) {
 	};
 }
 
-function request(value: ReturnType<typeof payload>, cookie?: string) {
+function request(
+	value: ReturnType<typeof payload>,
+	cookie?: string,
+	screenshot?: File,
+) {
 	const body = new FormData();
 	body.set("payload", JSON.stringify(value));
+	if (screenshot) body.set("screenshot", screenshot);
 	return new Request("https://example.test/api/support", {
 		method: "POST",
 		headers: cookie ? { cookie } : undefined,
@@ -62,5 +67,35 @@ describe("support report intake", () => {
 		expect(row?.status).toBe("queued");
 		const privatePayload = await env.DB.prepare("select user_id, message from support_report_payloads where report_id = ?").bind(row?.report_id).first<{ user_id: string; message: string }>();
 		expect(privatePayload).toEqual({ user_id: a.id, message: input.message });
+	});
+
+	it("retries a pending R2 upload with the same idempotency key before enqueue", async () => {
+		const { a } = await createAuthedPair();
+		const input = payload();
+		const screenshot = new File(["print"], "print.webp", {
+			type: "image/webp",
+		});
+		const put = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("r2 unavailable"))
+			.mockResolvedValueOnce({});
+		const deps = {
+			d1: env.DB,
+			screenshots: { head: vi.fn().mockResolvedValue(null), put } as unknown as R2Bucket,
+			queue: { send: vi.fn().mockResolvedValue({}) } as unknown as Queue<{
+				kind: "triage";
+				reportId: string;
+			}>,
+		};
+		expect(
+			(await acceptSupportReport(request(input, a.cookieHeader, screenshot), deps))
+				.status,
+		).toBe(500);
+		expect(
+			(await acceptSupportReport(request(input, a.cookieHeader, screenshot), deps))
+				.status,
+		).toBe(200);
+		expect(put).toHaveBeenCalledTimes(2);
+		expect(deps.queue.send).toHaveBeenCalledTimes(1);
 	});
 });

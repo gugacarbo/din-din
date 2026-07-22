@@ -7,18 +7,30 @@ type ReviewMessage = {
 	reportId: string;
 	eventId: string;
 };
+const leaseMs = 5 * 60 * 1_000;
 
-async function manualReview(env: Env, reportId: string, reason: string) {
+async function manualReview(
+	env: Env,
+	reportId: string,
+	reason: string,
+	leaseToken?: string,
+) {
 	const now = Date.now();
 	const eventId = `manual:${reportId}:${reason}`;
 	await env.DB.batch([
 		env.DB.prepare(
-			"update support_reports set status = 'manual_review', safe_reason = ?, updated_at = ? where report_id = ?",
-		).bind(reason, now, reportId),
+			"update support_reports set status = 'manual_review', safe_reason = ?, lease_token = null, lease_expires_at = null, updated_at = ? where report_id = ? and (? is null or lease_token = ?)",
+		).bind(reason, now, reportId, leaseToken ?? null, leaseToken ?? null),
 		env.DB.prepare(
-			"insert or ignore into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) values (?, ?, 'manual_review', ?, 'pending', ?, ?)",
-		).bind(eventId, reportId, reason, now, now),
+			"insert or ignore into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) select ?, ?, 'manual_review', ?, 'pending', ?, ? where exists(select 1 from support_reports where report_id = ? and status = 'manual_review' and safe_reason = ?)",
+		).bind(eventId, reportId, reason, now, now, reportId, reason),
 	]);
+	const task = await env.DB.prepare(
+		"select status from support_review_tasks where event_id = ?",
+	)
+		.bind(eventId)
+		.first<{ status: string }>();
+	if (task?.status !== "pending") return;
 	try {
 		await env.SUPPORT_REPORTS_DLQ.send({
 			kind: "manual_review",
@@ -37,19 +49,47 @@ async function manualReview(env: Env, reportId: string, reason: string) {
 	}
 }
 
-async function triage(env: Env, reportId: string) {
-	const row = await env.DB.prepare(
-		"select r.status, p.message, p.diagnostics from support_reports r join support_report_payloads p on p.report_id = r.report_id where r.report_id = ?",
+async function claim(env: Env, reportId: string) {
+	const now = Date.now();
+	const token = crypto.randomUUID();
+	const result = await env.DB.prepare(
+		"update support_reports set status = 'processing', attempts = attempts + 1, lease_token = ?, lease_expires_at = ?, updated_at = ? where report_id = ? and (status in ('pending', 'queued') or (status = 'processing' and (lease_expires_at is null or lease_expires_at <= ?)))",
 	)
-		.bind(reportId)
-		.first<{ status: string; message: string; diagnostics: string }>();
-	if (!row || row.status === "published" || row.status === "manual_review")
-		return "ack" as const;
-	await env.DB.prepare(
-		"update support_reports set status = 'processing', attempts = attempts + 1, updated_at = ? where report_id = ?",
-	)
-		.bind(Date.now(), reportId)
+		.bind(token, now + leaseMs, now, reportId, now)
 		.run();
+	if (result.meta.changes !== 1) return null;
+	const row = await env.DB.prepare(
+		"select p.message, p.diagnostics from support_reports r join support_report_payloads p on p.report_id = r.report_id where r.report_id = ? and r.lease_token = ?",
+	)
+		.bind(reportId, token)
+		.first<{ message: string; diagnostics: string }>();
+	return row ? { ...row, token } : null;
+}
+
+async function releaseForRetry(env: Env, reportId: string, token: string) {
+	await env.DB.prepare(
+		"update support_reports set status = 'queued', lease_token = null, lease_expires_at = null, updated_at = ? where report_id = ? and lease_token = ?",
+	)
+		.bind(Date.now(), reportId, token)
+		.run();
+}
+
+async function recordExhaustedTriage(env: Env, reportId: string) {
+	const now = Date.now();
+	const eventId = `failed:${reportId}:transient_retries_exhausted`;
+	await env.DB.batch([
+		env.DB.prepare(
+			"update support_reports set status = 'failed', safe_reason = 'transient_retries_exhausted', lease_token = null, lease_expires_at = null, updated_at = ? where report_id = ?",
+		).bind(now, reportId),
+		env.DB.prepare(
+			"insert or ignore into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) values (?, ?, 'transient_failure', 'transient_retries_exhausted', 'observed', ?, ?)",
+		).bind(eventId, reportId, now, now),
+	]);
+}
+
+async function triage(env: Env, reportId: string) {
+	const row = await claim(env, reportId);
+	if (!row) return "ack" as const;
 	let output: unknown;
 	try {
 		output = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
@@ -58,6 +98,7 @@ async function triage(env: Env, reportId: string) {
 			max_tokens: 800,
 		});
 	} catch {
+		await releaseForRetry(env, reportId, row.token);
 		return "retry" as const;
 	}
 	let model: unknown;
@@ -73,7 +114,7 @@ async function triage(env: Env, reportId: string) {
 					: "";
 		model = JSON.parse(response || "");
 	} catch {
-		await manualReview(env, reportId, "invalid_ai_output");
+		await manualReview(env, reportId, "invalid_ai_output", row.token);
 		return "ack" as const;
 	}
 	const publication = publicIssueFromModel(model, [
@@ -81,20 +122,20 @@ async function triage(env: Env, reportId: string) {
 		row.diagnostics,
 	]);
 	if (!publication.ok) {
-		await manualReview(env, reportId, publication.reason);
+		await manualReview(env, reportId, publication.reason, row.token);
 		return "ack" as const;
 	}
 	try {
 		const issue = await publishSupportIssue(env, reportId, publication.value);
 		await env.DB.prepare(
-			"update support_reports set status = 'published', issue_number = ?, issue_url = ?, safe_reason = null, updated_at = ? where report_id = ?",
+			"update support_reports set status = 'published', issue_number = ?, issue_url = ?, safe_reason = null, lease_token = null, lease_expires_at = null, updated_at = ? where report_id = ? and lease_token = ?",
 		)
-			.bind(issue.number, issue.url, Date.now(), reportId)
+			.bind(issue.number, issue.url, Date.now(), reportId, row.token)
 			.run();
 		return "ack" as const;
 	} catch {
 		// A GitHub POST result can be ambiguous. Never retry it blindly.
-		await manualReview(env, reportId, "github_ambiguous");
+		await manualReview(env, reportId, "github_ambiguous", row.token);
 		return "ack" as const;
 	}
 }
@@ -113,7 +154,7 @@ export async function consumeSupportQueue(
 					.bind(Date.now(), body.eventId)
 					.run();
 			else if (body.kind === "triage" && body.reportId)
-				await manualReview(env, body.reportId, "transient_retries_exhausted");
+				await recordExhaustedTriage(env, body.reportId);
 			message.ack();
 		}
 		return;
@@ -128,7 +169,7 @@ export async function consumeSupportQueue(
 		if (result === "retry" && message.attempts < 3)
 			message.retry({ delaySeconds: Math.min(60, 2 ** message.attempts) });
 		else if (result === "retry") {
-			await manualReview(env, body.reportId, "transient_retries_exhausted");
+			await recordExhaustedTriage(env, body.reportId);
 			message.ack();
 		} else message.ack();
 	}
@@ -136,7 +177,7 @@ export async function consumeSupportQueue(
 
 export async function scheduledSupportMaintenance(env: Env) {
 	const pending = await env.DB.prepare(
-		"select event_id, report_id from support_review_tasks where status = 'pending' limit 50",
+		"select event_id, report_id from support_review_tasks where status = 'pending' and kind = 'manual_review' limit 50",
 	).all<{ event_id: string; report_id: string }>();
 	for (const task of pending.results) {
 		await env.SUPPORT_REPORTS_DLQ.send({

@@ -35,6 +35,7 @@ Permitir que usuários autenticados enviem um relato de problema, dúvida ou sug
 - O screenshot nunca é lido pelo consumer nem enviado a AI/GitHub.
 - Cinco relatos aceitos por usuário em quinze minutos; chave idempotente divergente retorna conflito.
 - Falhas de AI/publicação ambígua são `manual_review` e geram outbox/DLQ; não há retry cego de POST ao GitHub. Retry automático é reservado a falha transitória anterior ao POST.
+- Antes de AI ou GitHub, o consumer obtém um lease condicional por relato. Reentregas enquanto o lease está válido reconhecem o trabalho em curso; lease vencido pode ser recuperado. Uma ambiguidade pós-POST consulta o marcador opaco e, se inconclusiva, vai para revisão manual sem novo POST.
 
 ## Casos de borda
 

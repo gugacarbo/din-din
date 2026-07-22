@@ -76,10 +76,32 @@ async function authenticatedUserId(d1: D1Database, headers: Headers) {
 async function existing(d1: D1Database, userId: string, requestId: string) {
 	return d1
 		.prepare(
-			"select p.report_id, p.fingerprint, r.status from support_report_payloads p join support_reports r on r.report_id = p.report_id where p.user_id = ? and p.client_request_id = ?",
+			"select p.report_id, p.fingerprint, p.screenshot_key, r.status from support_report_payloads p join support_reports r on r.report_id = p.report_id where p.user_id = ? and p.client_request_id = ?",
 		)
 		.bind(userId, requestId)
-		.first<{ report_id: string; fingerprint: string; status: string }>();
+		.first<{
+			report_id: string;
+			fingerprint: string;
+			screenshot_key: string | null;
+			status: string;
+		}>();
+}
+
+async function ensureScreenshot(
+	bucket: R2Bucket,
+	key: string | null,
+	screenshot: File | null,
+) {
+	if (!key) return;
+	if (await bucket.head(key)) return;
+	if (!screenshot)
+		throw new SupportError(
+			400,
+			"Reenvie o print para concluir esta tentativa de suporte.",
+		);
+	await bucket.put(key, screenshot.stream(), {
+		httpMetadata: { contentType: screenshot.type },
+	});
 }
 
 export async function acceptSupportReport(
@@ -131,6 +153,11 @@ export async function acceptSupportReport(
 				previous.status === "manual_review"
 			)
 				return Response.json({ received: true, reportId: previous.report_id });
+			await ensureScreenshot(
+				deps.screenshots,
+				previous.screenshot_key,
+				screenshot instanceof File ? screenshot : null,
+			);
 			await deps.queue.send({ kind: "triage", reportId: previous.report_id });
 			await deps.d1
 				.prepare(
@@ -183,10 +210,11 @@ export async function acceptSupportReport(
 				);
 			throw error;
 		}
-		if (screenshot instanceof File && screenshotKey)
-			await deps.screenshots.put(screenshotKey, screenshot.stream(), {
-				httpMetadata: { contentType: screenshot.type },
-			});
+		await ensureScreenshot(
+			deps.screenshots,
+			screenshotKey,
+			screenshot instanceof File ? screenshot : null,
+		);
 		await deps.queue.send({ kind: "triage", reportId });
 		await deps.d1
 			.prepare(

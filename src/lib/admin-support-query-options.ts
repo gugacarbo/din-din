@@ -23,6 +23,8 @@ export const adminSupportQueryOptions = () =>
 					status: string;
 					attempts: number;
 					safe_reason: string | null;
+					issue_number: number | null;
+					issue_url: string | null;
 					created_at: number;
 					review_tasks: Array<{
 						event_id: string;

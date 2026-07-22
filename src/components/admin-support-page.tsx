@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { GitHubIssueReference } from "#/components/github-issue-reference.tsx";
 import { Card, CardContent } from "#/components/ui/card.tsx";
 import { adminSupportQueryOptions } from "#/lib/admin-support-query-options.ts";
 
@@ -24,6 +25,10 @@ export function AdminSupportPage() {
 								<p className="text-sm text-muted-foreground">
 									Tentativas: {report.attempts}
 								</p>
+								<GitHubIssueReference
+									issueNumber={report.issue_number}
+									issueUrl={report.issue_url}
+								/>
 								{report.review_tasks.length > 0 && (
 									<ul className="mt-1 text-sm text-muted-foreground">
 										{report.review_tasks.map((task) => (

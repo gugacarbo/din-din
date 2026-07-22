@@ -125,7 +125,7 @@ describe("admin HTTP route handlers", () => {
 				.prepare("insert into admin_memberships (user_id, created_at) values (?, ?)")
 				.bind(a.id, now),
 			env.DB
-				.prepare("insert into support_reports (report_id, category, status, attempts, created_at, updated_at) values (?, 'problem', 'manual_review', 3, ?, ?)")
+				.prepare("insert into support_reports (report_id, category, status, attempts, issue_number, issue_url, created_at, updated_at) values (?, 'problem', 'published', 3, 31, 'https://github.com/gugacarbo/din-din/issues/31', ?, ?)")
 				.bind(reportId, now, now),
 			env.DB
 				.prepare("insert into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) values (?, ?, 'manual_review', 'needs_human', 'pending', ?, ?)")
@@ -159,6 +159,8 @@ describe("admin HTTP route handlers", () => {
 				expect.objectContaining({
 					report_id: reportId,
 					attempts: 3,
+					issue_number: 31,
+					issue_url: "https://github.com/gugacarbo/din-din/issues/31",
 					review_tasks: [
 						expect.objectContaining({
 							event_id: reviewEventId,
@@ -190,6 +192,8 @@ describe("admin HTTP route handlers", () => {
 		expect(await detail.json()).toMatchObject({
 			report_id: reportId,
 			attempts: 3,
+			issue_number: 31,
+			issue_url: "https://github.com/gugacarbo/din-din/issues/31",
 			review_tasks: [
 				expect.objectContaining({ event_id: reviewEventId }),
 			],

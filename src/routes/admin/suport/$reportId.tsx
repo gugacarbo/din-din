@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { AdminSupportPublishDialog } from "#/components/admin-support-publish-dialog.tsx";
+import { GitHubIssueReference } from "#/components/github-issue-reference.tsx";
 
 export const Route = createFileRoute("/admin/suport/$reportId")({
 	component: ReportPage,
@@ -17,6 +18,8 @@ function ReportPage() {
 				category: string;
 				status: string;
 				attempts: number;
+				issue_number: number | null;
+				issue_url: string | null;
 				review_tasks: Array<{
 					event_id: string;
 					kind: string;
@@ -37,6 +40,10 @@ function ReportPage() {
 				{report.data.category} · {report.data.status} · {report.data.attempts}{" "}
 				tentativas
 			</p>
+			<GitHubIssueReference
+				issueNumber={report.data.issue_number}
+				issueUrl={report.data.issue_url}
+			/>
 			{report.data.review_tasks.length > 0 && (
 				<ul className="mt-2 text-sm text-muted-foreground">
 					{report.data.review_tasks.map((task) => (

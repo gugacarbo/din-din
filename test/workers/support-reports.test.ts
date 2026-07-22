@@ -1,21 +1,26 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 import { createAuthedPair } from "./fixtures.ts";
+import type { SupportInput } from "#/lib/support.ts";
+import { consumeSupportQueue } from "#/server/support-queue.ts";
 import { acceptSupportReport } from "#/server/support-service.ts";
 
-function payload(requestId = crypto.randomUUID()) {
+function payload(
+	requestId = crypto.randomUUID(),
+	diagnostics: SupportInput["diagnostics"] = {
+		console: [],
+		requests: [],
+		route: "/transactions",
+		viewport: { width: 1280, height: 800 },
+		online: true,
+		browser: "test",
+	},
+) {
 	return {
 		category: "problem",
 		message: "Falha ao salvar lançamento",
 		clientRequestId: requestId,
-		diagnostics: {
-			console: [],
-			requests: [],
-			route: "/transactions",
-			viewport: { width: 1280, height: 800 },
-			online: true,
-			browser: "test",
-		},
+		diagnostics,
 	};
 }
 
@@ -97,5 +102,89 @@ describe("support report intake", () => {
 		).toBe(200);
 		expect(put).toHaveBeenCalledTimes(2);
 		expect(deps.queue.send).toHaveBeenCalledTimes(1);
+	});
+
+	it("accepts the largest valid diagnostic snapshot after deterministic truncation", async () => {
+		const { a } = await createAuthedPair();
+		const input = payload(crypto.randomUUID(), {
+			console: Array.from({ length: 50 }, (_, at) => ({
+				at,
+				level: "error" as const,
+				args: [
+					"Cookie: session=super-secret-cookie-value",
+					...Array.from({ length: 19 }, () => "x".repeat(500)),
+				],
+			})),
+			requests: Array.from({ length: 50 }, (_, at) => ({
+				at,
+				method: "GET",
+				path: "/transactions",
+				durationMs: 1,
+				result: "success" as const,
+			})),
+			route: "/transactions",
+			viewport: { width: 1280, height: 800 },
+			online: true,
+			browser: "test",
+		});
+		const response = await acceptSupportReport(
+			request(input, a.cookieHeader),
+			dependencies(),
+		);
+		expect(response.status).toBe(200);
+		const stored = await env.DB
+			.prepare(
+				"select diagnostics from support_report_payloads order by received_at desc limit 1",
+			)
+			.first<{ diagnostics: string }>();
+		expect(new TextEncoder().encode(stored?.diagnostics || "").byteLength).toBeLessThanOrEqual(
+			65_536,
+		);
+		expect(stored?.diagnostics).not.toContain("super-secret-cookie-value");
+	});
+
+	it("never forwards textual credentials from intake diagnostics to Workers AI", async () => {
+		const { a } = await createAuthedPair();
+		const response = await acceptSupportReport(
+			request(
+				payload(crypto.randomUUID(), {
+					console: [
+						{
+							at: 1,
+							level: "error",
+							args: [
+								"Cookie: session=super-secret-cookie-value Authorization: Basic dXNlcjpwYXNz password=super-secret",
+							],
+						},
+					],
+					requests: [],
+					route: "/transactions",
+					viewport: { width: 1280, height: 800 },
+					online: true,
+					browser: "test",
+				}),
+				a.cookieHeader,
+			),
+			dependencies(),
+		);
+		const { reportId } = (await response.json()) as { reportId: string };
+		const ai = vi.fn().mockResolvedValue({ response: "not-json" });
+		const message = {
+			body: { kind: "triage", reportId },
+			attempts: 1,
+			ack: vi.fn(),
+			retry: vi.fn(),
+		};
+		await consumeSupportQueue(
+			{ queue: "din-din-support-reports", messages: [message] } as unknown as MessageBatch<unknown>,
+			Object.assign(Object.create(env), {
+				AI: { run: ai },
+				SUPPORT_REPORTS_DLQ: { send: vi.fn().mockResolvedValue({}) },
+			}) as Env,
+		);
+		const prompt = ai.mock.calls[0][1].prompt as string;
+		expect(prompt).not.toContain("super-secret-cookie-value");
+		expect(prompt).not.toContain("dXNlcjpwYXNz");
+		expect(prompt).not.toContain("super-secret");
 	});
 });

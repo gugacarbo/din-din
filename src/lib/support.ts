@@ -14,9 +14,19 @@ const secretKey =
 	/authorization|cookie|token|secret|password|credential|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token/i;
 const secretValue =
 	/(?:bearer\s+)?(?:gh[pousr]_[a-z0-9_]+|eyJ[a-zA-Z0-9_-]{10,}|sk-[a-zA-Z0-9_-]{12,})/gi;
+const cookieHeader = /\b(?:set-)?cookie\s*[=:]\s*[^\r\n]*/gi;
+const authorizationHeader =
+	/\bauthorization\s*[=:]\s*(?:basic|bearer)\s+[^\s,;]+/gi;
+const inlineSecret =
+	/\b(password|passwd|credential|token|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token)\s*[=:]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi;
+
+export const maxDiagnosticsBytes = 65_536;
 
 export function redactText(value: string) {
 	return value
+		.replace(cookieHeader, "Cookie: [redacted]")
+		.replace(authorizationHeader, "Authorization: [redacted]")
+		.replace(inlineSecret, (_match, key: string) => `${key}=[redacted]`)
 		.replace(secretValue, redacted)
 		.replace(
 			/https?:\/\/([^/?#]+)[^\s?#]*\?[^\s#]*/gi,
@@ -87,6 +97,82 @@ export const supportInputSchema = z.object({
 	diagnostics: clientDiagnosticSchema,
 });
 export type SupportInput = z.infer<typeof supportInputSchema>;
+
+function byteLength(value: string) {
+	return new TextEncoder().encode(value).byteLength;
+}
+
+function diagnosticValue(value: unknown) {
+	const safe = safeValue(value);
+	try {
+		return byteLength(JSON.stringify(safe)) <= 512 ? safe : "[truncated]";
+	} catch {
+		return "[unserializable]";
+	}
+}
+
+function diagnosticNumber(value: unknown) {
+	return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function diagnosticResult(value: unknown): RequestDiagnostic["result"] {
+	return [
+		"success",
+		"http_error",
+		"network_error",
+		"aborted",
+		"unknown",
+	].includes(value as string)
+		? (value as RequestDiagnostic["result"])
+		: "unknown";
+}
+
+/**
+ * Re-sanitizes browser-provided diagnostics at the server boundary and drops
+ * the oldest events deterministically until the private D1 contract fits.
+ */
+export function serialiseDiagnostics(diagnostics: SupportInput["diagnostics"]) {
+	const console = diagnostics.console.slice(-50).map((event) => ({
+		at: diagnosticNumber(event.at),
+		level: ["debug", "info", "log", "warn", "error"].includes(event.level)
+			? event.level
+			: "log",
+		args: Array.isArray(event.args)
+			? event.args.slice(0, 20).map(diagnosticValue)
+			: [],
+	}));
+	const requests = diagnostics.requests.slice(-50).map((event) => ({
+		at: diagnosticNumber(event.at),
+		method: redactText(String(event.method || "GET")).slice(0, 16),
+		path: redactText(String(event.path || "/[unknown]")).slice(0, 500),
+		status: typeof event.status === "number" ? event.status : undefined,
+		durationMs: diagnosticNumber(event.durationMs),
+		result: diagnosticResult(event.result),
+	}));
+	const normalized = {
+		console,
+		requests,
+		route: redactText(diagnostics.route).slice(0, 500),
+		viewport: diagnostics.viewport,
+		online: diagnostics.online,
+		browser: redactText(diagnostics.browser).slice(0, 300),
+		version: diagnostics.version
+			? redactText(diagnostics.version).slice(0, 100)
+			: undefined,
+	};
+	let serialized = JSON.stringify(normalized);
+	while (
+		byteLength(serialized) > maxDiagnosticsBytes &&
+		(normalized.console.length || normalized.requests.length)
+	) {
+		const consoleAt = normalized.console[0]?.at ?? Number.POSITIVE_INFINITY;
+		const requestAt = normalized.requests[0]?.at ?? Number.POSITIVE_INFINITY;
+		if (consoleAt <= requestAt) normalized.console.shift();
+		else normalized.requests.shift();
+		serialized = JSON.stringify(normalized);
+	}
+	return serialized;
+}
 
 export function normaliseRequestPath(url: string) {
 	try {

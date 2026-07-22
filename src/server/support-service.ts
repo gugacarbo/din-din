@@ -2,7 +2,7 @@ import { createCoreAuth } from "#/lib/auth-core.ts";
 import {
 	redactText,
 	type SupportInput,
-	safeValue,
+	serialiseDiagnostics,
 	supportInputSchema,
 } from "#/lib/support.ts";
 
@@ -47,9 +47,6 @@ async function fingerprint(input: SupportInput, screenshot?: File) {
 	body.set(metadata);
 	body.set(bytes, metadata.length);
 	return hex(await crypto.subtle.digest("SHA-256", body));
-}
-function safeDiagnostics(input: SupportInput) {
-	return JSON.stringify(safeValue(input.diagnostics));
 }
 function jsonError(error: unknown) {
 	if (error instanceof SupportError)
@@ -190,7 +187,7 @@ export async function acceptSupportReport(
 						input.clientRequestId,
 						inputFingerprint,
 						redactText(input.message),
-						safeDiagnostics(input),
+						serialiseDiagnostics(input.diagnostics),
 						JSON.stringify({
 							route: input.diagnostics.route,
 							viewport: input.diagnostics.viewport,

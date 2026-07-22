@@ -20,7 +20,7 @@ Permitir que usuários autenticados enviem um relato de problema, dúvida ou sug
 
 ## Fluxo
 
-1. O bootstrap instala buffers em memória de, no máximo, 50 logs e 50 requests já redigidos.
+1. O bootstrap instala buffers em memória de, no máximo, 50 logs e 50 requests já redigidos; valores textuais de cookie, autorização, token e senha são removidos antes do buffer.
 2. O diálogo global coleta categoria, mensagem e print opcional do viewport atual, com preview, remoção e nova captura; o print respeita `scrollX`/`scrollY` e exclui o diálogo e qualquer elemento marcado com `data-support-capture-exclude`.
 3. `POST /api/support` reautentica, limita tamanho/rate, persiste D1, envia o print privado para R2 e enfileira só o `reportId` opaco.
 4. A fila usa AI somente para texto privado sanitizado; uma barreira determinística rejeita schema inválido, sintaxe ativa, PII, secrets ou eco de conteúdo privado.
@@ -32,6 +32,7 @@ Permitir que usuários autenticados enviem um relato de problema, dúvida ou sug
 - Categorias: `Problema/erro`, `Dúvida/ajuda`, `Sugestão`; mensagem de 1–4.000 caracteres.
 - Screenshot opcional PNG/WebP até 2 MiB; payload total até 3 MiB. Não há endpoint ou URL pública de leitura.
 - Nenhum body/header/query/cookie/token, valor de campo ou URL OAuth entra em buffers, D1 público, AI ou GitHub.
+- Antes da persistência, o servidor redige novamente o diagnóstico, limita cada valor e conserva somente os eventos mais recentes que caibam em 65.536 bytes; a inserção nunca depende de um erro de `CHECK` para aplicar esse limite.
 - O screenshot nunca é lido pelo consumer nem enviado a AI/GitHub.
 - Cinco relatos aceitos por usuário em quinze minutos; chave idempotente divergente retorna conflito.
 - Em falha ambígua de rede/5xx, cliente reutiliza exatamente o payload serializado, diagnóstico, screenshot e UUID da tentativa lógica; um novo relato exige ação explícita.
@@ -74,9 +75,9 @@ pnpm run release:verify
 
 ```text
 pnpm run typecheck: exit 0
-pnpm run test:unit: 11 testes verdes
+pnpm run test:unit: 13 testes verdes
 pnpm run test:ui: 29 testes verdes
-pnpm run test:workers: 38 testes verdes
+pnpm run test:workers: 40 testes verdes
 pnpm run verify:migration-rollback: exit 0
 scripts/docs-check --emit-index && scripts/docs-check: 0 erros, 0 avisos
 pnpm run build: exit 0 (avisos esperados de secrets locais ausentes e chunks grandes)

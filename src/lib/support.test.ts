@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { redactText, safeValue } from "#/lib/support.ts";
+import {
+	maxDiagnosticsBytes,
+	redactText,
+	safeValue,
+	serialiseDiagnostics,
+} from "#/lib/support.ts";
 
 describe("support privacy helpers", () => {
 	it("redacts secret-shaped values and query strings", () => {
@@ -19,5 +24,39 @@ describe("support privacy helpers", () => {
 			token: "[redacted]",
 			nested: "[circular]",
 		});
+	});
+	it("redacts credential values in textual console arguments", () => {
+		for (const [input, secret] of [
+			[
+				"Cookie: session=super-secret-cookie-value",
+				"super-secret-cookie-value",
+			],
+			["Authorization: Basic dXNlcjpwYXNz", "dXNlcjpwYXNz"],
+			["Authorization: Bearer super-secret-token", "super-secret-token"],
+			["password=super-secret", "super-secret"],
+		])
+			expect(redactText(input)).not.toContain(secret);
+		expect(safeValue("password=super-secret")).toBe("password=[redacted]");
+	});
+	it("keeps recent sanitized diagnostics within the aggregate byte budget", () => {
+		const serialized = serialiseDiagnostics({
+			console: Array.from({ length: 50 }, (_, at) => ({
+				at,
+				level: "error" as const,
+				args: Array.from({ length: 20 }, () => "x".repeat(500)),
+			})),
+			requests: [],
+			route: "/transactions",
+			viewport: { width: 1280, height: 800 },
+			online: true,
+			browser: "test",
+		});
+		expect(new TextEncoder().encode(serialized).byteLength).toBeLessThanOrEqual(
+			maxDiagnosticsBytes,
+		);
+		const diagnostics = JSON.parse(serialized) as {
+			console: Array<{ at: number }>;
+		};
+		expect(diagnostics.console.at(-1)?.at).toBe(49);
 	});
 });

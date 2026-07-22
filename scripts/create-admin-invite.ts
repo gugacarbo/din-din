@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { adminHmac, newInviteToken } from "../src/lib/admin-invite.ts";
+import dotenv from "dotenv";
+dotenv.config({ path: ".env" });
 
 const [mode, origin] = process.argv.slice(2);
 if ((mode !== "--local" && mode !== "--remote") || !origin) {

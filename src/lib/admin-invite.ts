@@ -35,7 +35,7 @@ export function newInviteToken() {
 }
 
 export function continuationCookie(value: string, maxAge = 600) {
-	return `din-din-admin-invite=${encodeURIComponent(value)}; HttpOnly; Secure; SameSite=Lax; Path=/admin/convite; Max-Age=${maxAge}`;
+	return `din-din-admin-invite=${encodeURIComponent(value)}; HttpOnly; Secure; SameSite=Lax; Path=/api/admin/invite; Max-Age=${maxAge}`;
 }
 
 export function readCookie(request: Request, name: string) {
@@ -44,4 +44,8 @@ export function readCookie(request: Request, name: string) {
 		?.split(";")
 		.map((part) => part.trim().split("=", 2))
 		.find(([key]) => key === name)?.[1];
+}
+
+export function sameAdminOrigin(request: Request) {
+	return request.headers.get("origin") === new URL(request.url).origin;
 }

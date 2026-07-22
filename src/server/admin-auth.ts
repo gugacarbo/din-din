@@ -1,3 +1,4 @@
+import { sameAdminOrigin } from "#/lib/admin-invite.ts";
 import { createCoreAuth } from "#/lib/auth-core.ts";
 
 export class AdminAuthError extends Error {
@@ -18,8 +19,7 @@ export async function requireAdmin(d1: D1Database, headers: Headers) {
 }
 
 export function sameOrigin(request: Request) {
-	const origin = request.headers.get("origin");
-	return !origin || origin === new URL(request.url).origin;
+	return sameAdminOrigin(request);
 }
 
 export const noStore = { "cache-control": "no-store" };

@@ -14,7 +14,7 @@ export const Route = createFileRoute("/api/admin/invite/conclude")({
 					"cache-control": "no-store",
 					"referrer-policy": "no-referrer",
 					"set-cookie":
-						"din-din-admin-invite=; HttpOnly; Secure; SameSite=Lax; Path=/admin/convite; Max-Age=0",
+						"din-din-admin-invite=; HttpOnly; Secure; SameSite=Lax; Path=/api/admin/invite; Max-Age=0",
 				};
 				if (!sameOrigin(request))
 					return new Response(null, { status: 403, headers });

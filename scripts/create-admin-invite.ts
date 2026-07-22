@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { z } from "zod";
 import { adminHmac, newInviteToken, normalizeAdminEmail } from "../src/lib/admin-invite.ts";
 
 const [email, mode, origin] = process.argv.slice(2);
@@ -10,11 +11,13 @@ if (parsedOrigin.protocol !== "https:" || parsedOrigin.pathname !== "/")
 	throw new Error("A origem do convite precisa ser HTTPS sem caminho.");
 const secret = process.env.APP_SECRET;
 if (!secret || secret.length < 32) throw new Error("APP_SECRET ausente ou curto.");
+const parsedEmail = z.string().trim().email().safeParse(email);
+if (!parsedEmail.success) throw new Error("E-mail de convite inválido.");
 const token = newInviteToken();
 const inviteId = crypto.randomUUID();
 const now = Date.now();
 const tokenHmac = await adminHmac(secret, "admin-invite:v1", token);
-const normalized = normalizeAdminEmail(email);
+const normalized = normalizeAdminEmail(parsedEmail.data);
 const sql = `insert into admin_invites (invite_id, token_hmac, email_normalized, expires_at, created_at) values ('${inviteId}', '${tokenHmac}', '${normalized}', ${now + 86_400_000}, ${now});`;
 const result = spawnSync(
 	"pnpm",

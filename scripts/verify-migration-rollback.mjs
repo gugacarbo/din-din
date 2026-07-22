@@ -153,7 +153,7 @@ try {
 	assertSafeToRemoveSupport();
 	await writeFile(downFile, supportDownSql);
 	run(["--file", downFile]);
-	const supportRemoved = run(["--command", "select count(*) as support_tables from sqlite_master where type='table' and name like 'support_%';", "--json"]);
+	const supportRemoved = run(["--command", "select count(*) as support_tables from sqlite_master where type='table' and name in ('support_reports','support_report_payloads','support_review_tasks');", "--json"]);
 	if (!/"support_tables"\s*:\s*0/.test(supportRemoved)) throw new Error("Support down did not remove every support table.");
 	run(["--file", support]);
 	run(["--file", supportLeases]);

@@ -50,6 +50,10 @@ describe("publicIssueFromModel", () => {
 		const unsafe = [
 			"Telefone (11) 99876-5432",
 			"Telefone +1 (415) 555-2671",
+			"Telefone (415) 555-2671",
+			"Telefone 415.555.2671",
+			"Telefone 555-2671",
+			"Telefone 123 456 7890",
 			"CNPJ 12.345.678/0001-95",
 			"Acesse example.com/path",
 			"Veja a issue #123",

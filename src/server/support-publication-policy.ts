@@ -23,6 +23,8 @@ const brazilianPhone =
 	/(?:^|[^\p{L}\p{N}])(?:\+?55[ \-‐-―]?)?\(?\d{2}\)?[ \-‐-―]?(?:9[ \-‐-―]?)?\d{4,5}[ \-‐-―]?\d{4}(?!\d)/u;
 const internationalPhone =
 	/(?:^|[^\p{L}\p{N}])\+\d{1,3}(?:[ \-‐-―().]*\d){6,14}(?!\d)/u;
+const plausiblePhone =
+	/(?:^|[^\p{L}\p{N}])(?:\(?\d{3}\)?[ .\-‐-―]*\d{3}[ .\-‐-―]*\d{4}|\d{3}[ .\-‐-―]\d{4})(?!\d)/u;
 const githubReference =
 	/(?:^|[^\p{L}\p{N}_])(?:[\p{L}\p{N}_.-]+\/[\p{L}\p{N}_.-]+)?#\s*\d+\b/u;
 const bareUrl =
@@ -69,6 +71,7 @@ export function publicIssueFromModel(
 				pii.test(normalized) ||
 				brazilianPhone.test(normalized) ||
 				internationalPhone.test(normalized) ||
+				plausiblePhone.test(normalized) ||
 				githubReference.test(normalized) ||
 				bareUrl.test(normalized) ||
 				redactText(part) !== part ||

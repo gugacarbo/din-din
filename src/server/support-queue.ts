@@ -231,16 +231,26 @@ export async function scheduledSupportMaintenance(env: Env) {
 		"select event_id, report_id from support_review_tasks where status = 'pending' and kind = 'manual_review' limit 50",
 	).all<{ event_id: string; report_id: string }>();
 	for (const task of pending.results) {
-		await env.SUPPORT_REPORTS_DLQ.send({
-			kind: "manual_review",
-			reportId: task.report_id,
-			eventId: task.event_id,
-		} satisfies ReviewMessage);
-		await env.DB.prepare(
-			"update support_review_tasks set status = 'sent', updated_at = ? where event_id = ?",
-		)
-			.bind(Date.now(), task.event_id)
-			.run();
+		try {
+			await env.SUPPORT_REPORTS_DLQ.send({
+				kind: "manual_review",
+				reportId: task.report_id,
+				eventId: task.event_id,
+			} satisfies ReviewMessage);
+			await env.DB.prepare(
+				"update support_review_tasks set status = 'sent', updated_at = ? where event_id = ?",
+			)
+				.bind(Date.now(), task.event_id)
+				.run();
+		} catch {
+			console.error(
+				JSON.stringify({
+					event: "support_dlq_outbox_pending",
+					reportId: task.report_id,
+					eventId: task.event_id,
+				}),
+			);
+		}
 	}
 	const expired = await env.DB.prepare(
 		"select report_id, screenshot_key from support_report_payloads where expires_at <= ? limit 100",

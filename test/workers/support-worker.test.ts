@@ -328,4 +328,50 @@ describe("production support worker", () => {
 		const payload = await env.DB.prepare("select report_id from support_report_payloads where report_id = ?").bind(reportId).first();
 		expect(payload).toBeNull();
 	});
+
+	it("continues retention cleanup when one pending outbox delivery fails", async () => {
+		const reportId = await report({ expiresAt: Date.now() - 1 });
+		const eventId = `manual:${reportId}:unavailable`;
+		await env.DB
+			.prepare(
+				"insert into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) values (?, ?, 'manual_review', 'test', 'pending', ?, ?)",
+			)
+			.bind(eventId, reportId, Date.now(), Date.now())
+			.run();
+		const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+		const runtimeEnv = runtime({
+			SUPPORT_REPORTS_DLQ: {
+				send: vi.fn().mockRejectedValue(new Error("dlq unavailable")),
+			},
+		});
+		const work: Promise<unknown>[] = [];
+		await worker.scheduled?.(
+			{} as ScheduledController,
+			runtimeEnv,
+			{ waitUntil(promise) { work.push(promise); } } as ExecutionContext,
+		);
+		await Promise.all(work);
+		expect(runtimeEnv.SUPPORT_SCREENSHOTS.delete).toHaveBeenCalledWith(
+			"support/test/viewport.webp",
+		);
+		expect(
+			await env.DB
+				.prepare("select report_id from support_report_payloads where report_id = ?")
+				.bind(reportId)
+				.first(),
+		).toBeNull();
+		expect(
+			await env.DB
+				.prepare("select status from support_review_tasks where event_id = ?")
+				.bind(eventId)
+				.first<{ status: string }>(),
+		).toEqual({ status: "pending" });
+		expect(error).toHaveBeenCalledWith(
+			JSON.stringify({
+				event: "support_dlq_outbox_pending",
+				reportId,
+				eventId,
+			}),
+		);
+	});
 });

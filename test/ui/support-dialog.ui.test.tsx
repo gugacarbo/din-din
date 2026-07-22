@@ -56,6 +56,10 @@ describe("SupportDialog", () => {
 			configurable: true,
 			value: vi.fn(),
 		});
+		Object.defineProperties(window, {
+			scrollX: { configurable: true, value: 0 },
+			scrollY: { configurable: true, value: 0 },
+		});
 	});
 
 	afterEach(() => {
@@ -89,6 +93,10 @@ describe("SupportDialog", () => {
 	});
 
 	it("excludes the dialog and every marked element from the viewport capture", async () => {
+		Object.defineProperties(window, {
+			scrollX: { configurable: true, value: 320 },
+			scrollY: { configurable: true, value: 180 },
+		});
 		canvas.mockResolvedValue({
 			toBlob(callback: BlobCallback) {
 				callback(new Blob(["screenshot"], { type: "image/webp" }));
@@ -107,5 +115,9 @@ describe("SupportDialog", () => {
 		expect(options.ignoreElements(dialog)).toBe(true);
 		expect(options.ignoreElements(excluded)).toBe(true);
 		expect(options.ignoreElements(document.createElement("main"))).toBe(false);
+		expect(canvas.mock.calls[0][1]).toMatchObject({
+			scrollX: -320,
+			scrollY: -180,
+		});
 	});
 });

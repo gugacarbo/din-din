@@ -127,7 +127,7 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 				backgroundColor: getComputedStyle(document.body).backgroundColor,
 				width: window.innerWidth,
 				height: window.innerHeight,
-				scrollX: 0,
+				scrollX: -window.scrollX,
 				scrollY: -window.scrollY,
 				windowWidth: window.innerWidth,
 				windowHeight: window.innerHeight,

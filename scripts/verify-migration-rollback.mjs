@@ -64,6 +64,36 @@ function assertSafeToRemoveSupport() {
 	if (/"support_data_present"\s*:\s*1/.test(output)) throw new Error("Support rollback recusado: remova report, payload e task antes do down local.");
 }
 
+const adminTables = [
+	"admin_memberships",
+	"admin_invites",
+	"admin_invite_continuations",
+	"support_manual_publications",
+];
+
+function assertAdminSchemaPresent() {
+	const output = run([
+		"--command",
+		`select count(*) as admin_tables from sqlite_master where type='table' and name in (${adminTables.map((table) => `'${table}'`).join(",")});`,
+		"--json",
+	]);
+	if (!/"admin_tables"\s*:\s*4/.test(output))
+		throw new Error("Admin rollback guard removed schema before refusing data.");
+}
+
+function assertSafeToRemoveAdmin() {
+	const output = run([
+		"--command",
+		`select ${adminTables.map((table) => `exists(select 1 from ${table}) as ${table}_has_data`).join(", ")};`,
+		"--json",
+	]);
+	if (adminTables.some((table) => new RegExp(`"${table}_has_data"\\s*:\\s*1`).test(output))) {
+		throw new Error(
+			"Admin rollback recusado: remova memberships, invites, continuations e publicações manuais antes do down local.",
+		);
+	}
+}
+
 const supportDownSql = `
 DROP TRIGGER IF EXISTS support_payload_rate_limit;
 DROP TABLE IF EXISTS support_review_tasks;
@@ -134,14 +164,40 @@ try {
 	run(["--file", aiLogging]);
 	run(["--file", admin]);
 	const adminInvite = "00000000-0000-4000-8000-000000000007";
-	run(["--command", `insert into admin_invites (invite_id,token_hmac,email_normalized,expires_at,created_at) values ('${adminInvite}','hmac','admin@example.test',2,1); insert into admin_memberships (user_id,created_at,created_by_invite_id) values ('00000000-0000-4000-8000-000000000001',1,'${adminInvite}');`]);
-	const adminData = run(["--command", "select count(*) as admin_records from admin_memberships union all select count(*) from admin_invites;", "--json"]);
-	if (!/"admin_records"\s*:\s*[1-9]/.test(adminData))
-		throw new Error("Admin rollback guard did not detect administrative data.");
-	run(["--command", `delete from admin_memberships; delete from admin_invites where invite_id='${adminInvite}';`]);
+	const adminReport = "00000000-0000-4000-8000-000000000008";
+	const assertAdminRefusal = () => {
+		let refused = false;
+		try {
+			assertSafeToRemoveAdmin();
+		} catch (error) {
+			refused =
+				error instanceof Error &&
+				error.message.startsWith("Admin rollback recusado:");
+		}
+		if (!refused)
+			throw new Error("Admin rollback guard did not refuse administrative data.");
+		assertAdminSchemaPresent();
+	};
+
+	run(["--command", "insert into admin_memberships (user_id,created_at) values ('00000000-0000-4000-8000-000000000001',1);"]);
+	assertAdminRefusal();
+	run(["--command", "delete from admin_memberships;"]);
+
+	run(["--command", `insert into admin_invites (invite_id,token_hmac,email_normalized,expires_at,created_at) values ('${adminInvite}','hmac','admin@example.test',2,1);`]);
+	assertAdminRefusal();
+	run(["--command", `delete from admin_invites where invite_id='${adminInvite}';`]);
+
+	run(["--command", `insert into admin_invites (invite_id,token_hmac,email_normalized,expires_at,created_at) values ('${adminInvite}','hmac','admin@example.test',2,1); insert into admin_invite_continuations (continuation_hmac,invite_id,nonce,expires_at,created_at) values ('continuation','${adminInvite}','nonce',2,1);`]);
+	assertAdminRefusal();
+	run(["--command", `delete from admin_invite_continuations; delete from admin_invites where invite_id='${adminInvite}';`]);
+
+	run(["--command", `insert into support_reports (report_id,category,status,attempts,created_at,updated_at) values ('${adminReport}','problem','manual_review',0,1,1); insert into support_manual_publications (report_id,actor_user_id,content_hash,public_issue,created_at) values ('${adminReport}','00000000-0000-4000-8000-000000000001','hash','{}',1);`]);
+	assertAdminRefusal();
+	run(["--command", `delete from support_manual_publications where report_id='${adminReport}'; delete from support_reports where report_id='${adminReport}';`]);
+	assertSafeToRemoveAdmin();
 	await writeFile(downFile, adminDownSql);
 	run(["--file", downFile]);
-	const adminRemoved = run(["--command", "select count(*) as admin_tables from sqlite_master where type='table' and name like 'admin_%';", "--json"]);
+	const adminRemoved = run(["--command", "select count(*) as admin_tables from sqlite_master where type='table' and name in ('admin_memberships','admin_invites','admin_invite_continuations','support_manual_publications');", "--json"]);
 	if (!/"admin_tables"\s*:\s*0/.test(adminRemoved)) throw new Error("Admin down did not remove every admin table.");
 	run(["--file", admin]);
 	const supportReport = "00000000-0000-4000-8000-000000000005";

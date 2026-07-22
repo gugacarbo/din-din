@@ -34,8 +34,9 @@ Permitir que usuários autenticados enviem um relato de problema, dúvida ou sug
 - Nenhum body/header/query/cookie/token, valor de campo ou URL OAuth entra em buffers, D1 público, AI ou GitHub.
 - O screenshot nunca é lido pelo consumer nem enviado a AI/GitHub.
 - Cinco relatos aceitos por usuário em quinze minutos; chave idempotente divergente retorna conflito.
-- Falhas de AI/publicação ambígua são `manual_review` e geram outbox/DLQ; não há retry cego de POST ao GitHub. Retry automático é reservado a falha transitória anterior ao POST.
-- Antes de AI ou GitHub, o consumer obtém um lease condicional por relato. Reentregas enquanto o lease está válido reconhecem o trabalho em curso; lease vencido pode ser recuperado. Uma ambiguidade pós-POST consulta o marcador opaco e, se inconclusiva, vai para revisão manual sem novo POST.
+- Falhas de AI/publicação ambígua são `manual_review` e geram outbox/DLQ; não há retry cego de POST ao GitHub. Falha transitória anterior ao POST solicita retry para que a fila entregue automaticamente o envelope `triage` à DLQ após `max_retries`; somente o consumer da DLQ registra o esgotamento seguro.
+- Antes de AI, o consumer obtém um lease condicional por relato. Reentregas enquanto o lease está válido reconhecem o trabalho em curso; lease vencido pode ser recuperado. Imediatamente antes de GitHub, uma reserva transacional durável renova/valida o lease e bloqueia qualquer segundo POST mesmo que o primeiro runtime ultrapasse o lease. A reserva não é recuperada automaticamente: uma interrupção pós-reserva é ambígua e segue para revisão manual, sem novo POST.
+- Todo campo produzido pela AI é normalizado em Unicode/espaços e rejeitado se tiver PII, telefone brasileiro, URL, Markdown/HTML ativo, menção ou referência GitHub acionável (`#123`/`owner/repo#123`).
 
 ## Casos de borda
 

@@ -109,6 +109,10 @@ export const supportReports = sqliteTable(
 		attempts: integer("attempts").notNull().default(0),
 		leaseToken: text("lease_token"),
 		leaseExpiresAt: integer("lease_expires_at", { mode: "number" }),
+		publicationToken: text("publication_token"),
+		publicationReservedAt: integer("publication_reserved_at", {
+			mode: "number",
+		}),
 		issueNumber: integer("issue_number"),
 		issueUrl: text("issue_url"),
 		safeReason: text("safe_reason"),

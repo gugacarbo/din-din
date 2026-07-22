@@ -13,14 +13,22 @@ async function manualReview(
 	env: Env,
 	reportId: string,
 	reason: string,
-	leaseToken?: string,
+	claim?: { leaseToken?: string; publicationToken?: string },
 ) {
 	const now = Date.now();
 	const eventId = `manual:${reportId}:${reason}`;
 	await env.DB.batch([
 		env.DB.prepare(
-			"update support_reports set status = 'manual_review', safe_reason = ?, lease_token = null, lease_expires_at = null, updated_at = ? where report_id = ? and (? is null or lease_token = ?)",
-		).bind(reason, now, reportId, leaseToken ?? null, leaseToken ?? null),
+			"update support_reports set status = 'manual_review', safe_reason = ?, lease_token = null, lease_expires_at = null, publication_token = null, publication_reserved_at = null, updated_at = ? where report_id = ? and (? is null or lease_token = ?) and (? is null or publication_token = ?)",
+		).bind(
+			reason,
+			now,
+			reportId,
+			claim?.leaseToken ?? null,
+			claim?.leaseToken ?? null,
+			claim?.publicationToken ?? null,
+			claim?.publicationToken ?? null,
+		),
 		env.DB.prepare(
 			"insert or ignore into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) select ?, ?, 'manual_review', ?, 'pending', ?, ? where exists(select 1 from support_reports where report_id = ? and status = 'manual_review' and safe_reason = ?)",
 		).bind(eventId, reportId, reason, now, now, reportId, reason),
@@ -53,7 +61,7 @@ async function claim(env: Env, reportId: string) {
 	const now = Date.now();
 	const token = crypto.randomUUID();
 	const result = await env.DB.prepare(
-		"update support_reports set status = 'processing', attempts = attempts + 1, lease_token = ?, lease_expires_at = ?, updated_at = ? where report_id = ? and (status in ('pending', 'queued') or (status = 'processing' and (lease_expires_at is null or lease_expires_at <= ?)))",
+		"update support_reports set status = 'processing', attempts = attempts + 1, lease_token = ?, lease_expires_at = ?, updated_at = ? where report_id = ? and publication_token is null and (status in ('pending', 'queued') or (status = 'processing' and (lease_expires_at is null or lease_expires_at <= ?)))",
 	)
 		.bind(token, now + leaseMs, now, reportId, now)
 		.run();
@@ -68,10 +76,31 @@ async function claim(env: Env, reportId: string) {
 
 async function releaseForRetry(env: Env, reportId: string, token: string) {
 	await env.DB.prepare(
-		"update support_reports set status = 'queued', lease_token = null, lease_expires_at = null, updated_at = ? where report_id = ? and lease_token = ?",
+		"update support_reports set status = 'queued', lease_token = null, lease_expires_at = null, updated_at = ? where report_id = ? and lease_token = ? and publication_token is null",
 	)
 		.bind(Date.now(), reportId, token)
 		.run();
+}
+
+/**
+ * This reservation is intentionally independent from the short execution
+ * lease. Once held, a redelivery cannot issue a competing GitHub POST even if
+ * the original worker outlives its lease. We never reclaim it automatically:
+ * an interrupted POST is ambiguous and must go through manual review.
+ */
+async function reservePublication(
+	env: Env,
+	reportId: string,
+	leaseToken: string,
+) {
+	const now = Date.now();
+	const publicationToken = crypto.randomUUID();
+	const result = await env.DB.prepare(
+		"update support_reports set publication_token = ?, publication_reserved_at = ?, lease_expires_at = ?, updated_at = ? where report_id = ? and status = 'processing' and lease_token = ? and lease_expires_at > ? and publication_token is null",
+	)
+		.bind(publicationToken, now, now + leaseMs, now, reportId, leaseToken, now)
+		.run();
+	return result.meta.changes === 1 ? publicationToken : null;
 }
 
 async function recordExhaustedTriage(env: Env, reportId: string) {
@@ -79,7 +108,7 @@ async function recordExhaustedTriage(env: Env, reportId: string) {
 	const eventId = `failed:${reportId}:transient_retries_exhausted`;
 	await env.DB.batch([
 		env.DB.prepare(
-			"update support_reports set status = 'failed', safe_reason = 'transient_retries_exhausted', lease_token = null, lease_expires_at = null, updated_at = ? where report_id = ?",
+			"update support_reports set status = 'failed', safe_reason = 'transient_retries_exhausted', lease_token = null, lease_expires_at = null, publication_token = null, publication_reserved_at = null, updated_at = ? where report_id = ?",
 		).bind(now, reportId),
 		env.DB.prepare(
 			"insert or ignore into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) values (?, ?, 'transient_failure', 'transient_retries_exhausted', 'observed', ?, ?)",
@@ -114,7 +143,9 @@ async function triage(env: Env, reportId: string) {
 					: "";
 		model = JSON.parse(response || "");
 	} catch {
-		await manualReview(env, reportId, "invalid_ai_output", row.token);
+		await manualReview(env, reportId, "invalid_ai_output", {
+			leaseToken: row.token,
+		});
 		return "ack" as const;
 	}
 	const publication = publicIssueFromModel(model, [
@@ -122,20 +153,26 @@ async function triage(env: Env, reportId: string) {
 		row.diagnostics,
 	]);
 	if (!publication.ok) {
-		await manualReview(env, reportId, publication.reason, row.token);
+		await manualReview(env, reportId, publication.reason, {
+			leaseToken: row.token,
+		});
 		return "ack" as const;
 	}
+	const publicationToken = await reservePublication(env, reportId, row.token);
+	if (!publicationToken) return "ack" as const;
 	try {
 		const issue = await publishSupportIssue(env, reportId, publication.value);
 		await env.DB.prepare(
-			"update support_reports set status = 'published', issue_number = ?, issue_url = ?, safe_reason = null, lease_token = null, lease_expires_at = null, updated_at = ? where report_id = ? and lease_token = ?",
+			"update support_reports set status = 'published', issue_number = ?, issue_url = ?, safe_reason = null, lease_token = null, lease_expires_at = null, publication_token = null, publication_reserved_at = null, updated_at = ? where report_id = ? and publication_token = ?",
 		)
-			.bind(issue.number, issue.url, Date.now(), reportId, row.token)
+			.bind(issue.number, issue.url, Date.now(), reportId, publicationToken)
 			.run();
 		return "ack" as const;
 	} catch {
 		// A GitHub POST result can be ambiguous. Never retry it blindly.
-		await manualReview(env, reportId, "github_ambiguous", row.token);
+		await manualReview(env, reportId, "github_ambiguous", {
+			publicationToken,
+		});
 		return "ack" as const;
 	}
 }
@@ -166,12 +203,11 @@ export async function consumeSupportQueue(
 			continue;
 		}
 		const result = await triage(env, body.reportId);
-		if (result === "retry" && message.attempts < 3)
+		if (result === "retry")
+			// The Queue runtime moves this triage envelope to its configured DLQ
+			// after max_retries; acknowledging here would permanently lose it.
 			message.retry({ delaySeconds: Math.min(60, 2 ** message.attempts) });
-		else if (result === "retry") {
-			await recordExhaustedTriage(env, body.reportId);
-			message.ack();
-		} else message.ack();
+		else message.ack();
 	}
 }
 

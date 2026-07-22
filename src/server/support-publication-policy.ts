@@ -19,6 +19,16 @@ const unsafe =
 	/(?:https?:\/\/|www\.|<[^>]+>|!\[|\]\(|@\w+|`|\*{1,3}|_{1,3}|~{2}|^\s{0,3}#{1,6}\s|^\s*>|^\s*(?:[-+]|\d+\.)\s)/im;
 const pii =
 	/\b(?:\d{3}[. -]?\d{3}[. -]?\d{3}[ -]?\d{2}|\d{11,14}|(?:\d[ -]?){13,19}|[\w.+-]+@[\w.-]+\.[a-z]{2,})\b/i;
+const brazilianPhone =
+	/(?:^|[^\p{L}\p{N}])(?:\+?55[ \-‐-―]?)?\(?\d{2}\)?[ \-‐-―]?(?:9[ \-‐-―]?)?\d{4,5}[ \-‐-―]?\d{4}(?!\d)/u;
+const githubReference =
+	/(?:^|[^\p{L}\p{N}_])(?:[\p{L}\p{N}_.-]+\/[\p{L}\p{N}_.-]+)?#\s*\d+\b/u;
+function normalizedPublicText(value: string) {
+	return value
+		.normalize("NFKC")
+		.replace(/[\p{Z}\s]+/gu, " ")
+		.trim();
+}
 function tokens(value: string) {
 	return value.toLocaleLowerCase("pt-BR").split(/\s+/).filter(Boolean);
 }
@@ -48,13 +58,17 @@ export function publicIssueFromModel(
 		...parsed.data.technicalSignals,
 	];
 	if (
-		all.some(
-			(part) =>
-				unsafe.test(part) ||
-				pii.test(part) ||
+		all.some((part) => {
+			const normalized = normalizedPublicText(part);
+			return (
+				unsafe.test(normalized) ||
+				pii.test(normalized) ||
+				brazilianPhone.test(normalized) ||
+				githubReference.test(normalized) ||
 				redactText(part) !== part ||
-				echoes(part, privateValues),
-		)
+				echoes(part, privateValues)
+			);
+		})
 	)
 		return { ok: false, reason: "unsafe_public_content" };
 	return { ok: true, value: parsed.data };

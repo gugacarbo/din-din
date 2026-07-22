@@ -4,7 +4,21 @@
   "main": "../workers/worker.ts",
   "compatibility_date": "2025-09-02",
   "compatibility_flags": ["nodejs_compat"],
-  "d1_databases": [
-    { "binding": "DB", "database_name": "din-din-workers-test", "database_id": "local", "migrations_dir": "../../drizzle" }
-  ]
+	"d1_databases": [
+		{ "binding": "DB", "database_name": "din-din-workers-test", "database_id": "local", "migrations_dir": "../../drizzle" }
+	],
+	"queues": {
+		"producers": [
+			{ "binding": "SUPPORT_REPORTS_QUEUE", "queue": "din-din-support-reports-test" },
+			{ "binding": "SUPPORT_REPORTS_DLQ", "queue": "din-din-support-reports-dlq-test" }
+		],
+		"consumers": [
+			{
+				"queue": "din-din-support-reports-test",
+				"max_retries": 0,
+				"dead_letter_queue": "din-din-support-reports-dlq-test"
+			},
+			{ "queue": "din-din-support-reports-dlq-test", "max_retries": 0 }
+		]
+	}
 }

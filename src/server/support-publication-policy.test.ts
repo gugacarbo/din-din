@@ -46,6 +46,31 @@ describe("publicIssueFromModel", () => {
 			),
 		).toMatchObject({ ok: false });
 	});
+	it("rejeita telefones e referências GitHub em todos os campos após normalizar Unicode", () => {
+		const unsafe = [
+			"Telefone (11) 99876-5432",
+			"Veja a issue #123",
+			"Veja gugacarbo/din-din#123",
+			"Telefone\u00a0(11)\u200799876‑5432",
+			"Referência\u00a0#\u2007123",
+		];
+		for (const field of [
+			"title",
+			"summary",
+			"observedBehavior",
+			"probableSteps",
+			"technicalSignals",
+		] as const)
+			for (const value of unsafe) {
+				const candidate =
+					field === "probableSteps" || field === "technicalSignals"
+						? { ...valid, [field]: [value] }
+						: { ...valid, [field]: value };
+				expect(publicIssueFromModel(candidate, [])).toMatchObject({
+					ok: false,
+				});
+			}
+	});
 	it("rejeita eco longo de conteúdo privado mesmo com schema válido", () => {
 		const secret =
 			"o usuário escreveu uma sequência privada que não pode ser publicada em lugar algum";

@@ -3,6 +3,7 @@ import {
 	createFinanceService,
 	financeSchemas,
 } from "#/server/finance-service";
+import { consumeSupportQueue } from "#/server/support-queue.ts";
 
 const dashboardPath = "/__test/finance/dashboard";
 const reportPath = "/__test/finance/report";
@@ -50,5 +51,17 @@ export default {
 				);
 			throw error;
 		}
+	},
+	async queue(batch, env) {
+		await consumeSupportQueue(
+			batch,
+			Object.assign(env, {
+				AI: {
+					run: async () => {
+						throw new Error("test transient AI failure");
+					},
+				},
+			}) as Env,
+		);
 	},
 } satisfies ExportedHandler<Env>;

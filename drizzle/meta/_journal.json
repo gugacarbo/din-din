@@ -43,6 +43,13 @@
       "when": 1784635300000,
       "tag": "0005_support_report_leases",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784635400000,
+      "tag": "0006_support_publication_reservations",
+      "breakpoints": true
     }
   ]
 }

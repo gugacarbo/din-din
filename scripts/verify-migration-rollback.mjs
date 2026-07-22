@@ -18,6 +18,8 @@ const feature = path.join(migrationDir, "0001_nice_payments.sql");
 const support = path.join(migrationDir, "0004_support_reports.sql");
 const supportLeases = path.join(migrationDir, "0005_support_report_leases.sql");
 const supportReservations = path.join(migrationDir, "0006_support_publication_reservations.sql");
+const aiLogging = path.join(migrationDir, "0007_ai_usage_logging.sql");
+const admin = path.join(migrationDir, "0008_admin_support_review.sql");
 const downFile = path.join(scratch, "down.sql");
 
 function run(args) {
@@ -67,6 +69,12 @@ DROP TRIGGER IF EXISTS support_payload_rate_limit;
 DROP TABLE IF EXISTS support_review_tasks;
 DROP TABLE IF EXISTS support_report_payloads;
 DROP TABLE IF EXISTS support_reports;
+`;
+const adminDownSql = `
+DROP TABLE IF EXISTS support_manual_publications;
+DROP TABLE IF EXISTS admin_invite_continuations;
+DROP TABLE IF EXISTS admin_invites;
+DROP TABLE IF EXISTS admin_memberships;
 `;
 
 const downSql = `
@@ -123,6 +131,19 @@ try {
 	run(["--file", support]);
 	run(["--file", supportLeases]);
 	run(["--file", supportReservations]);
+	run(["--file", aiLogging]);
+	run(["--file", admin]);
+	const adminInvite = "00000000-0000-4000-8000-000000000007";
+	run(["--command", `insert into admin_invites (invite_id,token_hmac,email_normalized,expires_at,created_at) values ('${adminInvite}','hmac','admin@example.test',2,1); insert into admin_memberships (user_id,created_at,created_by_invite_id) values ('00000000-0000-4000-8000-000000000001',1,'${adminInvite}');`]);
+	let adminRefused = false;
+	try { run(["--command", "select case when exists(select 1 from admin_memberships) or exists(select 1 from admin_invites) then raise(abort, 'admin data present') end;"]); } catch { adminRefused = true; }
+	if (!adminRefused) throw new Error("Admin rollback guard did not refuse administrative data.");
+	run(["--command", `delete from admin_memberships; delete from admin_invites where invite_id='${adminInvite}';`]);
+	await writeFile(downFile, adminDownSql);
+	run(["--file", downFile]);
+	const adminRemoved = run(["--command", "select count(*) as admin_tables from sqlite_master where type='table' and name like 'admin_%';", "--json"]);
+	if (!/"admin_tables"\s*:\s*0/.test(adminRemoved)) throw new Error("Admin down did not remove every admin table.");
+	run(["--file", admin]);
 	const supportReport = "00000000-0000-4000-8000-000000000005";
 	run(["--command", `insert into support_reports (report_id,category,status,attempts,created_at,updated_at) values ('${supportReport}','problem','queued',0,1,1); insert into support_report_payloads (report_id,user_id,client_request_id,fingerprint,message,diagnostics,metadata,received_at,expires_at) values ('${supportReport}','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000006','fingerprint','private message','{}','{}',1,2); insert into support_review_tasks (event_id,report_id,kind,reason,status,created_at,updated_at) values ('manual:${supportReport}','${supportReport}','manual_review','test','pending',1,1);`]);
 	let supportRefused = false;

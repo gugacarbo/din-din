@@ -9,46 +9,30 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as CategoriesRouteImport } from './routes/categories'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as PaymentsRouteImport } from './routes/payments'
-import { Route as ProfileRouteImport } from './routes/profile'
-import { Route as ReportsRouteImport } from './routes/reports'
-import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TransactionsRouteImport } from './routes/transactions'
-import { Route as ApiSupportRouteImport } from './routes/api/support'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ReportsRouteImport } from './routes/reports'
+import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as PaymentsRouteImport } from './routes/payments'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as CategoriesRouteImport } from './routes/categories'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as TransactionsArchiveRouteImport } from './routes/transactions_/archive'
+import { Route as ApiSupportRouteImport } from './routes/api/support'
+import { Route as AdminSuportRouteImport } from './routes/admin/suport'
+import { Route as AdminConviteRouteImport } from './routes/admin/convite'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiAdminMembershipRouteImport } from './routes/api/admin/membership'
+import { Route as AdminSuportReportIdRouteImport } from './routes/admin/suport/$reportId'
+import { Route as ApiAdminSupportIndexRouteImport } from './routes/api/admin/support/index'
+import { Route as ApiAdminSupportReportIdRouteImport } from './routes/api/admin/support/$reportId'
+import { Route as ApiAdminInvitePrepareRouteImport } from './routes/api/admin/invite/prepare'
+import { Route as ApiAdminInviteConcludeRouteImport } from './routes/api/admin/invite/conclude'
+import { Route as ApiAdminSupportReportIdPublishRouteImport } from './routes/api/admin/support/$reportId/publish'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CategoriesRoute = CategoriesRouteImport.update({
-  id: '/categories',
-  path: '/categories',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PaymentsRoute = PaymentsRouteImport.update({
-  id: '/payments',
-  path: '/payments',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProfileRoute = ProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReportsRoute = ReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
+const TransactionsRoute = TransactionsRouteImport.update({
+  id: '/transactions',
+  path: '/transactions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -56,14 +40,34 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TransactionsRoute = TransactionsRouteImport.update({
-  id: '/transactions',
-  path: '/transactions',
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiSupportRoute = ApiSupportRouteImport.update({
-  id: '/api/support',
-  path: '/api/support',
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PaymentsRoute = PaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CategoriesRoute = CategoriesRouteImport.update({
+  id: '/categories',
+  path: '/categories',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TransactionsArchiveRoute = TransactionsArchiveRouteImport.update({
@@ -71,11 +75,62 @@ const TransactionsArchiveRoute = TransactionsArchiveRouteImport.update({
   path: '/transactions/archive',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSupportRoute = ApiSupportRouteImport.update({
+  id: '/api/support',
+  path: '/api/support',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminSuportRoute = AdminSuportRouteImport.update({
+  id: '/admin/suport',
+  path: '/admin/suport',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminConviteRoute = AdminConviteRouteImport.update({
+  id: '/admin/convite',
+  path: '/admin/convite',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAdminMembershipRoute = ApiAdminMembershipRouteImport.update({
+  id: '/api/admin/membership',
+  path: '/api/admin/membership',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminSuportReportIdRoute = AdminSuportReportIdRouteImport.update({
+  id: '/$reportId',
+  path: '/$reportId',
+  getParentRoute: () => AdminSuportRoute,
+} as any)
+const ApiAdminSupportIndexRoute = ApiAdminSupportIndexRouteImport.update({
+  id: '/api/admin/support/',
+  path: '/api/admin/support/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAdminSupportReportIdRoute = ApiAdminSupportReportIdRouteImport.update({
+  id: '/api/admin/support/$reportId',
+  path: '/api/admin/support/$reportId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAdminInvitePrepareRoute = ApiAdminInvitePrepareRouteImport.update({
+  id: '/api/admin/invite/prepare',
+  path: '/api/admin/invite/prepare',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAdminInviteConcludeRoute = ApiAdminInviteConcludeRouteImport.update({
+  id: '/api/admin/invite/conclude',
+  path: '/api/admin/invite/conclude',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAdminSupportReportIdPublishRoute =
+  ApiAdminSupportReportIdPublishRouteImport.update({
+    id: '/publish',
+    path: '/publish',
+    getParentRoute: () => ApiAdminSupportReportIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -86,9 +141,18 @@ export interface FileRoutesByFullPath {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/transactions': typeof TransactionsRoute
+  '/admin/convite': typeof AdminConviteRoute
+  '/admin/suport': typeof AdminSuportRouteWithChildren
   '/api/support': typeof ApiSupportRoute
   '/transactions/archive': typeof TransactionsArchiveRoute
+  '/admin/suport/$reportId': typeof AdminSuportReportIdRoute
+  '/api/admin/membership': typeof ApiAdminMembershipRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/admin/invite/conclude': typeof ApiAdminInviteConcludeRoute
+  '/api/admin/invite/prepare': typeof ApiAdminInvitePrepareRoute
+  '/api/admin/support/$reportId': typeof ApiAdminSupportReportIdRouteWithChildren
+  '/api/admin/support/': typeof ApiAdminSupportIndexRoute
+  '/api/admin/support/$reportId/publish': typeof ApiAdminSupportReportIdPublishRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -99,9 +163,18 @@ export interface FileRoutesByTo {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/transactions': typeof TransactionsRoute
+  '/admin/convite': typeof AdminConviteRoute
+  '/admin/suport': typeof AdminSuportRouteWithChildren
   '/api/support': typeof ApiSupportRoute
   '/transactions/archive': typeof TransactionsArchiveRoute
+  '/admin/suport/$reportId': typeof AdminSuportReportIdRoute
+  '/api/admin/membership': typeof ApiAdminMembershipRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/admin/invite/conclude': typeof ApiAdminInviteConcludeRoute
+  '/api/admin/invite/prepare': typeof ApiAdminInvitePrepareRoute
+  '/api/admin/support/$reportId': typeof ApiAdminSupportReportIdRouteWithChildren
+  '/api/admin/support': typeof ApiAdminSupportIndexRoute
+  '/api/admin/support/$reportId/publish': typeof ApiAdminSupportReportIdPublishRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -113,9 +186,18 @@ export interface FileRoutesById {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/transactions': typeof TransactionsRoute
+  '/admin/convite': typeof AdminConviteRoute
+  '/admin/suport': typeof AdminSuportRouteWithChildren
   '/api/support': typeof ApiSupportRoute
   '/transactions_/archive': typeof TransactionsArchiveRoute
+  '/admin/suport/$reportId': typeof AdminSuportReportIdRoute
+  '/api/admin/membership': typeof ApiAdminMembershipRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/admin/invite/conclude': typeof ApiAdminInviteConcludeRoute
+  '/api/admin/invite/prepare': typeof ApiAdminInvitePrepareRoute
+  '/api/admin/support/$reportId': typeof ApiAdminSupportReportIdRouteWithChildren
+  '/api/admin/support/': typeof ApiAdminSupportIndexRoute
+  '/api/admin/support/$reportId/publish': typeof ApiAdminSupportReportIdPublishRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -128,9 +210,18 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/transactions'
+    | '/admin/convite'
+    | '/admin/suport'
     | '/api/support'
     | '/transactions/archive'
+    | '/admin/suport/$reportId'
+    | '/api/admin/membership'
     | '/api/auth/$'
+    | '/api/admin/invite/conclude'
+    | '/api/admin/invite/prepare'
+    | '/api/admin/support/$reportId'
+    | '/api/admin/support/'
+    | '/api/admin/support/$reportId/publish'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -141,9 +232,18 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/transactions'
+    | '/admin/convite'
+    | '/admin/suport'
     | '/api/support'
     | '/transactions/archive'
+    | '/admin/suport/$reportId'
+    | '/api/admin/membership'
     | '/api/auth/$'
+    | '/api/admin/invite/conclude'
+    | '/api/admin/invite/prepare'
+    | '/api/admin/support/$reportId'
+    | '/api/admin/support'
+    | '/api/admin/support/$reportId/publish'
   id:
     | '__root__'
     | '/'
@@ -154,9 +254,18 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/transactions'
+    | '/admin/convite'
+    | '/admin/suport'
     | '/api/support'
     | '/transactions_/archive'
+    | '/admin/suport/$reportId'
+    | '/api/admin/membership'
     | '/api/auth/$'
+    | '/api/admin/invite/conclude'
+    | '/api/admin/invite/prepare'
+    | '/api/admin/support/$reportId'
+    | '/api/admin/support/'
+    | '/api/admin/support/$reportId/publish'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -168,53 +277,25 @@ export interface RootRouteChildren {
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   TransactionsRoute: typeof TransactionsRoute
+  AdminConviteRoute: typeof AdminConviteRoute
+  AdminSuportRoute: typeof AdminSuportRouteWithChildren
   ApiSupportRoute: typeof ApiSupportRoute
   TransactionsArchiveRoute: typeof TransactionsArchiveRoute
+  ApiAdminMembershipRoute: typeof ApiAdminMembershipRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiAdminInviteConcludeRoute: typeof ApiAdminInviteConcludeRoute
+  ApiAdminInvitePrepareRoute: typeof ApiAdminInvitePrepareRoute
+  ApiAdminSupportReportIdRoute: typeof ApiAdminSupportReportIdRouteWithChildren
+  ApiAdminSupportIndexRoute: typeof ApiAdminSupportIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/categories': {
-      id: '/categories'
-      path: '/categories'
-      fullPath: '/categories'
-      preLoaderRoute: typeof CategoriesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/payments': {
-      id: '/payments'
-      path: '/payments'
-      fullPath: '/payments'
-      preLoaderRoute: typeof PaymentsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/profile': {
-      id: '/profile'
-      path: '/profile'
-      fullPath: '/profile'
-      preLoaderRoute: typeof ProfileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reports': {
-      id: '/reports'
-      path: '/reports'
-      fullPath: '/reports'
-      preLoaderRoute: typeof ReportsRouteImport
+    '/transactions': {
+      id: '/transactions'
+      path: '/transactions'
+      fullPath: '/transactions'
+      preLoaderRoute: typeof TransactionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -224,18 +305,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/transactions': {
-      id: '/transactions'
-      path: '/transactions'
-      fullPath: '/transactions'
-      preLoaderRoute: typeof TransactionsRouteImport
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/support': {
-      id: '/api/support'
-      path: '/api/support'
-      fullPath: '/api/support'
-      preLoaderRoute: typeof ApiSupportRouteImport
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/payments': {
+      id: '/payments'
+      path: '/payments'
+      fullPath: '/payments'
+      preLoaderRoute: typeof PaymentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/categories': {
+      id: '/categories'
+      path: '/categories'
+      fullPath: '/categories'
+      preLoaderRoute: typeof CategoriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/transactions_/archive': {
@@ -245,6 +354,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TransactionsArchiveRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/support': {
+      id: '/api/support'
+      path: '/api/support'
+      fullPath: '/api/support'
+      preLoaderRoute: typeof ApiSupportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/suport': {
+      id: '/admin/suport'
+      path: '/admin/suport'
+      fullPath: '/admin/suport'
+      preLoaderRoute: typeof AdminSuportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/convite': {
+      id: '/admin/convite'
+      path: '/admin/convite'
+      fullPath: '/admin/convite'
+      preLoaderRoute: typeof AdminConviteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -252,8 +382,83 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/admin/membership': {
+      id: '/api/admin/membership'
+      path: '/api/admin/membership'
+      fullPath: '/api/admin/membership'
+      preLoaderRoute: typeof ApiAdminMembershipRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/suport/$reportId': {
+      id: '/admin/suport/$reportId'
+      path: '/$reportId'
+      fullPath: '/admin/suport/$reportId'
+      preLoaderRoute: typeof AdminSuportReportIdRouteImport
+      parentRoute: typeof AdminSuportRoute
+    }
+    '/api/admin/support/': {
+      id: '/api/admin/support/'
+      path: '/api/admin/support'
+      fullPath: '/api/admin/support/'
+      preLoaderRoute: typeof ApiAdminSupportIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/admin/support/$reportId': {
+      id: '/api/admin/support/$reportId'
+      path: '/api/admin/support/$reportId'
+      fullPath: '/api/admin/support/$reportId'
+      preLoaderRoute: typeof ApiAdminSupportReportIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/admin/invite/prepare': {
+      id: '/api/admin/invite/prepare'
+      path: '/api/admin/invite/prepare'
+      fullPath: '/api/admin/invite/prepare'
+      preLoaderRoute: typeof ApiAdminInvitePrepareRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/admin/invite/conclude': {
+      id: '/api/admin/invite/conclude'
+      path: '/api/admin/invite/conclude'
+      fullPath: '/api/admin/invite/conclude'
+      preLoaderRoute: typeof ApiAdminInviteConcludeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/admin/support/$reportId/publish': {
+      id: '/api/admin/support/$reportId/publish'
+      path: '/publish'
+      fullPath: '/api/admin/support/$reportId/publish'
+      preLoaderRoute: typeof ApiAdminSupportReportIdPublishRouteImport
+      parentRoute: typeof ApiAdminSupportReportIdRoute
+    }
   }
 }
+
+interface AdminSuportRouteChildren {
+  AdminSuportReportIdRoute: typeof AdminSuportReportIdRoute
+}
+
+const AdminSuportRouteChildren: AdminSuportRouteChildren = {
+  AdminSuportReportIdRoute: AdminSuportReportIdRoute,
+}
+
+const AdminSuportRouteWithChildren = AdminSuportRoute._addFileChildren(
+  AdminSuportRouteChildren,
+)
+
+interface ApiAdminSupportReportIdRouteChildren {
+  ApiAdminSupportReportIdPublishRoute: typeof ApiAdminSupportReportIdPublishRoute
+}
+
+const ApiAdminSupportReportIdRouteChildren: ApiAdminSupportReportIdRouteChildren =
+  {
+    ApiAdminSupportReportIdPublishRoute: ApiAdminSupportReportIdPublishRoute,
+  }
+
+const ApiAdminSupportReportIdRouteWithChildren =
+  ApiAdminSupportReportIdRoute._addFileChildren(
+    ApiAdminSupportReportIdRouteChildren,
+  )
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -264,19 +469,17 @@ const rootRouteChildren: RootRouteChildren = {
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   TransactionsRoute: TransactionsRoute,
+  AdminConviteRoute: AdminConviteRoute,
+  AdminSuportRoute: AdminSuportRouteWithChildren,
   ApiSupportRoute: ApiSupportRoute,
   TransactionsArchiveRoute: TransactionsArchiveRoute,
+  ApiAdminMembershipRoute: ApiAdminMembershipRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiAdminInviteConcludeRoute: ApiAdminInviteConcludeRoute,
+  ApiAdminInvitePrepareRoute: ApiAdminInvitePrepareRoute,
+  ApiAdminSupportReportIdRoute: ApiAdminSupportReportIdRouteWithChildren,
+  ApiAdminSupportIndexRoute: ApiAdminSupportIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

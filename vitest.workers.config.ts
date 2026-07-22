@@ -39,6 +39,7 @@ export default defineConfig(async () => {
 						GITHUB_APP_ID: "123",
 						GITHUB_APP_INSTALLATION_ID: "456",
 						GITHUB_APP_PRIVATE_KEY: "test-private-key",
+						APP_SECRET: "test-app-secret-with-at-least-32-characters",
 					},
 				},
 			}),

@@ -17,6 +17,7 @@ export const env = createEnv({
 		GITHUB_APP_ID: z.string().min(1),
 		GITHUB_APP_INSTALLATION_ID: z.string().min(1),
 		GITHUB_APP_PRIVATE_KEY: z.string().min(1),
+		APP_SECRET: z.string().min(32),
 	},
 	runtimeEnvStrict: {
 		BETTER_AUTH_SECRET: runtimeEnv.BETTER_AUTH_SECRET,
@@ -26,6 +27,7 @@ export const env = createEnv({
 		GITHUB_APP_ID: runtimeEnv.GITHUB_APP_ID,
 		GITHUB_APP_INSTALLATION_ID: runtimeEnv.GITHUB_APP_INSTALLATION_ID,
 		GITHUB_APP_PRIVATE_KEY: runtimeEnv.GITHUB_APP_PRIVATE_KEY,
+		APP_SECRET: runtimeEnv.APP_SECRET,
 	},
 	emptyStringAsUndefined: true,
 });

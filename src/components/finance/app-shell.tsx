@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
 	BarChart3,
@@ -7,6 +7,7 @@ import {
 	List,
 	LogOut,
 	Plus,
+	ShieldCheck,
 	WifiOff,
 } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
@@ -37,6 +38,7 @@ import {
 	SidebarTrigger,
 } from "#/components/ui/sidebar.tsx";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
+import { adminMembershipQueryOptions } from "#/lib/admin-support-query-options.ts";
 import {
 	categoriesQueryOptions,
 	dashboardQueryOptions,
@@ -212,6 +214,7 @@ export function AppShell({
 	onNewTransaction: () => void;
 }) {
 	const queryClient = useQueryClient();
+	const membership = useQuery(adminMembershipQueryOptions());
 	const isMobile = useIsMobile();
 	const userName = user?.name || user?.email || "Usuário";
 	const userInitial = userName.trim().charAt(0).toUpperCase() || "U";
@@ -264,6 +267,22 @@ export function AppShell({
 									</SidebarMenu>
 								</SidebarGroupContent>
 							</SidebarGroup>
+							{membership.data?.isAdmin && (
+								<SidebarGroup>
+									<SidebarGroupContent>
+										<SidebarMenu aria-label="Administração">
+											<SidebarMenuItem>
+												<SidebarMenuButton asChild tooltip="Suporte">
+													<Link to="/admin/suport">
+														<ShieldCheck />
+														<span>Suporte</span>
+													</Link>
+												</SidebarMenuButton>
+											</SidebarMenuItem>
+										</SidebarMenu>
+									</SidebarGroupContent>
+								</SidebarGroup>
+							)}
 							<SidebarGroup>
 								<SidebarGroupContent>
 									<SidebarMenu aria-label="Secundária">

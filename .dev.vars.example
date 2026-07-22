@@ -11,3 +11,4 @@ GITHUB_APP_ID=
 GITHUB_APP_INSTALLATION_ID=
 # PEM em uma linha, com \n literais em vez de quebras de linha.
 GITHUB_APP_PRIVATE_KEY=
+APP_SECRET=

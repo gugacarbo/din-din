@@ -37,7 +37,7 @@ Permitir que usuários autenticados enviem um relato de problema, dúvida ou sug
 - Em falha ambígua de rede/5xx, cliente reutiliza exatamente o payload serializado, diagnóstico, screenshot e UUID da tentativa lógica; um novo relato exige ação explícita.
 - Falhas de AI/publicação ambígua são `manual_review` e geram outbox/DLQ; não há retry cego de POST ao GitHub. Falha transitória anterior ao POST solicita retry para que a fila entregue automaticamente o envelope `triage` à DLQ após `max_retries`; somente o consumer da DLQ registra o esgotamento seguro. Falha de envio de uma task pendente permanece isolada, com log seguro, e não interrompe o cleanup de retenção.
 - Antes de AI, o consumer obtém um lease condicional por relato. Reentregas enquanto o lease está válido reconhecem o trabalho em curso; lease vencido pode ser recuperado. Imediatamente antes de GitHub, uma reserva transacional durável renova/valida o lease e bloqueia qualquer segundo POST mesmo que o primeiro runtime ultrapasse o lease. Reentrega que encontra essa reserva sem resultado a encaminha para revisão manual/outbox, sem novo POST.
-- Todo campo produzido pela AI é normalizado em Unicode/espaços e rejeitado se tiver PII (CPF/CNPJ, e-mail, cartões ou telefone brasileiro/internacional plausível, inclusive sem `+`), URL com ou sem protocolo, Markdown/HTML ativo, menção ou referência GitHub acionável (`#123`/`owner/repo#123`).
+- Todo campo produzido pela AI é normalizado em Unicode/espaços e rejeitado se tiver PII (CPF/CNPJ, e-mail, cartões ou telefone brasileiro/internacional plausível, inclusive sem `+` e com prefixo segmentado `0`/`00`), URL com ou sem protocolo, Markdown/HTML ativo, menção ou referência GitHub acionável (`#123`/`owner/repo#123`).
 
 ## Casos de borda
 

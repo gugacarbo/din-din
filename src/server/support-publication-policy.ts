@@ -25,6 +25,8 @@ const internationalPhone =
 	/(?:^|[^\p{L}\p{N}])\+\d{1,3}(?:[ \-‐-―().]*\d){6,14}(?!\d)/u;
 const plausiblePhone =
 	/(?:^|[^\p{L}\p{N}])(?:\(?\d{3}\)?[ .\-‐-―]*\d{3}[ .\-‐-―]*\d{4}|\d{3}[ .\-‐-―]\d{4})(?!\d)/u;
+const segmentedInternationalPhone =
+	/(?:^|[^\p{L}\p{N}])(?:00\d{1,3}|0\d{1,3})(?:[ .\-‐-―()]+\d{1,6}){2,5}(?!\d)/gu;
 const githubReference =
 	/(?:^|[^\p{L}\p{N}_])(?:[\p{L}\p{N}_.-]+\/[\p{L}\p{N}_.-]+)?#\s*\d+\b/u;
 const bareUrl =
@@ -34,6 +36,11 @@ function normalizedPublicText(value: string) {
 		.normalize("NFKC")
 		.replace(/[\p{Z}\s]+/gu, " ")
 		.trim();
+}
+function hasSegmentedInternationalPhone(value: string) {
+	return [...value.matchAll(segmentedInternationalPhone)].some(
+		(match) => match[0].replace(/\D/g, "").length >= 8,
+	);
 }
 function tokens(value: string) {
 	return value.toLocaleLowerCase("pt-BR").split(/\s+/).filter(Boolean);
@@ -72,6 +79,7 @@ export function publicIssueFromModel(
 				brazilianPhone.test(normalized) ||
 				internationalPhone.test(normalized) ||
 				plausiblePhone.test(normalized) ||
+				hasSegmentedInternationalPhone(normalized) ||
 				githubReference.test(normalized) ||
 				bareUrl.test(normalized) ||
 				redactText(part) !== part ||

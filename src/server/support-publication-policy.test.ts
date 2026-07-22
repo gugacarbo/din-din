@@ -54,6 +54,8 @@ describe("publicIssueFromModel", () => {
 			"Telefone 415.555.2671",
 			"Telefone 555-2671",
 			"Telefone 123 456 7890",
+			"Telefone 0049 30 123456",
+			"Telefone 01 234 567 890",
 			"CNPJ 12.345.678/0001-95",
 			"Acesse example.com/path",
 			"Veja a issue #123",

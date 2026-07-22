@@ -10,8 +10,6 @@ export const supportCategoryLabels: Record<SupportCategory, string> = {
 };
 
 const redacted = "[redacted]";
-const secretKey =
-	/authorization|cookie|token|secret|password|credential|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token/i;
 const secretValue =
 	/(?:bearer\s+)?(?:gh[pousr]_[a-z0-9_]+|eyJ[a-zA-Z0-9_-]{10,}|sk-[a-zA-Z0-9_-]{12,})/gi;
 const cookieHeader = /\b(?:set-)?cookie\s*[=:]\s*[^\r\n]*/gi;
@@ -35,32 +33,13 @@ export function redactText(value: string) {
 		.slice(0, 1_000);
 }
 
-export function safeValue(
-	value: unknown,
-	depth = 0,
-	seen = new WeakSet<object>(),
-): unknown {
-	if (depth > 4) return "[truncated]";
-	if (typeof value === "string") return redactText(value);
-	if (typeof value === "number" || typeof value === "boolean" || value === null)
-		return value;
-	if (typeof value === "bigint") return `${value}n`;
-	if (typeof value === "undefined") return "[undefined]";
-	if (value instanceof Error)
-		return { name: value.name, message: redactText(value.message) };
-	if (typeof value === "function" || typeof value === "symbol")
-		return `[${typeof value}]`;
-	if (typeof value !== "object") return "[unserializable]";
-	if (seen.has(value)) return "[circular]";
-	seen.add(value);
-	if (Array.isArray(value))
-		return value.slice(0, 20).map((item) => safeValue(item, depth + 1, seen));
-	const output: Record<string, unknown> = {};
-	for (const [key, item] of Object.entries(value).slice(0, 20))
-		output[key] = secretKey.test(key)
-			? redacted
-			: safeValue(item, depth + 1, seen);
-	return output;
+export function safeValue(value: unknown): unknown {
+	if (value === null || typeof value === "boolean") return value;
+	if (typeof value === "undefined") return "[redacted]";
+	if (value instanceof Error) return { name: "Error", message: redacted };
+	// Console arguments have no trustworthy schema. Preserve only booleans/null;
+	// text, numbers, objects, arrays and cycles may all be form values.
+	return redacted;
 }
 
 export type ConsoleDiagnostic = {
@@ -115,6 +94,26 @@ function diagnosticNumber(value: unknown) {
 	return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function diagnosticPath(value: unknown) {
+	try {
+		return new URL(String(value), "https://support.invalid").pathname.slice(
+			0,
+			500,
+		);
+	} catch {
+		return "/[invalid-url]";
+	}
+}
+
+function diagnosticMethod(value: unknown) {
+	const method = String(value).toUpperCase();
+	return ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].includes(
+		method,
+	)
+		? method
+		: "OTHER";
+}
+
 function diagnosticResult(value: unknown): RequestDiagnostic["result"] {
 	return [
 		"success",
@@ -143,8 +142,8 @@ export function serialiseDiagnostics(diagnostics: SupportInput["diagnostics"]) {
 	}));
 	const requests = diagnostics.requests.slice(-50).map((event) => ({
 		at: diagnosticNumber(event.at),
-		method: redactText(String(event.method || "GET")).slice(0, 16),
-		path: redactText(String(event.path || "/[unknown]")).slice(0, 500),
+		method: diagnosticMethod(event.method),
+		path: diagnosticPath(event.path),
 		status: typeof event.status === "number" ? event.status : undefined,
 		durationMs: diagnosticNumber(event.durationMs),
 		result: diagnosticResult(event.result),
@@ -152,13 +151,11 @@ export function serialiseDiagnostics(diagnostics: SupportInput["diagnostics"]) {
 	const normalized = {
 		console,
 		requests,
-		route: redactText(diagnostics.route).slice(0, 500),
+		route: diagnosticPath(diagnostics.route),
 		viewport: diagnostics.viewport,
 		online: diagnostics.online,
-		browser: redactText(diagnostics.browser).slice(0, 300),
-		version: diagnostics.version
-			? redactText(diagnostics.version).slice(0, 100)
-			: undefined,
+		browser: redacted,
+		version: diagnostics.version ? redacted : undefined,
 	};
 	let serialized = JSON.stringify(normalized);
 	while (
@@ -172,6 +169,19 @@ export function serialiseDiagnostics(diagnostics: SupportInput["diagnostics"]) {
 		serialized = JSON.stringify(normalized);
 	}
 	return serialized;
+}
+
+export function metadataFromDiagnostics(serializedDiagnostics: string) {
+	const diagnostics = JSON.parse(serializedDiagnostics) as {
+		route: string;
+		viewport: { width: number; height: number };
+		online: boolean;
+	};
+	return JSON.stringify({
+		route: diagnostics.route,
+		viewport: diagnostics.viewport,
+		online: diagnostics.online,
+	});
 }
 
 export function normaliseRequestPath(url: string) {

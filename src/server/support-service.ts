@@ -1,5 +1,6 @@
 import { createCoreAuth } from "#/lib/auth-core.ts";
 import {
+	metadataFromDiagnostics,
 	redactText,
 	type SupportInput,
 	serialiseDiagnostics,
@@ -132,6 +133,8 @@ export async function acceptSupportReport(
 			throw new SupportError(413, "O print deve ser PNG ou WebP de até 2 MiB.");
 		const userId = await authenticatedUserId(deps.d1, request.headers);
 		const input = parsed.data;
+		const diagnostics = serialiseDiagnostics(input.diagnostics);
+		const metadata = metadataFromDiagnostics(diagnostics);
 		const inputFingerprint = await fingerprint(
 			input,
 			screenshot instanceof File ? screenshot : undefined,
@@ -187,13 +190,8 @@ export async function acceptSupportReport(
 						input.clientRequestId,
 						inputFingerprint,
 						redactText(input.message),
-						serialiseDiagnostics(input.diagnostics),
-						JSON.stringify({
-							route: input.diagnostics.route,
-							viewport: input.diagnostics.viewport,
-							online: input.diagnostics.online,
-							browser: input.diagnostics.browser,
-						}),
+						diagnostics,
+						metadata,
 						screenshotKey,
 						now,
 						now + expiryMs,

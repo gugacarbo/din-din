@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	maxDiagnosticsBytes,
+	metadataFromDiagnostics,
 	redactText,
 	safeValue,
 	serialiseDiagnostics,
@@ -17,13 +18,46 @@ describe("support privacy helpers", () => {
 			"private",
 		);
 	});
-	it("limits circular console objects and redacts sensitive keys", () => {
-		const value: { token: string; nested?: unknown } = { token: "private" };
-		value.nested = value;
-		expect(safeValue(value)).toEqual({
-			token: "[redacted]",
-			nested: "[circular]",
+	it("fails closed for nested and cyclic form values", () => {
+		const form: {
+			email: string;
+			card: string;
+			comment: string;
+			self?: unknown;
+		} = {
+			email: "alice@example.test",
+			card: "4111111111111111",
+			comment: "free form value",
+		};
+		form.self = form;
+		expect(safeValue({ form, self: form })).toBe("[redacted]");
+		const serialized = serialiseDiagnostics({
+			console: [{ at: 1, level: "error", args: [form] }],
+			requests: [
+				{
+					at: 2,
+					method: "POST",
+					path: "/transactions?form=private#fragment",
+					durationMs: 1,
+					result: "success",
+				},
+			],
+			route: "/transactions?token=private#fragment",
+			viewport: { width: 1280, height: 800 },
+			online: true,
+			browser: "browser free form value",
 		});
+		for (const value of [
+			"alice@example.test",
+			"4111111111111111",
+			"free form value",
+			"private",
+			"fragment",
+		])
+			expect(serialized).not.toContain(value);
+		expect(metadataFromDiagnostics(serialized)).toBe(
+			'{"route":"/transactions","viewport":{"width":1280,"height":800},"online":true}',
+		);
 	});
 	it("redacts credential values in textual console arguments", () => {
 		for (const [input, secret] of [
@@ -36,7 +70,7 @@ describe("support privacy helpers", () => {
 			["password=super-secret", "super-secret"],
 		])
 			expect(redactText(input)).not.toContain(secret);
-		expect(safeValue("password=super-secret")).toBe("password=[redacted]");
+		expect(safeValue("password=super-secret")).toBe("[redacted]");
 	});
 	it("keeps recent sanitized diagnostics within the aggregate byte budget", () => {
 		const serialized = serialiseDiagnostics({

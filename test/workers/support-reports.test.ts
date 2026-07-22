@@ -154,20 +154,41 @@ describe("support report intake", () => {
 							level: "error",
 							args: [
 								"Cookie: session=super-secret-cookie-value Authorization: Basic dXNlcjpwYXNz password=super-secret",
+								{
+									form: {
+										email: "alice@example.test",
+										card: "4111111111111111",
+										comment: "free form value",
+									},
+								},
 							],
 						},
 					],
-					requests: [],
-					route: "/transactions",
+					requests: [
+						{
+							at: 2,
+							method: "POST",
+							path: "/transactions?form=private#fragment",
+							durationMs: 1,
+							result: "success",
+						},
+					],
+					route: "/transactions?token=private#fragment",
 					viewport: { width: 1280, height: 800 },
 					online: true,
-					browser: "test",
+					browser: "browser free form value",
 				}),
 				a.cookieHeader,
 			),
 			dependencies(),
 		);
 		const { reportId } = (await response.json()) as { reportId: string };
+		const stored = await env.DB
+			.prepare(
+				"select diagnostics, metadata from support_report_payloads where report_id = ?",
+			)
+			.bind(reportId)
+			.first<{ diagnostics: string; metadata: string }>();
 		const ai = vi.fn().mockResolvedValue({ response: "not-json" });
 		const message = {
 			body: { kind: "triage", reportId },
@@ -183,8 +204,19 @@ describe("support report intake", () => {
 			}) as Env,
 		);
 		const prompt = ai.mock.calls[0][1].prompt as string;
-		expect(prompt).not.toContain("super-secret-cookie-value");
-		expect(prompt).not.toContain("dXNlcjpwYXNz");
-		expect(prompt).not.toContain("super-secret");
+		for (const secret of [
+			"super-secret-cookie-value",
+			"dXNlcjpwYXNz",
+			"super-secret",
+			"alice@example.test",
+			"4111111111111111",
+			"free form value",
+			"private",
+			"fragment",
+		]) {
+			expect(stored?.diagnostics).not.toContain(secret);
+			expect(stored?.metadata).not.toContain(secret);
+			expect(prompt).not.toContain(secret);
+		}
 	});
 });

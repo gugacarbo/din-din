@@ -26,20 +26,24 @@ O app chama `env.AI.run` durante a triagem de relatos de suporte. Hoje não há 
 ### Opção 1 — Tabela `ai_invocations` no D1
 
 **Prós:**
+
 - Reutiliza infra existente; sem novo binding.
 - Queryável via SQL no dashboard do D1.
 - Permite JOIN com `support_reports` para correlacionar triagem ↔ resultado.
 
 **Contras:**
+
 - Adiciona uma escrita síncrona por invocação de AI.
 - D1 tem limites de escrita por Worker; volume atual (baixo) não é problema.
 
 ### Opção 2 — Logs estruturados no Workers Observability (console.info)
 
 **Prós:**
+
 - Zero mudança de schema; só adicionar `console.info` com JSON.
 
 **Contras:**
+
 - Retenção limitada do Workers Observability; não é queryável via SQL.
 - Não permite JOIN com dados operacionais.
 - TTFT e tokens não são extraídos automaticamente do `AI.run` — precisam ser lidos do retorno.
@@ -47,9 +51,11 @@ O app chama `env.AI.run` durante a triagem de relatos de suporte. Hoje não há 
 ### Opção 3 — Analytics Engine do Cloudflare
 
 **Prós:**
+
 - Desenhado para alta cardinalidade e volume de eventos.
 
 **Contras:**
+
 - Binding adicional e configuração extra.
 - SQL via API REST, não via D1; mais um datastore para gerenciar.
 - Volume atual não justifica.

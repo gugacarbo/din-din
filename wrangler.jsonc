@@ -14,18 +14,19 @@
 		}
 	],
 	"secrets": {
-	"required": [
-      "GOOGLE_CLIENT_ID",
-      "GOOGLE_CLIENT_SECRET",
-      "BETTER_AUTH_SECRET",
-      "GITHUB_APP_ID",
-      "GITHUB_APP_INSTALLATION_ID",
-      "GITHUB_APP_PRIVATE_KEY",
+		"required": [
+			"GOOGLE_CLIENT_ID",
+			"GOOGLE_CLIENT_SECRET",
+			"BETTER_AUTH_SECRET",
+			"GITHUB_APP_ID",
+			"GITHUB_APP_INSTALLATION_ID",
+			"GITHUB_APP_PRIVATE_KEY",
 			"APP_SECRET",
+			"GITHUB_CLIENT_ID"
 		]
 	},
 	"vars": {
-		"BETTER_AUTH_URL": "https://dindin.gugacarbo.space"
+	"BETTER_AUTH_URL": "https://dindin.gugacarbo.space"
 	},
 	"d1_databases": [
 		{
@@ -43,8 +44,14 @@
 	],
 	"queues": {
 		"producers": [
-			{ "binding": "SUPPORT_REPORTS_QUEUE", "queue": "din-din-support-reports" },
-			{ "binding": "SUPPORT_REPORTS_DLQ", "queue": "din-din-support-reports-dlq" }
+			{
+				"binding": "SUPPORT_REPORTS_QUEUE",
+				"queue": "din-din-support-reports"
+			},
+			{
+				"binding": "SUPPORT_REPORTS_DLQ",
+				"queue": "din-din-support-reports-dlq"
+			}
 		],
 		"consumers": [
 			{
@@ -54,21 +61,30 @@
 				"max_retries": 3,
 				"dead_letter_queue": "din-din-support-reports-dlq"
 			},
-			{ "queue": "din-din-support-reports-dlq", "max_batch_size": 10, "max_batch_timeout": 30, "max_retries": 3 }
+			{
+				"queue": "din-din-support-reports-dlq",
+				"max_batch_size": 10,
+				"max_batch_timeout": 30,
+				"max_retries": 3
+			}
 		]
 	},
 	"ai": {
 		"binding": "AI",
 		"remote": true
 	},
-	"triggers": { "crons": ["17 3 * * *"] },
+	"triggers": {
+		"crons": [
+			"17 3 * * *"
+		]
+	},
 	"observability": {
-    "logs": {
-      "enabled": true,
-      "invocation_logs": true
-    },
-    "traces": {
-      "enabled": false
-    }
-  }
+		"logs": {
+			"enabled": true,
+			"invocation_logs": true
+		},
+		"traces": {
+			"enabled": false
+		}
+	}
 }

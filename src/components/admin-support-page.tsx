@@ -21,6 +21,18 @@ export function AdminSupportPage() {
 									{report.status}
 									{report.safe_reason ? ` · ${report.safe_reason}` : ""}
 								</p>
+								<p className="text-sm text-muted-foreground">
+									Tentativas: {report.attempts}
+								</p>
+								{report.review_tasks.length > 0 && (
+									<ul className="mt-1 text-sm text-muted-foreground">
+										{report.review_tasks.map((task) => (
+											<li key={task.event_id}>
+												Revisão {task.kind}: {task.status} · {task.reason}
+											</li>
+										))}
+									</ul>
+								)}
 							</div>
 							<Link
 								className="text-sm underline"

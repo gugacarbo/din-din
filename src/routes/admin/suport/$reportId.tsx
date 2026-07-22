@@ -16,6 +16,13 @@ function ReportPage() {
 			return response.json() as Promise<{
 				category: string;
 				status: string;
+				attempts: number;
+				review_tasks: Array<{
+					event_id: string;
+					kind: string;
+					reason: string;
+					status: string;
+				}>;
 				canManualPublish: boolean;
 				unavailableReason: string | null;
 			}>;
@@ -27,8 +34,18 @@ function ReportPage() {
 		<section className="max-w-2xl">
 			<h1 className="text-2xl font-semibold">Relato de suporte</h1>
 			<p className="mt-2 text-muted-foreground">
-				{report.data.category} · {report.data.status}
+				{report.data.category} · {report.data.status} · {report.data.attempts}{" "}
+				tentativas
 			</p>
+			{report.data.review_tasks.length > 0 && (
+				<ul className="mt-2 text-sm text-muted-foreground">
+					{report.data.review_tasks.map((task) => (
+						<li key={task.event_id}>
+							Revisão {task.kind}: {task.status} · {task.reason}
+						</li>
+					))}
+				</ul>
+			)}
 			{report.data.canManualPublish ? (
 				<div className="mt-6">
 					<AdminSupportPublishDialog reportId={reportId} />

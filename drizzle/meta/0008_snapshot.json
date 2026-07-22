@@ -209,7 +209,7 @@
           "name": "email_normalized",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "expires_at": {

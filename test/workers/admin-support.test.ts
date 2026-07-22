@@ -64,12 +64,31 @@ describe("admin support retention guard", () => {
 
 describe("admin invitation flow", () => {
 	it("prepares, carries the API-scoped cookie through OAuth callback and consumes membership once", async () => {
-		const { a } = await createAuthedPair();
+		const { a, b } = await createAuthedPair();
 		const token = `route-${crypto.randomUUID()}`;
 		const inviteId = crypto.randomUUID();
-		await env.DB.prepare("insert into admin_invites (invite_id, token_hmac, email_normalized, expires_at, created_at) values (?, ?, ?, ?, ?)").bind(inviteId, await adminHmac(env.APP_SECRET, "admin-invite:v1", token), a.email.toLowerCase(), Date.now() + 86_400_000, Date.now()).run();
+		await env.DB
+			.prepare(
+				"insert into admin_invites (invite_id, token_hmac, expires_at, created_at) values (?, ?, ?, ?)",
+			)
+			.bind(
+				inviteId,
+				await adminHmac(env.APP_SECRET, "admin-invite:v1", token),
+				Date.now() + 86_400_000,
+				Date.now(),
+			)
+			.run();
 		const prepared = await prepareAdminInvite(env.DB, { token, email: a.email }, env.APP_SECRET);
 		expect(prepared.headers["set-cookie"]).toContain("Path=/api/admin/invite");
+		expect(
+			await env.DB
+				.prepare("select email_normalized from admin_invites where invite_id = ?")
+				.bind(inviteId)
+				.first<{ email_normalized: string | null }>(),
+		).toEqual({ email_normalized: a.email.toLowerCase() });
+		await expect(
+			prepareAdminInvite(env.DB, { token, email: b.email }, env.APP_SECRET),
+		).rejects.toMatchObject({ status: 400, message: "invalid_invite" });
 		const cookie = prepared.headers["set-cookie"].split(";")[0];
 		const request = new Request("https://example.test/api/admin/invite/conclude", { method: "POST", headers: { cookie: `${a.cookieHeader}; ${cookie}`, origin: "https://example.test" } });
 		await expect(concludeAdminInvite(env.DB, request, env.APP_SECRET)).resolves.toMatchObject({ headers: { "cache-control": "no-store" } });
@@ -100,13 +119,17 @@ describe("admin HTTP route handlers", () => {
 		const { a, b } = await createAuthedPair();
 		const reportId = crypto.randomUUID();
 		const now = Date.now();
+		const reviewEventId = `review:${reportId}`;
 		await env.DB.batch([
 			env.DB
 				.prepare("insert into admin_memberships (user_id, created_at) values (?, ?)")
 				.bind(a.id, now),
 			env.DB
-				.prepare("insert into support_reports (report_id, category, status, attempts, created_at, updated_at) values (?, 'problem', 'manual_review', 0, ?, ?)")
+				.prepare("insert into support_reports (report_id, category, status, attempts, created_at, updated_at) values (?, 'problem', 'manual_review', 3, ?, ?)")
 				.bind(reportId, now, now),
+			env.DB
+				.prepare("insert into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) values (?, ?, 'manual_review', 'needs_human', 'pending', ?, ?)")
+				.bind(reviewEventId, reportId, now, now),
 		]);
 
 		expect(
@@ -132,7 +155,19 @@ describe("admin HTTP route handlers", () => {
 		});
 		expect(list.status).toBe(200);
 		expect((await list.json()).items).toEqual(
-			expect.arrayContaining([expect.objectContaining({ report_id: reportId })]),
+			expect.arrayContaining([
+				expect.objectContaining({
+					report_id: reportId,
+					attempts: 3,
+					review_tasks: [
+						expect.objectContaining({
+							event_id: reviewEventId,
+							kind: "manual_review",
+							status: "pending",
+						}),
+					],
+				}),
+			]),
 		);
 
 		expect(
@@ -152,7 +187,13 @@ describe("admin HTTP route handlers", () => {
 			params: { reportId },
 		});
 		expect(detail.status).toBe(200);
-		expect(await detail.json()).toMatchObject({ report_id: reportId });
+		expect(await detail.json()).toMatchObject({
+			report_id: reportId,
+			attempts: 3,
+			review_tasks: [
+				expect.objectContaining({ event_id: reviewEventId }),
+			],
+		});
 	});
 
 	it("rejects missing Origin before each real administrative POST handler", async () => {
@@ -229,11 +270,10 @@ describe("admin HTTP route handlers", () => {
 		const token = "t".repeat(32);
 		const inviteId = crypto.randomUUID();
 		await env.DB
-			.prepare("insert into admin_invites (invite_id, token_hmac, email_normalized, expires_at, created_at) values (?, ?, ?, ?, ?)")
+			.prepare("insert into admin_invites (invite_id, token_hmac, expires_at, created_at) values (?, ?, ?, ?)")
 			.bind(
 				inviteId,
 				await adminHmac(env.APP_SECRET, "admin-invite:v1", token),
-				a.email.toLowerCase(),
 				Date.now() + 86_400_000,
 				Date.now(),
 			)

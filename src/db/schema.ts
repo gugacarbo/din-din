@@ -199,7 +199,8 @@ export const adminInvites = sqliteTable(
 	{
 		inviteId: text("invite_id").primaryKey(),
 		tokenHmac: text("token_hmac").notNull().unique(),
-		emailNormalized: text("email_normalized").notNull(),
+		/** Bound atomically by the person who first opens the bearer invite. */
+		emailNormalized: text("email_normalized"),
 		expiresAt: integer("expires_at", { mode: "number" }).notNull(),
 		consumedAt: integer("consumed_at", { mode: "number" }),
 		consumedByUserId: text("consumed_by_user_id").references(() => user.id, {

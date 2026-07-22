@@ -35,11 +35,18 @@ export async function prepareAdminInvite(
 		"admin-invite:v1",
 		parsed.data.token,
 	);
+	const now = Date.now();
+	await d1
+		.prepare(
+			"update admin_invites set email_normalized = ? where token_hmac = ? and email_normalized is null and consumed_at is null and expires_at > ?",
+		)
+		.bind(email, tokenHmac, now)
+		.run();
 	const invite = await d1
 		.prepare(
 			"select invite_id from admin_invites where token_hmac = ? and email_normalized = ? and consumed_at is null and expires_at > ?",
 		)
-		.bind(tokenHmac, email, Date.now())
+		.bind(tokenHmac, email, now)
 		.first<{ invite_id: string }>();
 	if (!invite) throw new InviteError(400, "invalid_invite");
 	const nonce = newInviteToken();
@@ -48,7 +55,6 @@ export async function prepareAdminInvite(
 		"admin-invite-continuation:v1",
 		nonce,
 	);
-	const now = Date.now();
 	await d1
 		.prepare(
 			"insert or replace into admin_invite_continuations (continuation_hmac, invite_id, nonce, expires_at, created_at) values (?, ?, ?, ?, ?)",
@@ -88,9 +94,12 @@ export async function concludeAdminInvite(
 			"select c.invite_id, i.email_normalized from admin_invite_continuations c join admin_invites i on i.invite_id = c.invite_id where c.continuation_hmac = ? and c.expires_at > ? and i.consumed_at is null and i.expires_at > ?",
 		)
 		.bind(continuationHmac, Date.now(), Date.now())
-		.first<{ invite_id: string; email_normalized: string }>();
+		.first<{ invite_id: string; email_normalized: string | null }>();
 	if (!continuation) throw new InviteError(400, "invalid_continuation");
-	if (normalizeAdminEmail(session.user.email) !== continuation.email_normalized)
+	if (
+		!continuation.email_normalized ||
+		normalizeAdminEmail(session.user.email) !== continuation.email_normalized
+	)
 		throw new InviteError(403, "email_mismatch");
 	const now = Date.now();
 	const result = await d1.batch([

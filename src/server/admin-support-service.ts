@@ -26,6 +26,47 @@ export class AdminSupportError extends Error {
 	}
 }
 
+export type AdminSupportReviewTask = {
+	event_id: string;
+	kind: "manual_review" | "transient_failure";
+	reason: string;
+	status: "pending" | "sent" | "observed";
+	created_at: number;
+	updated_at: number;
+};
+
+export type AdminSupportReport = {
+	report_id: string;
+	category: string;
+	status: string;
+	attempts: number;
+	safe_reason: string | null;
+	issue_number: number | null;
+	issue_url: string | null;
+	created_at: number;
+	review_tasks: AdminSupportReviewTask[];
+};
+
+type AdminSupportReportRow = Omit<AdminSupportReport, "review_tasks"> & {
+	review_tasks: string;
+};
+
+function supportReportFromRow(row: AdminSupportReportRow): AdminSupportReport {
+	return {
+		...row,
+		review_tasks: JSON.parse(row.review_tasks) as AdminSupportReviewTask[],
+	};
+}
+
+const reviewTasksSql = `coalesce((select json_group_array(json_object(
+	'event_id', t.event_id,
+	'kind', t.kind,
+	'reason', t.reason,
+	'status', t.status,
+	'created_at', t.created_at,
+	'updated_at', t.updated_at
+)) from support_review_tasks t where t.report_id = r.report_id), '[]') as review_tasks`;
+
 type SupportDeps = Pick<
 	Env,
 	"GITHUB_APP_ID" | "GITHUB_APP_INSTALLATION_ID" | "GITHUB_APP_PRIVATE_KEY"
@@ -50,19 +91,11 @@ export async function listAdminSupport(
 	const safeLimit = Math.min(Math.max(limit, 1), 50);
 	const rows = await d1
 		.prepare(
-			"select report_id, category, status, safe_reason, issue_number, issue_url, created_at from support_reports where (? is null or created_at < ?) order by created_at desc limit ?",
+			`select r.report_id, r.category, r.status, r.attempts, r.safe_reason, r.issue_number, r.issue_url, r.created_at, ${reviewTasksSql} from support_reports r where (? is null or r.created_at < ?) order by r.created_at desc limit ?`,
 		)
 		.bind(cursor ?? null, cursor ? Number(cursor) : null, safeLimit + 1)
-		.all<{
-			report_id: string;
-			category: string;
-			status: string;
-			safe_reason: string | null;
-			issue_number: number | null;
-			issue_url: string | null;
-			created_at: number;
-		}>();
-	const page = rows.results.slice(0, safeLimit);
+		.all<AdminSupportReportRow>();
+	const page = rows.results.slice(0, safeLimit).map(supportReportFromRow);
 	return {
 		items: page,
 		nextCursor:
@@ -78,22 +111,14 @@ export async function adminSupportDetail(
 	await requireAdmin(d1, headers);
 	const report = await d1
 		.prepare(
-			"select report_id, category, status, safe_reason, issue_number, issue_url, created_at from support_reports where report_id = ?",
+			`select r.report_id, r.category, r.status, r.attempts, r.safe_reason, r.issue_number, r.issue_url, r.created_at, ${reviewTasksSql} from support_reports r where r.report_id = ?`,
 		)
 		.bind(reportId)
-		.first<{
-			report_id: string;
-			category: string;
-			status: string;
-			safe_reason: string | null;
-			issue_number: number | null;
-			issue_url: string | null;
-			created_at: number;
-		}>();
+		.first<AdminSupportReportRow>();
 	if (!report) throw new AdminSupportError(404, "report_not_found");
 	const payload = await activePayload(d1, reportId);
 	return {
-		...report,
+		...supportReportFromRow(report),
 		canManualPublish: report.status === "manual_review" && Boolean(payload),
 		unavailableReason:
 			report.status === "manual_review" && !payload

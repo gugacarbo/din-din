@@ -21,8 +21,17 @@ export const adminSupportQueryOptions = () =>
 					report_id: string;
 					category: string;
 					status: string;
+					attempts: number;
 					safe_reason: string | null;
 					created_at: number;
+					review_tasks: Array<{
+						event_id: string;
+						kind: "manual_review" | "transient_failure";
+						reason: string;
+						status: "pending" | "sent" | "observed";
+						created_at: number;
+						updated_at: number;
+					}>;
 				}>;
 				nextCursor: string | null;
 			}>;

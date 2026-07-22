@@ -11,7 +11,7 @@ CREATE INDEX `admin_continuations_expiry_index` ON `admin_invite_continuations` 
 CREATE TABLE `admin_invites` (
 	`invite_id` text PRIMARY KEY NOT NULL,
 	`token_hmac` text NOT NULL,
-	`email_normalized` text NOT NULL,
+	`email_normalized` text,
 	`expires_at` integer NOT NULL,
 	`consumed_at` integer,
 	`consumed_by_user_id` text,

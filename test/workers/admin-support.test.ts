@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AdminSupportError, publishAdminSupport } from "#/server/admin-support-service.ts";
 import { adminHmac } from "#/lib/admin-invite.ts";
 import { concludeAdminInvite, prepareAdminInvite } from "#/server/admin-invite-service.ts";
+import { AdminAuthError, requireAdmin, sameOrigin } from "#/server/admin-auth.ts";
 import { createAuthedPair } from "./fixtures.ts";
 
 describe("admin support retention guard", () => {
@@ -37,5 +38,21 @@ describe("admin invitation flow", () => {
 		const membership = await env.DB.prepare("select user_id from admin_memberships where user_id = ?").bind(a.id).first();
 		expect(membership).not.toBeNull();
 		await expect(concludeAdminInvite(env.DB, request, env.APP_SECRET)).rejects.toMatchObject({ status: 400 });
+	});
+});
+
+describe("admin authorization guards", () => {
+	it("returns 401 for anonymous, 403 for common users and authorizes a current member", async () => {
+		const { a } = await createAuthedPair();
+		await expect(requireAdmin(env.DB, new Headers())).rejects.toMatchObject<Partial<AdminAuthError>>({ status: 401 });
+		await expect(requireAdmin(env.DB, new Headers({ cookie: a.cookieHeader }))).rejects.toMatchObject<Partial<AdminAuthError>>({ status: 403 });
+		await env.DB.prepare("insert into admin_memberships (user_id, created_at) values (?, ?)").bind(a.id, Date.now()).run();
+		await expect(requireAdmin(env.DB, new Headers({ cookie: a.cookieHeader }))).resolves.toMatchObject({ id: a.id });
+	});
+
+	it("rejects missing and foreign Origin for administrative writes", () => {
+		expect(sameOrigin(new Request("https://app.test/api/admin/support/x/publish", { method: "POST" }))).toBe(false);
+		expect(sameOrigin(new Request("https://app.test/api/admin/support/x/publish", { method: "POST", headers: { origin: "https://evil.test" } }))).toBe(false);
+		expect(sameOrigin(new Request("https://app.test/api/admin/support/x/publish", { method: "POST", headers: { origin: "https://app.test" } }))).toBe(true);
 	});
 });

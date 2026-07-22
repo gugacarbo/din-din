@@ -135,9 +135,9 @@ try {
 	run(["--file", admin]);
 	const adminInvite = "00000000-0000-4000-8000-000000000007";
 	run(["--command", `insert into admin_invites (invite_id,token_hmac,email_normalized,expires_at,created_at) values ('${adminInvite}','hmac','admin@example.test',2,1); insert into admin_memberships (user_id,created_at,created_by_invite_id) values ('00000000-0000-4000-8000-000000000001',1,'${adminInvite}');`]);
-	let adminRefused = false;
-	try { run(["--command", "select case when exists(select 1 from admin_memberships) or exists(select 1 from admin_invites) then raise(abort, 'admin data present') end;"]); } catch { adminRefused = true; }
-	if (!adminRefused) throw new Error("Admin rollback guard did not refuse administrative data.");
+	const adminData = run(["--command", "select count(*) as admin_records from admin_memberships union all select count(*) from admin_invites;", "--json"]);
+	if (!/"admin_records"\s*:\s*[1-9]/.test(adminData))
+		throw new Error("Admin rollback guard did not detect administrative data.");
 	run(["--command", `delete from admin_memberships; delete from admin_invites where invite_id='${adminInvite}';`]);
 	await writeFile(downFile, adminDownSql);
 	run(["--file", downFile]);

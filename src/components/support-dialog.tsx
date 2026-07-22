@@ -33,6 +33,10 @@ import { supportDiagnosticsSnapshot } from "#/lib/support-diagnostics.ts";
 
 const formSchema = supportInputSchema.pick({ category: true, message: true });
 type FormValues = Pick<SupportInput, "category" | "message">;
+type FrozenAttempt = {
+	payload: string;
+	screenshot: File | null;
+};
 
 function blobFromCanvas(
 	canvas: HTMLCanvasElement,
@@ -49,6 +53,7 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 	const [preview, setPreview] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const requestId = useRef(crypto.randomUUID());
+	const frozenAttempt = useRef<FrozenAttempt | null>(null);
 	const titleId = useId();
 	const form = useForm<FormValues>({
 		resolver: zodResolver(formSchema),
@@ -56,22 +61,39 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 	});
 	const submission = useMutation({
 		mutationFn: async (values: FormValues) => {
-			const payload = {
-				...values,
-				clientRequestId: requestId.current,
-				diagnostics: supportDiagnosticsSnapshot(),
-			} satisfies SupportInput;
+			if (!frozenAttempt.current)
+				frozenAttempt.current = {
+					payload: JSON.stringify({
+						...values,
+						clientRequestId: requestId.current,
+						diagnostics: supportDiagnosticsSnapshot(),
+					} satisfies SupportInput),
+					screenshot,
+				};
 			const body = new FormData();
-			body.set("payload", JSON.stringify(payload));
-			if (screenshot) body.set("screenshot", screenshot);
-			const response = await fetch("/api/support", { method: "POST", body });
+			body.set("payload", frozenAttempt.current.payload);
+			if (frozenAttempt.current.screenshot)
+				body.set("screenshot", frozenAttempt.current.screenshot);
+			let response: Response;
+			try {
+				response = await fetch("/api/support", { method: "POST", body });
+			} catch {
+				throw Object.assign(new Error("Não foi possível enviar."), {
+					ambiguous: true,
+				});
+			}
 			if (!response.ok) {
 				const error = (await response
 					.json()
 					.catch(() => ({ message: "Não foi possível enviar." }))) as {
 					message?: string;
 				};
-				throw new Error(error.message || "Não foi possível enviar.");
+				throw Object.assign(
+					new Error(error.message || "Não foi possível enviar."),
+					{
+						ambiguous: response.status >= 500,
+					},
+				);
 			}
 		},
 		onSuccess: () => {
@@ -81,9 +103,22 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 			if (preview) URL.revokeObjectURL(preview);
 			setPreview(null);
 			requestId.current = crypto.randomUUID();
+			frozenAttempt.current = null;
 			setOpen(false);
 		},
+		onError: (error) => {
+			if (!(error as { ambiguous?: boolean }).ambiguous) {
+				requestId.current = crypto.randomUUID();
+				frozenAttempt.current = null;
+			}
+		},
 	});
+	function startNewAttempt() {
+		requestId.current = crypto.randomUUID();
+		frozenAttempt.current = null;
+		submission.reset();
+		form.clearErrors();
+	}
 	async function takeScreenshot() {
 		try {
 			document.documentElement.dataset.supportCapture = "true";
@@ -97,7 +132,9 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 				windowWidth: window.innerWidth,
 				windowHeight: window.innerHeight,
 				ignoreElements: (element) =>
-					element.closest("[data-support-dialog]") !== null,
+					element.closest(
+						"[data-support-dialog], [data-support-capture-exclude]",
+					) !== null,
 			});
 			const blob = await blobFromCanvas(canvas, "image/webp");
 			if (!blob || blob.size > 2 * 1024 * 1024)
@@ -143,7 +180,11 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 						<span className="sr-only">Ajuda e suporte</span>
 					</Button>
 				</DialogTrigger>
-				<DialogContent aria-labelledby={titleId} data-support-dialog>
+				<DialogContent
+					aria-labelledby={titleId}
+					data-support-capture-exclude
+					data-support-dialog
+				>
 					<DialogHeader>
 						<DialogTitle id={titleId}>Ajuda e suporte</DialogTitle>
 						<DialogDescription>
@@ -227,9 +268,23 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 							)}
 						</div>
 						{submission.error && (
-							<p className="text-sm font-medium text-destructive" role="alert">
-								{submission.error.message}
-							</p>
+							<div className="grid gap-2">
+								<p
+									className="text-sm font-medium text-destructive"
+									role="alert"
+								>
+									{submission.error.message}
+								</p>
+								{(submission.error as { ambiguous?: boolean }).ambiguous && (
+									<Button
+										onClick={startNewAttempt}
+										type="button"
+										variant="ghost"
+									>
+										Criar novo relato
+									</Button>
+								)}
+							</div>
 						)}
 						<DialogFooter>
 							<Button disabled={offline || submission.isPending} type="submit">

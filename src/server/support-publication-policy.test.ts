@@ -49,6 +49,9 @@ describe("publicIssueFromModel", () => {
 	it("rejeita telefones e referências GitHub em todos os campos após normalizar Unicode", () => {
 		const unsafe = [
 			"Telefone (11) 99876-5432",
+			"Telefone +1 (415) 555-2671",
+			"CNPJ 12.345.678/0001-95",
+			"Acesse example.com/path",
 			"Veja a issue #123",
 			"Veja gugacarbo/din-din#123",
 			"Telefone\u00a0(11)\u200799876‑5432",

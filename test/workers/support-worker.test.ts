@@ -242,6 +242,45 @@ describe("production support worker", () => {
 		await firstRun;
 	});
 
+	it("turns a redelivery after a pre-POST reservation into manual review", async () => {
+		const reportId = await report();
+		const publicationToken = crypto.randomUUID();
+		await env.DB.prepare(
+			"update support_reports set status = 'processing', publication_token = ?, publication_reserved_at = ?, lease_expires_at = ? where report_id = ?",
+		)
+			.bind(publicationToken, Date.now() - 1, Date.now() - 1, reportId)
+			.run();
+		const runtimeEnv = runtime();
+		const redelivery = message({ kind: "triage", reportId });
+		await worker.queue?.(
+			batch("din-din-support-reports", [redelivery]),
+			runtimeEnv,
+			{} as ExecutionContext,
+		);
+		expect(redelivery.ack).toHaveBeenCalledTimes(1);
+		expect(runtimeEnv.AI.run).not.toHaveBeenCalled();
+		expect(runtimeEnv.SUPPORT_REPORTS_DLQ.send).toHaveBeenCalledWith({
+			kind: "manual_review",
+			reportId,
+			eventId: `manual:${reportId}:publication_reservation_ambiguous`,
+		});
+		const row = await env.DB
+			.prepare(
+				"select status, safe_reason, publication_token from support_reports where report_id = ?",
+			)
+			.bind(reportId)
+			.first<{
+				status: string;
+				safe_reason: string;
+				publication_token: string | null;
+			}>();
+		expect(row).toEqual({
+			status: "manual_review",
+			safe_reason: "publication_reservation_ambiguous",
+			publication_token: null,
+		});
+	});
+
 	it("keeps exhausted triage inside the DLQ without AI, R2, GitHub or a second send", async () => {
 		const reportId = await report();
 		const runtimeEnv = runtime();

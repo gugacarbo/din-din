@@ -18,11 +18,15 @@ export type PublicIssue = z.infer<typeof aiOutput>;
 const unsafe =
 	/(?:https?:\/\/|www\.|<[^>]+>|!\[|\]\(|@\w+|`|\*{1,3}|_{1,3}|~{2}|^\s{0,3}#{1,6}\s|^\s*>|^\s*(?:[-+]|\d+\.)\s)/im;
 const pii =
-	/\b(?:\d{3}[. -]?\d{3}[. -]?\d{3}[ -]?\d{2}|\d{11,14}|(?:\d[ -]?){13,19}|[\w.+-]+@[\w.-]+\.[a-z]{2,})\b/i;
+	/\b(?:\d{3}[. -]?\d{3}[. -]?\d{3}[ -]?\d{2}|\d{2}[. -]?\d{3}[. -]?\d{3}[/-]?\d{4}[ -]?\d{2}|\d{11,14}|(?:\d[ -]?){13,19}|[\w.+-]+@[\w.-]+\.[a-z]{2,})\b/i;
 const brazilianPhone =
 	/(?:^|[^\p{L}\p{N}])(?:\+?55[ \-‐-―]?)?\(?\d{2}\)?[ \-‐-―]?(?:9[ \-‐-―]?)?\d{4,5}[ \-‐-―]?\d{4}(?!\d)/u;
+const internationalPhone =
+	/(?:^|[^\p{L}\p{N}])\+\d{1,3}(?:[ \-‐-―().]*\d){6,14}(?!\d)/u;
 const githubReference =
 	/(?:^|[^\p{L}\p{N}_])(?:[\p{L}\p{N}_.-]+\/[\p{L}\p{N}_.-]+)?#\s*\d+\b/u;
+const bareUrl =
+	/\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?(?:[/?#][^\s]*)?/i;
 function normalizedPublicText(value: string) {
 	return value
 		.normalize("NFKC")
@@ -64,7 +68,9 @@ export function publicIssueFromModel(
 				unsafe.test(normalized) ||
 				pii.test(normalized) ||
 				brazilianPhone.test(normalized) ||
+				internationalPhone.test(normalized) ||
 				githubReference.test(normalized) ||
+				bareUrl.test(normalized) ||
 				redactText(part) !== part ||
 				echoes(part, privateValues)
 			);

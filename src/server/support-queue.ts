@@ -65,7 +65,14 @@ async function claim(env: Env, reportId: string) {
 	)
 		.bind(token, now + leaseMs, now, reportId, now)
 		.run();
-	if (result.meta.changes !== 1) return null;
+	if (result.meta.changes !== 1) {
+		const reserved = await env.DB.prepare(
+			"select publication_token from support_reports where report_id = ? and status = 'processing' and publication_token is not null",
+		)
+			.bind(reportId)
+			.first<{ publication_token: string }>();
+		return reserved ? { publicationToken: reserved.publication_token } : null;
+	}
 	const row = await env.DB.prepare(
 		"select p.message, p.diagnostics from support_reports r join support_report_payloads p on p.report_id = r.report_id where r.report_id = ? and r.lease_token = ?",
 	)
@@ -119,6 +126,14 @@ async function recordExhaustedTriage(env: Env, reportId: string) {
 async function triage(env: Env, reportId: string) {
 	const row = await claim(env, reportId);
 	if (!row) return "ack" as const;
+	if ("publicationToken" in row) {
+		// A previous worker may have died after the durable reservation but before
+		// the GitHub response. Treat every redelivery as ambiguous: no blind POST.
+		await manualReview(env, reportId, "publication_reservation_ambiguous", {
+			publicationToken: row.publicationToken,
+		});
+		return "ack" as const;
+	}
 	let output: unknown;
 	try {
 		output = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {

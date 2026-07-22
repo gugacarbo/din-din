@@ -20,6 +20,9 @@
     "implemented-by": [
       "src/components/support-dialog.tsx",
       "src/lib/support-diagnostics.ts",
+      "src/lib/admin-invite-client.ts",
+      "src/routes/__root.tsx",
+      "src/routes/admin/convite.tsx",
       "src/server/support-service.ts",
       "src/server/support-queue.ts",
       "drizzle/0004_support_reports.sql"

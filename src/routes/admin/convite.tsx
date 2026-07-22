@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Alert, AlertDescription } from "#/components/ui/alert.tsx";
@@ -9,6 +9,10 @@ import { Button } from "#/components/ui/button.tsx";
 import { Card, CardContent } from "#/components/ui/card.tsx";
 import { Field, FieldError, FieldLabel } from "#/components/ui/field.tsx";
 import { Input } from "#/components/ui/input.tsx";
+import {
+	clearAdminInviteToken,
+	readAdminInviteToken,
+} from "#/lib/admin-invite-client.ts";
 import { authClient } from "#/lib/auth-client.ts";
 
 const emailSchema = z.object({
@@ -20,13 +24,12 @@ export const Route = createFileRoute("/admin/convite")({
 	component: InvitePage,
 });
 
-function InvitePage() {
+export function InvitePage() {
 	const [error, setError] = useState<string | null>(null);
-	const token =
-		typeof window === "undefined"
-			? undefined
-			: window.__DIN_DIN_ADMIN_INVITE_TOKEN;
-	if (typeof window !== "undefined") delete window.__DIN_DIN_ADMIN_INVITE_TOKEN;
+	const [token, setToken] = useState(() =>
+		typeof window === "undefined" ? undefined : readAdminInviteToken(),
+	);
+	const preparingOAuth = useRef(false);
 	const form = useForm<EmailValues>({
 		defaultValues: { email: "" },
 		resolver: zodResolver(emailSchema),
@@ -54,13 +57,16 @@ function InvitePage() {
 		},
 	});
 	useEffect(() => {
-		if (token) return;
+		if (token || preparingOAuth.current) return;
 		void conclude.mutateAsync().catch(() => undefined);
 	}, [conclude, token]);
 	async function submit(values: EmailValues) {
 		setError(null);
 		try {
 			await prepare.mutateAsync(values);
+			preparingOAuth.current = true;
+			clearAdminInviteToken();
+			setToken(undefined);
 			const result = await authClient.signIn.social({
 				provider: "google",
 				callbackURL: "/admin/convite",

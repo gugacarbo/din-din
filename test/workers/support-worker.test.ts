@@ -292,6 +292,171 @@ describe("production support worker", () => {
 		expect(runtimeEnv.SUPPORT_SCREENSHOTS.delete).not.toHaveBeenCalled();
 		const row = await env.DB.prepare("select status, safe_reason from support_reports where report_id = ?").bind(reportId).first<{ status: string; safe_reason: string }>();
 		expect(row).toEqual({ status: "failed", safe_reason: "transient_retries_exhausted" });
+		const task = await env.DB
+			.prepare(
+				"select kind, reason, status from support_review_tasks where report_id = ?",
+			)
+			.bind(reportId)
+			.first<{ kind: string; reason: string; status: string }>();
+		expect(task).toEqual({
+			kind: "transient_failure",
+			reason: "transient_retries_exhausted",
+			status: "observed",
+		});
+	});
+
+	it("keeps a published issue intact when an old triage envelope reaches the DLQ", async () => {
+		const reportId = await report({ status: "published" });
+		await env.DB
+			.prepare(
+				"update support_reports set issue_number = ?, issue_url = ?, safe_reason = null where report_id = ?",
+			)
+			.bind(31, "https://github.com/gugacarbo/din-din/issues/31", reportId)
+			.run();
+		const runtimeEnv = runtime();
+		const old = message({ kind: "triage", reportId });
+		const duplicate = message({ kind: "triage", reportId });
+		await worker.queue?.(
+			batch("din-din-support-reports-dlq", [old]),
+			runtimeEnv,
+			{} as ExecutionContext,
+		);
+		await worker.queue?.(
+			batch("din-din-support-reports-dlq", [duplicate]),
+			runtimeEnv,
+			{} as ExecutionContext,
+		);
+		expect(old.ack).toHaveBeenCalledTimes(1);
+		expect(duplicate.ack).toHaveBeenCalledTimes(1);
+		const row = await env.DB
+			.prepare(
+				"select status, issue_number, issue_url, safe_reason from support_reports where report_id = ?",
+			)
+			.bind(reportId)
+			.first<{
+				status: string;
+				issue_number: number;
+				issue_url: string;
+				safe_reason: string | null;
+			}>();
+		expect(row).toEqual({
+			status: "published",
+			issue_number: 31,
+			issue_url: "https://github.com/gugacarbo/din-din/issues/31",
+			safe_reason: null,
+		});
+		expect(
+			await env.DB
+				.prepare("select count(*) as count from support_review_tasks where report_id = ?")
+				.bind(reportId)
+				.first<{ count: number }>(),
+		).toEqual({ count: 0 });
+	});
+
+	it("does not reclassify other terminal or active reports from an old DLQ envelope", async () => {
+		const manual = await report({ status: "manual_review" });
+		const failed = await report({ status: "failed" });
+		const active = await report({ status: "processing" });
+		const reserved = await report({ status: "processing" });
+		await env.DB.batch([
+			env.DB
+				.prepare("update support_reports set safe_reason = ? where report_id = ?")
+				.bind("invalid_ai_output", manual),
+			env.DB
+				.prepare("update support_reports set safe_reason = ? where report_id = ?")
+				.bind("another_failure", failed),
+			env.DB
+				.prepare(
+					"update support_reports set lease_expires_at = ? where report_id = ?",
+				)
+				.bind(Date.now() + 60_000, active),
+			env.DB
+				.prepare(
+					"update support_reports set publication_token = ?, publication_reserved_at = ?, lease_expires_at = ? where report_id = ?",
+				)
+				.bind(crypto.randomUUID(), Date.now(), Date.now() - 1, reserved),
+		]);
+		const runtimeEnv = runtime();
+		const messages = [manual, failed, active, reserved].map((reportId) =>
+			message({ kind: "triage", reportId }),
+		);
+		await worker.queue?.(
+			batch("din-din-support-reports-dlq", messages),
+			runtimeEnv,
+			{} as ExecutionContext,
+		);
+		for (const event of messages) expect(event.ack).toHaveBeenCalledTimes(1);
+		const rows = await env.DB
+			.prepare(
+				"select report_id, status, safe_reason, publication_token from support_reports where report_id in (?, ?, ?, ?) order by report_id",
+			)
+			.bind(active, failed, manual, reserved)
+			.all<{
+				report_id: string;
+				status: string;
+				safe_reason: string | null;
+				publication_token: string | null;
+			}>();
+		const byReport = new Map(rows.results.map((row) => [row.report_id, row]));
+		expect(byReport.get(manual)).toMatchObject({
+			status: "manual_review",
+			safe_reason: "invalid_ai_output",
+		});
+		expect(byReport.get(failed)).toMatchObject({
+			status: "failed",
+			safe_reason: "another_failure",
+		});
+		expect(byReport.get(active)).toMatchObject({
+			status: "processing",
+			publication_token: null,
+		});
+		expect(byReport.get(reserved)).toMatchObject({ status: "processing" });
+		expect(byReport.get(reserved)?.publication_token).toBeTruthy();
+		expect(
+			await env.DB
+				.prepare(
+					"select count(*) as count from support_review_tasks where report_id in (?, ?, ?, ?)",
+				)
+				.bind(manual, failed, active, reserved)
+				.first<{ count: number }>(),
+		).toEqual({ count: 0 });
+	});
+
+	it("records one failure task for duplicate DLQ deliveries and stale processing", async () => {
+		const reportId = await report({ status: "processing" });
+		await env.DB
+			.prepare(
+				"update support_reports set lease_expires_at = ?, publication_token = null where report_id = ?",
+			)
+			.bind(Date.now() - 1, reportId)
+			.run();
+		const runtimeEnv = runtime();
+		const first = message({ kind: "triage", reportId });
+		const duplicate = message({ kind: "triage", reportId });
+		await worker.queue?.(
+			batch("din-din-support-reports-dlq", [first]),
+			runtimeEnv,
+			{} as ExecutionContext,
+		);
+		await worker.queue?.(
+			batch("din-din-support-reports-dlq", [duplicate]),
+			runtimeEnv,
+			{} as ExecutionContext,
+		);
+		expect(first.ack).toHaveBeenCalledTimes(1);
+		expect(duplicate.ack).toHaveBeenCalledTimes(1);
+		expect(
+			await env.DB
+				.prepare("select status, safe_reason from support_reports where report_id = ?")
+				.bind(reportId)
+				.first<{ status: string; safe_reason: string }>(),
+		).toEqual({ status: "failed", safe_reason: "transient_retries_exhausted" });
+		expect(
+			await env.DB
+				.prepare("select count(*) as count from support_review_tasks where report_id = ?")
+				.bind(reportId)
+				.first<{ count: number }>(),
+		).toEqual({ count: 1 });
 	});
 
 	it("delivers an exhausted triage envelope through the configured DLQ", async () => {

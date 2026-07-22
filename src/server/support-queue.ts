@@ -115,11 +115,11 @@ async function recordExhaustedTriage(env: Env, reportId: string) {
 	const eventId = `failed:${reportId}:transient_retries_exhausted`;
 	await env.DB.batch([
 		env.DB.prepare(
-			"update support_reports set status = 'failed', safe_reason = 'transient_retries_exhausted', lease_token = null, lease_expires_at = null, publication_token = null, publication_reserved_at = null, updated_at = ? where report_id = ?",
-		).bind(now, reportId),
+			"update support_reports set status = 'failed', safe_reason = 'transient_retries_exhausted', lease_token = null, lease_expires_at = null, publication_token = null, publication_reserved_at = null, updated_at = ? where report_id = ? and (status in ('pending', 'queued') or (status = 'processing' and publication_token is null and (lease_expires_at is null or lease_expires_at <= ?)))",
+		).bind(now, reportId, now),
 		env.DB.prepare(
-			"insert or ignore into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) values (?, ?, 'transient_failure', 'transient_retries_exhausted', 'observed', ?, ?)",
-		).bind(eventId, reportId, now, now),
+			"insert or ignore into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) select ?, ?, 'transient_failure', 'transient_retries_exhausted', 'observed', ?, ? where exists(select 1 from support_reports where report_id = ? and status = 'failed' and safe_reason = 'transient_retries_exhausted')",
+		).bind(eventId, reportId, now, now, reportId),
 	]);
 }
 

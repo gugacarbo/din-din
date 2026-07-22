@@ -1,5 +1,15 @@
 [
   {
+    "id": "ADR-0011",
+    "path": "docs/adr/0011-ai-usage-logging.md",
+    "layer": "adr",
+    "title": "Registrar uso de LLM/AI no D1 com métricas de invocação",
+    "status": "accepted",
+    "builds-on": [],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
     "id": "SPEC-0010",
     "path": "docs/specs/0010-support-reports.md",
     "layer": "specs",

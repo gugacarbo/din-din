@@ -14,7 +14,7 @@
 		}
 	],
 	"secrets": {
-		"required": [
+	"required": [
       "GOOGLE_CLIENT_ID",
       "GOOGLE_CLIENT_SECRET",
       "BETTER_AUTH_SECRET",
@@ -56,7 +56,10 @@
 			{ "queue": "din-din-support-reports-dlq", "max_batch_size": 10, "max_batch_timeout": 30, "max_retries": 3 }
 		]
 	},
-	"ai": { "binding": "AI", "remote": true },
+	"ai": {
+		"binding": "AI",
+		"remote": true
+	},
 	"triggers": { "crons": ["17 3 * * *"] },
 	"observability": {
     "logs": {

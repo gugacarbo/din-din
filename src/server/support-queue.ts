@@ -1,3 +1,4 @@
+import { runAiWithLogging } from "#/server/ai-logging.ts";
 import { publishSupportIssue } from "#/server/github-support-publisher.ts";
 import { publicIssueFromModel } from "#/server/support-publication-policy.ts";
 
@@ -74,10 +75,10 @@ async function claim(env: Env, reportId: string) {
 		return reserved ? { publicationToken: reserved.publication_token } : null;
 	}
 	const row = await env.DB.prepare(
-		"select p.message, p.diagnostics from support_reports r join support_report_payloads p on p.report_id = r.report_id where r.report_id = ? and r.lease_token = ?",
+		"select p.message, p.diagnostics, p.user_id from support_reports r join support_report_payloads p on p.report_id = r.report_id where r.report_id = ? and r.lease_token = ?",
 	)
 		.bind(reportId, token)
-		.first<{ message: string; diagnostics: string }>();
+		.first<{ message: string; diagnostics: string; user_id: string }>();
 	return row ? { ...row, token } : null;
 }
 
@@ -136,11 +137,20 @@ async function triage(env: Env, reportId: string) {
 	}
 	let output: unknown;
 	try {
-		output = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
-			prompt: `Produce only JSON with title, summary, technicalCategory (bug|question|suggestion), observedBehavior, probableSteps (array), technicalSignals (array), labels (bug|enhancement|question). Do not copy user text, include personal data, URLs, markdown, mentions, or secrets.\nUser report: ${row.message}\nSanitized diagnostics: ${row.diagnostics}`,
-			response_format: { type: "json_object" },
-			max_tokens: 800,
-		});
+		output = await runAiWithLogging(
+			env,
+			"@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+			{
+				prompt: `Produce only JSON with title, summary, technicalCategory (bug|question|suggestion), observedBehavior, probableSteps (array), technicalSignals (array), labels (bug|enhancement|question). Do not copy user text, include personal data, URLs, markdown, mentions, or secrets.\nUser report: ${row.message}\nSanitized diagnostics: ${row.diagnostics}`,
+				response_format: { type: "json_object" },
+				max_tokens: 800,
+			},
+			{
+				agentKey: "issue-writer",
+				userId: row.user_id,
+				reportId,
+			},
+		);
 	} catch {
 		await releaseForRetry(env, reportId, row.token);
 		return "retry" as const;

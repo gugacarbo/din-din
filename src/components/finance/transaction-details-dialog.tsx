@@ -74,7 +74,7 @@ export function TransactionDetailsDialog({
 					className={
 						isIncome
 							? "font-extrabold text-income"
-							: "font-extrabold text-destructive"
+							: "font-extrabold text-expense"
 					}
 				>
 					{isIncome ? "+" : "−"}

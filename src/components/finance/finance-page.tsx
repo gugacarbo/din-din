@@ -35,7 +35,14 @@ import {
 	AlertDialogTitle,
 } from "#/components/ui/alert-dialog.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import { Card } from "#/components/ui/card.tsx";
+import {
+	Card,
+	CardAction,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "#/components/ui/card.tsx";
 import {
 	type ChartConfig,
 	ChartContainer,
@@ -297,7 +304,7 @@ function PageTitle({
 				<p className="island-kicker">{eyebrow}</p>
 				<h1
 					className={cn(
-						"display-title mt-1 font-bold text-foreground",
+						"mt-1 font-semibold text-foreground",
 						compact ? "text-3xl md:text-4xl" : "text-4xl",
 					)}
 				>
@@ -332,11 +339,12 @@ function TransactionRows({
 		<ul className="divide-y divide-border">
 			{items.map((item) => (
 				<li className="flex items-center gap-3 py-3" key={item.id}>
-					<button
+					<Button
 						aria-label={`Ver lançamento ${item.category.name}`}
-						className="flex min-w-0 flex-1 items-center gap-3 text-left"
+						className="h-auto min-w-0 flex-1 justify-start gap-3 p-0 text-left"
 						onClick={() => onView?.(item)}
 						type="button"
+						variant="ghost"
 					>
 						<CategoryMark
 							colorKey={item.category.colorKey}
@@ -355,13 +363,13 @@ function TransactionRows({
 							className={
 								item.type === "income"
 									? "font-bold text-income"
-									: "font-bold text-destructive"
+									: "font-bold text-expense"
 							}
 						>
 							{item.type === "income" ? "+" : "−"}
 							{moneyFromCents(item.amountCents)}
 						</p>
-					</button>
+					</Button>
 					{onEdit && (
 						<Button
 							aria-label="Editar lançamento"
@@ -427,33 +435,47 @@ function Dashboard({ onView }: { onView: (item: TransactionDto) => void }) {
 					tone="balance"
 				/>
 			</section>
-			<FinanceCard className="mt-5 p-4 md:mt-7 md:p-5">
-				<h2 className="display-title text-xl font-bold md:text-2xl">
-					De onde vieram as entradas
-				</h2>
-				<ul className="mt-3 divide-y divide-border">
-					{incomeByPaymentMethod.map((item) => (
-						<li
-							className="flex justify-between py-2"
-							key={item.paymentMethodId ?? "none"}
-						>
-							<span>{item.name}</span>
-							<strong>{moneyFromCents(item.amountCents)}</strong>
-						</li>
-					))}
-				</ul>
-			</FinanceCard>
-			<FinanceCard className="mt-5 p-4 md:mt-7 md:p-5">
-				<div className="mb-2 flex items-center justify-between md:mb-3">
-					<h2 className="display-title text-xl font-bold md:text-2xl">
+			<Card className="mt-5 md:mt-7">
+				<CardHeader>
+					<CardTitle className="text-xl font-semibold text-foreground md:text-2xl">
+						De onde vieram as entradas
+					</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<ul className="divide-y divide-border">
+						{incomeByPaymentMethod.map((item) => (
+							<li
+								className="flex justify-between py-2"
+								key={item.paymentMethodId ?? "none"}
+							>
+								<span className="text-foreground">{item.name}</span>
+								<strong className="text-foreground">
+									{moneyFromCents(item.amountCents)}
+								</strong>
+							</li>
+						))}
+					</ul>
+				</CardContent>
+			</Card>
+			<Card className="mt-5 md:mt-7">
+				<CardHeader>
+					<CardTitle className="text-xl font-semibold text-foreground md:text-2xl">
 						Últimos lançamentos
-					</h2>
-					<a className="text-sm font-bold" href="/transactions">
-						Ver histórico
-					</a>
-				</div>
-				<TransactionRows items={recentTransactions} onView={onView} />
-			</FinanceCard>
+					</CardTitle>
+					<CardAction>
+						<Button
+							asChild
+							className="h-auto p-0 font-bold text-foreground hover:text-foreground"
+							variant="link"
+						>
+							<Link to="/transactions">Ver histórico</Link>
+						</Button>
+					</CardAction>
+				</CardHeader>
+				<CardContent>
+					<TransactionRows items={recentTransactions} onView={onView} />
+				</CardContent>
+			</Card>
 		</>
 	);
 }
@@ -473,21 +495,27 @@ function Summary({
 		tone === "income"
 			? "text-income"
 			: tone === "expense"
-				? "text-destructive"
+				? "text-expense"
 				: "text-foreground";
 	return (
-		<FinanceCard className={compact ? "p-3 md:p-5" : "p-5"}>
-			<p className="island-kicker">{label}</p>
-			<p
-				className={cn(
-					"font-extrabold",
-					compact ? "mt-1 text-lg md:mt-2 md:text-2xl" : "mt-2 text-2xl",
-					className,
-				)}
-			>
-				{moneyFromCents(value)}
-			</p>
-		</FinanceCard>
+		<Card size={compact ? "sm" : "default"}>
+			<CardHeader>
+				<CardDescription className="font-medium tracking-widest uppercase">
+					{label}
+				</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<p
+					className={cn(
+						"font-semibold",
+						compact ? "text-lg md:text-2xl" : "text-2xl",
+						className,
+					)}
+				>
+					{moneyFromCents(value)}
+				</p>
+			</CardContent>
+		</Card>
 	);
 }
 
@@ -1593,10 +1621,10 @@ function Payments() {
 								>
 									<div className="flex justify-between gap-3">
 										<div>
-											<h2 className="font-bold">
+											<CardTitle className="font-semibold text-foreground">
 												{invoice.paymentMethod.name}
 												{invoice.paymentMethod.archivedAt ? " (arquivado)" : ""}
-											</h2>
+											</CardTitle>
 											<p className="text-xs text-muted-foreground">
 												Ciclo até {invoice.cycleClosingDate} · vence em{" "}
 												{invoice.cycleDueDate}
@@ -1711,7 +1739,9 @@ function Profile({
 						</span>
 					)}
 					<div className="min-w-0">
-						<h2 className="truncate text-lg font-bold">{userName}</h2>
+						<CardTitle className="truncate text-lg font-semibold text-foreground">
+							{userName}
+						</CardTitle>
 						<p className="truncate text-sm text-muted-foreground">
 							{user?.email || "E-mail não disponível"}
 						</p>
@@ -1807,15 +1837,17 @@ function ExpenseCategoryTreeNodeRow({
 				style={{ paddingLeft: `${depth * 1.25}rem` }}
 			>
 				{hasChildren ? (
-					<button
+					<Button
 						aria-expanded={expanded}
 						aria-label={`${expanded ? "Recolher" : "Expandir"} ${node.category.name}`}
-						className="grid size-6 place-items-center rounded text-sm text-muted-foreground hover:bg-muted"
+						className="text-muted-foreground"
 						onClick={() => setExpanded((value) => !value)}
+						size="icon-xs"
 						type="button"
+						variant="ghost"
 					>
 						{expanded ? "−" : "+"}
-					</button>
+					</Button>
 				) : (
 					<span className="size-6" />
 				)}
@@ -1969,9 +2001,9 @@ function Reports() {
 							<p className="island-kicker">
 								{result.data.period.startDate} a {result.data.period.endDate}
 							</p>
-							<h2 className="display-title mt-1 text-2xl font-bold">
+							<CardTitle className="mt-1 text-2xl font-semibold text-foreground">
 								Despesas por categoria
-							</h2>
+							</CardTitle>
 							<ExpenseCategoryTree
 								nodes={
 									result.data.expenseCategoryTree as ExpenseCategoryTreeNode[]
@@ -1980,17 +2012,19 @@ function Reports() {
 						</div>
 					</FinanceCard>
 					<FinanceCard className="mt-7 p-5">
-						<h2 className="display-title text-2xl font-bold">
+						<CardTitle className="text-2xl font-semibold text-foreground">
 							Entradas por forma de pagamento
-						</h2>
+						</CardTitle>
 						<ul className="mt-3 divide-y divide-border">
 							{result.data.incomeByPaymentMethod.map((item) => (
 								<li
 									className="flex justify-between py-2"
 									key={item.paymentMethodId ?? "none"}
 								>
-									<span>{item.name}</span>
-									<strong>{moneyFromCents(item.amountCents)}</strong>
+									<span className="text-foreground">{item.name}</span>
+									<strong className="text-foreground">
+										{moneyFromCents(item.amountCents)}
+									</strong>
 								</li>
 							))}
 						</ul>

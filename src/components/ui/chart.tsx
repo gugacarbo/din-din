@@ -1,5 +1,3 @@
-"use client";
-
 import * as React from "react";
 import type { TooltipValueType } from "recharts";
 import * as RechartsPrimitive from "recharts";
@@ -92,7 +90,6 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
 
 	return (
 		<style
-			// biome-ignore lint/security/noDangerouslySetInnerHtml: This shadcn component emits CSS variables from the chart configuration.
 			dangerouslySetInnerHTML={{
 				__html: Object.entries(THEMES)
 					.map(
@@ -192,7 +189,7 @@ function ChartTooltipContent({
 	return (
 		<div
 			className={cn(
-				"grid min-w-[8rem] items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl",
+				"grid min-w-32 items-start gap-1.5 rounded-none border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl",
 				className,
 			)}
 		>
@@ -207,7 +204,7 @@ function ChartTooltipContent({
 
 						return (
 							<div
-								key={`${key}-${String(item.value)}`}
+								key={index}
 								className={cn(
 									"flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground",
 									indicator === "dot" && "items-center",
@@ -299,13 +296,13 @@ function ChartLegendContent({
 		>
 			{payload
 				.filter((item) => item.type !== "none")
-				.map((item) => {
+				.map((item, index) => {
 					const key = `${nameKey ?? item.dataKey ?? "value"}`;
 					const itemConfig = getPayloadConfigFromPayload(config, item, key);
 
 					return (
 						<div
-							key={`${key}-${item.color ?? "default"}`}
+							key={index}
 							className={cn(
 								"flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground",
 							)}
@@ -328,7 +325,6 @@ function ChartLegendContent({
 	);
 }
 
-// Helper to extract item config from a payload.
 function getPayloadConfigFromPayload(
 	config: ChartConfig,
 	payload: unknown,

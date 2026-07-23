@@ -11,7 +11,9 @@ export function AdminSupportPage() {
 		return <p role="alert">Não foi possível carregar os relatos.</p>;
 	return (
 		<section>
-			<h1 className="text-2xl font-semibold">Relatos de suporte</h1>
+			<h1 className="text-2xl font-semibold text-foreground">
+				Relatos de suporte
+			</h1>
 			<div className="mt-4 grid gap-3">
 				{reports.data.items.map((report) => (
 					<Card key={report.report_id}>

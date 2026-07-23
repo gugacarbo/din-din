@@ -35,7 +35,9 @@ function ReportPage() {
 	if (report.error) return <p role="alert">Relato indisponível.</p>;
 	return (
 		<section className="max-w-2xl">
-			<h1 className="text-2xl font-semibold">Relato de suporte</h1>
+			<h1 className="text-2xl font-semibold text-foreground">
+				Relato de suporte
+			</h1>
 			<p className="mt-2 text-muted-foreground">
 				{report.data.category} · {report.data.status} · {report.data.attempts}{" "}
 				tentativas

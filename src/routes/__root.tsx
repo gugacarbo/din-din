@@ -8,6 +8,8 @@ import {
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { PwaRegistration } from "#/components/pwa-registration.tsx";
+import { Toaster } from "#/components/ui/sonner.tsx";
+import { TooltipProvider } from "#/components/ui/tooltip";
 import { inviteFragmentScript } from "#/lib/admin-invite-client.ts";
 import { installSupportDiagnostics } from "#/lib/support-diagnostics.ts";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
@@ -100,7 +102,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				<ScriptOnce>{themeScript}</ScriptOnce>
 				<ScriptOnce>{inviteFragmentScript}</ScriptOnce>
 				<SupportDiagnosticsBootstrap />
-				{children}
+				<TooltipProvider>{children}</TooltipProvider>
+				<Toaster />
 				<PwaRegistration />
 				<TanStackDevtools
 					config={{

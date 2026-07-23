@@ -4,6 +4,7 @@ import html2canvas from "html2canvas";
 import { Camera, CircleHelp, Trash2 } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
+import { toast } from "sonner";
 import { Button } from "#/components/ui/button.tsx";
 import {
 	Dialog,
@@ -51,7 +52,6 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 	const [open, setOpen] = useState(false);
 	const [screenshot, setScreenshot] = useState<File | null>(null);
 	const [preview, setPreview] = useState<string | null>(null);
-	const [notice, setNotice] = useState<string | null>(null);
 	const requestId = useRef(crypto.randomUUID());
 	const frozenAttempt = useRef<FrozenAttempt | null>(null);
 	const titleId = useId();
@@ -97,7 +97,7 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 			}
 		},
 		onSuccess: () => {
-			setNotice("Recebemos sua mensagem");
+			toast.success("Recebemos sua mensagem");
 			form.reset();
 			setScreenshot(null);
 			if (preview) URL.revokeObjectURL(preview);
@@ -107,6 +107,7 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 			setOpen(false);
 		},
 		onError: (error) => {
+			toast.error(error.message);
 			if (!(error as { ambiguous?: boolean }).ambiguous) {
 				requestId.current = crypto.randomUUID();
 				frozenAttempt.current = null;
@@ -143,7 +144,7 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 			setPreview(URL.createObjectURL(blob));
 			setScreenshot(new File([blob], "suporte.webp", { type: "image/webp" }));
 		} catch (error) {
-			setNotice(
+			toast.error(
 				error instanceof Error
 					? error.message
 					: "Não foi possível tirar o print.",
@@ -153,147 +154,127 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 		}
 	}
 	return (
-		<>
-			{notice && (
-				<p
-					className="fixed right-4 bottom-4 z-60 rounded-md bg-primary px-4 py-3 text-sm font-medium text-primary-foreground"
-					role="status"
+		<Dialog
+			onOpenChange={(next) => {
+				setOpen(next);
+			}}
+			open={open}
+		>
+			<DialogTrigger asChild>
+				<Button
+					aria-label="Ajuda e suporte"
+					size="icon"
+					type="button"
+					variant="ghost"
 				>
-					{notice}
-				</p>
-			)}
-			<Dialog
-				onOpenChange={(next) => {
-					setOpen(next);
-					if (next) setNotice(null);
-				}}
-				open={open}
+					<CircleHelp />
+					<span className="sr-only">Ajuda e suporte</span>
+				</Button>
+			</DialogTrigger>
+			<DialogContent
+				aria-labelledby={titleId}
+				data-support-capture-exclude
+				data-support-dialog
 			>
-				<DialogTrigger asChild>
-					<Button
-						aria-label="Ajuda e suporte"
-						size="icon"
-						type="button"
-						variant="ghost"
-					>
-						<CircleHelp />
-						<span className="sr-only">Ajuda e suporte</span>
-					</Button>
-				</DialogTrigger>
-				<DialogContent
-					aria-labelledby={titleId}
-					data-support-capture-exclude
-					data-support-dialog
+				<DialogHeader>
+					<DialogTitle id={titleId}>Ajuda e suporte</DialogTitle>
+					<DialogDescription>
+						Envie uma mensagem com dados técnicos limitados: até 50 logs e 50
+						requests sem conteúdos, credenciais ou URLs com parâmetros.
+					</DialogDescription>
+				</DialogHeader>
+				<form
+					className="grid gap-4"
+					onSubmit={form.handleSubmit((values) => submission.mutate(values))}
 				>
-					<DialogHeader>
-						<DialogTitle id={titleId}>Ajuda e suporte</DialogTitle>
-						<DialogDescription>
-							Envie uma mensagem com dados técnicos limitados: até 50 logs e 50
-							requests sem conteúdos, credenciais ou URLs com parâmetros.
-						</DialogDescription>
-					</DialogHeader>
-					<form
-						className="grid gap-4"
-						onSubmit={form.handleSubmit((values) => submission.mutate(values))}
+					<Field
+						data-invalid={Boolean(form.formState.errors.category) || undefined}
 					>
-						<Field
-							data-invalid={
-								Boolean(form.formState.errors.category) || undefined
-							}
-						>
-							<FieldLabel>Categoria</FieldLabel>
-							<Controller
-								control={form.control}
-								name="category"
-								render={({ field }) => (
-									<Select onValueChange={field.onChange} value={field.value}>
-										<SelectTrigger
-											aria-invalid={Boolean(form.formState.errors.category)}
-										>
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{supportCategories.map((category) => (
-												<SelectItem key={category} value={category}>
-													{supportCategoryLabels[category]}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								)}
-							/>
-							<FieldError errors={[form.formState.errors.category]} />
-						</Field>
-						<Field
-							data-invalid={Boolean(form.formState.errors.message) || undefined}
-						>
-							<FieldLabel htmlFor="support-message">Mensagem</FieldLabel>
-							<Textarea
-								aria-invalid={Boolean(form.formState.errors.message)}
-								id="support-message"
-								maxLength={4000}
-								placeholder="Conte o que aconteceu e como podemos ajudar."
-								{...form.register("message")}
-							/>
-							<FieldError errors={[form.formState.errors.message]} />
-						</Field>
-						<div className="grid gap-2">
-							<Button
-								disabled={submission.isPending || offline}
-								onClick={takeScreenshot}
-								type="button"
-								variant="outline"
-							>
-								<Camera /> {screenshot ? "Tirar novamente" : "Tirar print"}
-							</Button>
-							{preview && (
-								<div className="grid gap-2">
-									<img
-										alt="Preview do print de suporte"
-										className="max-h-40 rounded border object-contain"
-										src={preview}
-									/>
-									<Button
-										onClick={() => {
-											URL.revokeObjectURL(preview);
-											setPreview(null);
-											setScreenshot(null);
-										}}
-										type="button"
-										variant="ghost"
+						<FieldLabel>Categoria</FieldLabel>
+						<Controller
+							control={form.control}
+							name="category"
+							render={({ field }) => (
+								<Select onValueChange={field.onChange} value={field.value}>
+									<SelectTrigger
+										aria-invalid={Boolean(form.formState.errors.category)}
 									>
-										<Trash2 /> Remover
-									</Button>
-								</div>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										{supportCategories.map((category) => (
+											<SelectItem key={category} value={category}>
+												{supportCategoryLabels[category]}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
 							)}
-						</div>
-						{submission.error && (
+						/>
+						<FieldError errors={[form.formState.errors.category]} />
+					</Field>
+					<Field
+						data-invalid={Boolean(form.formState.errors.message) || undefined}
+					>
+						<FieldLabel htmlFor="support-message">Mensagem</FieldLabel>
+						<Textarea
+							aria-invalid={Boolean(form.formState.errors.message)}
+							id="support-message"
+							maxLength={4000}
+							placeholder="Conte o que aconteceu e como podemos ajudar."
+							{...form.register("message")}
+						/>
+						<FieldError errors={[form.formState.errors.message]} />
+					</Field>
+					<div className="grid gap-2">
+						<Button
+							disabled={submission.isPending || offline}
+							onClick={takeScreenshot}
+							type="button"
+							variant="outline"
+						>
+							<Camera /> {screenshot ? "Tirar novamente" : "Tirar print"}
+						</Button>
+						{preview && (
 							<div className="grid gap-2">
-								<p
-									className="text-sm font-medium text-destructive"
-									role="alert"
+								<img
+									alt="Preview do print de suporte"
+									className="max-h-40 rounded border object-contain"
+									src={preview}
+								/>
+								<Button
+									onClick={() => {
+										URL.revokeObjectURL(preview);
+										setPreview(null);
+										setScreenshot(null);
+									}}
+									type="button"
+									variant="ghost"
 								>
-									{submission.error.message}
-								</p>
-								{(submission.error as { ambiguous?: boolean }).ambiguous && (
-									<Button
-										onClick={startNewAttempt}
-										type="button"
-										variant="ghost"
-									>
-										Criar novo relato
-									</Button>
-								)}
+									<Trash2 /> Remover
+								</Button>
 							</div>
 						)}
-						<DialogFooter>
-							<Button disabled={offline || submission.isPending} type="submit">
-								{submission.isPending ? "Enviando…" : "Enviar mensagem"}
-							</Button>
-						</DialogFooter>
-					</form>
-				</DialogContent>
-			</Dialog>
-		</>
+					</div>
+					{submission.error && (
+						<div className="grid gap-2">
+							<p className="text-sm font-medium text-destructive" role="alert">
+								{submission.error.message}
+							</p>
+							{(submission.error as { ambiguous?: boolean }).ambiguous && (
+								<Button onClick={startNewAttempt} type="button" variant="ghost">
+									Criar novo relato
+								</Button>
+							)}
+						</div>
+					)}
+					<DialogFooter>
+						<Button disabled={offline || submission.isPending} type="submit">
+							{submission.isPending ? "Enviando…" : "Enviar mensagem"}
+						</Button>
+					</DialogFooter>
+				</form>
+			</DialogContent>
+		</Dialog>
 	);
 }

@@ -1,3 +1,5 @@
+import { Button } from "#/components/ui/button.tsx";
+
 type GitHubIssueReferenceProps = {
 	issueNumber: number | null;
 	issueUrl: string | null;
@@ -34,13 +36,14 @@ export function GitHubIssueReference({
 		return null;
 
 	return (
-		<a
-			className="text-sm underline"
-			href={issueUrl}
-			rel="noreferrer"
-			target="_blank"
+		<Button
+			asChild
+			className="h-auto p-0 text-foreground hover:text-foreground"
+			variant="link"
 		>
-			Issue #{issueNumber}
-		</a>
+			<a href={issueUrl} rel="noreferrer" target="_blank">
+				Issue #{issueNumber}
+			</a>
+		</Button>
 	);
 }

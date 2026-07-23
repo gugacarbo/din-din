@@ -3,8 +3,8 @@ import { useMutation } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 import { z } from "zod";
-import { Alert, AlertDescription } from "#/components/ui/alert.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Card, CardContent } from "#/components/ui/card.tsx";
 import { Field, FieldError, FieldLabel } from "#/components/ui/field.tsx";
@@ -25,7 +25,6 @@ export const Route = createFileRoute("/admin/convite")({
 });
 
 export function InvitePage() {
-	const [error, setError] = useState<string | null>(null);
 	const [token, setToken] = useState(() =>
 		typeof window === "undefined" ? undefined : readAdminInviteToken(),
 	);
@@ -61,7 +60,6 @@ export function InvitePage() {
 		void conclude.mutateAsync().catch(() => undefined);
 	}, [conclude, token]);
 	async function submit(values: EmailValues) {
-		setError(null);
 		try {
 			await prepare.mutateAsync(values);
 			preparingOAuth.current = true;
@@ -76,7 +74,7 @@ export function InvitePage() {
 					result.error.message ?? "Não foi possível iniciar o login.",
 				);
 		} catch (cause) {
-			setError(
+			toast.error(
 				cause instanceof Error
 					? cause.message
 					: "Não foi possível preparar o convite.",
@@ -87,7 +85,9 @@ export function InvitePage() {
 		<main className="page-wrap grid min-h-dvh place-items-center py-8">
 			<Card className="w-full max-w-md">
 				<CardContent className="p-6">
-					<h1 className="text-xl font-semibold">Convite de administrador</h1>
+					<h1 className="text-xl font-semibold text-foreground">
+						Convite de administrador
+					</h1>
 					<p className="mt-2 text-sm text-muted-foreground">
 						Confirme o e-mail convidado e entre com Google.
 					</p>
@@ -113,11 +113,6 @@ export function InvitePage() {
 							Continuar com Google
 						</Button>
 					</form>
-					{error && (
-						<Alert className="mt-4" variant="destructive">
-							<AlertDescription>{error}</AlertDescription>
-						</Alert>
-					)}
 					{!token && conclude.isSuccess && (
 						<p className="mt-4 text-sm">Acesso de administrador concedido.</p>
 					)}

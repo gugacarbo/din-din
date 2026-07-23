@@ -1,8 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 import { z } from "zod";
-import { Alert, AlertDescription } from "#/components/ui/alert.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Field, FieldError, FieldLabel } from "#/components/ui/field.tsx";
 import { Input } from "#/components/ui/input.tsx";
@@ -38,7 +38,9 @@ export function AdminSupportPublishDialog({ reportId }: { reportId: string }) {
 		},
 		onSuccess: async () => {
 			await queryClient.invalidateQueries({ queryKey: ["admin", "support"] });
+			toast.success("Issue publicada.");
 		},
+		onError: (error) => toast.error(error.message),
 	});
 	return (
 		<form
@@ -81,11 +83,6 @@ export function AdminSupportPublishDialog({ reportId }: { reportId: string }) {
 			>
 				Publicar issue
 			</Button>
-			{publish.error && (
-				<Alert variant="destructive">
-					<AlertDescription>{publish.error.message}</AlertDescription>
-				</Alert>
-			)}
 		</form>
 	);
 }

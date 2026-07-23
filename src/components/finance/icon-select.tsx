@@ -260,22 +260,23 @@ function IconGrid({
 
 				return (
 					<li key={icon}>
-						<button
+						<Button
 							aria-label={detail.label}
 							aria-pressed={isSelected}
 							className={cn(
-								"flex min-h-22 w-full flex-col items-center justify-center gap-1 rounded-xl border px-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+								"min-h-22 w-full flex-col gap-1 rounded-xl px-1 text-muted-foreground",
 								isSelected &&
-									"border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+									"hover:bg-primary/90 hover:text-primary-foreground",
 							)}
 							onClick={() => onValueChange(icon)}
 							type="button"
+							variant={isSelected ? "default" : "outline"}
 						>
 							{Icon ? <Icon aria-hidden className="size-8" /> : null}
 							<span className="min-h-7 w-full break-words text-center text-[10px] leading-tight">
 								{detail.label}
 							</span>
-						</button>
+						</Button>
 					</li>
 				);
 			})}

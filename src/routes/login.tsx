@@ -1,13 +1,19 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { useState } from "react";
+import { toast } from "sonner";
 import { z } from "zod";
 
-import { Alert, AlertDescription } from "#/components/ui/alert.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import { Card, CardContent } from "#/components/ui/card.tsx";
+import {
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "#/components/ui/card.tsx";
 import { Field, FieldError, FieldLabel } from "#/components/ui/field.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import { authClient } from "#/lib/auth-client.ts";
@@ -34,7 +40,6 @@ export const Route = createFileRoute("/login")({
 });
 
 export function Login() {
-	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 	const form = useForm<DevLoginValues>({
 		defaultValues: { email: "" },
@@ -58,23 +63,21 @@ export function Login() {
 	});
 	async function login() {
 		setLoading(true);
-		setError(null);
 		const result = await authClient.signIn.social({
 			provider: "google",
 			callbackURL: "/",
 		});
 		if (result.error) {
-			setError(result.error.message ?? "Não foi possível iniciar o login.");
+			toast.error(result.error.message ?? "Não foi possível iniciar o login.");
 			setLoading(false);
 		}
 	}
 	async function loginWithEmail({ email }: DevLoginValues) {
-		setError(null);
 		try {
 			await devLogin.mutateAsync({ email });
 			window.location.assign("/");
 		} catch (cause) {
-			setError(
+			toast.error(
 				cause instanceof Error
 					? cause.message
 					: "Não foi possível entrar com este e-mail.",
@@ -83,15 +86,17 @@ export function Login() {
 	}
 	return (
 		<main className="page-wrap grid min-h-dvh place-items-center py-8">
-			<Card className="island-shell w-full max-w-md rounded-3xl py-0 shadow-none">
-				<CardContent className="p-8 text-center">
+			<Card className="w-full max-w-md">
+				<CardHeader className="text-center">
 					<p className="island-kicker">finanças pessoais</p>
-					<h1 className="display-title mt-2 text-5xl font-bold text-foreground">
+					<CardTitle className="display-title text-5xl font-bold text-foreground">
 						Din Din
-					</h1>
-					<p className="mt-4 text-muted-foreground">
+					</CardTitle>
+					<CardDescription>
 						Clareza para cuidar do seu dinheiro, um lançamento de cada vez.
-					</p>
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
 					<Button
 						className="mt-8 w-full"
 						disabled={loading}
@@ -132,11 +137,6 @@ export function Login() {
 								Entrar com e-mail (dev)
 							</Button>
 						</form>
-					)}
-					{error && (
-						<Alert className="mt-4 text-left" variant="destructive">
-							<AlertDescription>{error}</AlertDescription>
-						</Alert>
 					)}
 				</CardContent>
 			</Card>

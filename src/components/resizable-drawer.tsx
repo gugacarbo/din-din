@@ -16,8 +16,7 @@ const drawerMinimumHeight = (viewportHeight: number) =>
 	Math.round(viewportHeight * 0.72);
 const drawerCloseThreshold = (viewportHeight: number) =>
 	Math.max(180, Math.round(viewportHeight * 0.28));
-const interactiveDrawerSelector =
-	"button, input, textarea, select, a, label, [role='button'], [role='combobox'], [role='switch']";
+const drawerDragThreshold = 8;
 
 function clampDrawerHeight(height: number, viewportHeight: number) {
 	return Math.min(
@@ -45,6 +44,7 @@ function ResizableDrawer({
 }) {
 	const [drawerHeight, setDrawerHeight] = useState(0);
 	const dragStart = useRef<{
+		dragging: boolean;
 		pointerId: number;
 		scrollTop: number;
 		startHeight: number;
@@ -80,20 +80,15 @@ function ResizableDrawer({
 			>
 				<div
 					className={cn(
-						"min-h-0 flex-1 touch-none overflow-x-hidden",
+						"min-h-0 flex-1 touch-pan-x touch-pinch-zoom overflow-x-hidden",
 						canScroll ? "overflow-y-auto" : "overflow-y-hidden",
 					)}
 					onPointerCancel={() => {
 						dragStart.current = null;
 					}}
 					onPointerDown={(event) => {
-						if (
-							event.target instanceof Element &&
-							event.target.closest(interactiveDrawerSelector)
-						)
-							return;
-						event.currentTarget.setPointerCapture(event.pointerId);
 						dragStart.current = {
+							dragging: false,
 							pointerId: event.pointerId,
 							scrollTop: event.currentTarget.scrollTop,
 							startHeight: drawerValue,
@@ -103,8 +98,13 @@ function ResizableDrawer({
 					onPointerMove={(event) => {
 						const start = dragStart.current;
 						if (!start || start.pointerId !== event.pointerId) return;
-						event.preventDefault();
 						const deltaY = event.clientY - start.startY;
+						if (!start.dragging) {
+							if (Math.abs(deltaY) < drawerDragThreshold) return;
+							start.dragging = true;
+							event.currentTarget.setPointerCapture(event.pointerId);
+						}
+						event.preventDefault();
 						if (start.startHeight >= drawerMaxHeight && deltaY < 0) {
 							event.currentTarget.scrollTop = start.scrollTop - deltaY;
 							return;
@@ -119,8 +119,10 @@ function ResizableDrawer({
 					onPointerUp={(event) => {
 						const start = dragStart.current;
 						if (!start || start.pointerId !== event.pointerId) return;
-						event.currentTarget.releasePointerCapture(event.pointerId);
+						if (event.currentTarget.hasPointerCapture(event.pointerId))
+							event.currentTarget.releasePointerCapture(event.pointerId);
 						dragStart.current = null;
+						if (!start.dragging) return;
 						const effectiveDownwardDistance =
 							event.clientY - start.startY - start.scrollTop;
 						if (

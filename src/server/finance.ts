@@ -5,12 +5,22 @@ import { database } from "#/env";
 import {
 	type CategoryDto,
 	createFinanceService,
+	type FinanceActivityDto,
 	financeSchemas,
+	type InvoiceDto,
+	type InvoicePaymentDto,
 	type PaymentMethodDto,
 	type TransactionDto,
 } from "#/server/finance-service";
 
-export type { CategoryDto, PaymentMethodDto, TransactionDto };
+export type {
+	CategoryDto,
+	FinanceActivityDto,
+	InvoiceDto,
+	InvoicePaymentDto,
+	PaymentMethodDto,
+	TransactionDto,
+};
 
 async function service() {
 	return createFinanceService({ d1: database, headers: getRequestHeaders() });
@@ -64,6 +74,14 @@ export const listInvoices = createServerFn({ method: "GET" }).handler(
 	async () => (await service()).listInvoices(),
 );
 
+export const saveInvoicePayment = createServerFn({ method: "POST" })
+	.validator(financeSchemas.invoicePaymentInput)
+	.handler(async ({ data }) => (await service()).saveInvoicePayment(data));
+
+export const removeInvoicePayment = createServerFn({ method: "POST" })
+	.validator(financeSchemas.removeInvoicePayment)
+	.handler(async ({ data }) => (await service()).removeInvoicePayment(data));
+
 export const createTransaction = createServerFn({ method: "POST" })
 	.validator(financeSchemas.transactionInput)
 	.handler(async ({ data }) => (await service()).createTransaction(data));
@@ -83,6 +101,10 @@ export const restoreTransaction = createServerFn({ method: "POST" })
 export const listTransactions = createServerFn({ method: "GET" })
 	.validator(financeSchemas.listTransactions)
 	.handler(async ({ data }) => (await service()).listTransactions(data));
+
+export const listActivity = createServerFn({ method: "GET" })
+	.validator(financeSchemas.listActivity)
+	.handler(async ({ data }) => (await service()).listActivity(data));
 
 export const getDashboard = createServerFn({ method: "GET" }).handler(
 	async () => (await service()).getDashboard(),

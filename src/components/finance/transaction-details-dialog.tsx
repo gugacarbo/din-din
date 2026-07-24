@@ -103,14 +103,32 @@ export function TransactionDetailsDialog({
 				{transaction.description && (
 					<Detail label="Descrição">{transaction.description}</Detail>
 				)}
-				{transaction.invoiceCycleClosingDate &&
-					transaction.invoiceCycleDueDate && (
-						<Detail label="Fatura">
-							Fecha em {transaction.invoiceCycleClosingDate} · vence em{" "}
-							{transaction.invoiceCycleDueDate}
-						</Detail>
-					)}
+				{transaction.installmentPlan && (
+					<Detail label="Faturas">
+						{transaction.installmentPlan.installmentCount > 1
+							? `${transaction.installmentPlan.installmentCount} parcelas · primeira em ${transaction.installmentPlan.firstReferenceMonth}`
+							: `Fatura ${transaction.installmentPlan.firstReferenceMonth}`}
+					</Detail>
+				)}
 			</dl>
+			{transaction.installmentPlan?.installmentCount &&
+				transaction.installmentPlan.installmentCount > 1 && (
+					<ul className="divide-y rounded-xl border px-4">
+						{transaction.installmentPlan.installments.map((installment) => (
+							<li
+								className="flex justify-between py-2 text-sm"
+								key={installment.number}
+							>
+								<span>
+									{installment.number}/
+									{transaction.installmentPlan?.installmentCount} ·{" "}
+									{installment.referenceMonth}
+								</span>
+								<strong>{money.format(installment.amountCents / 100)}</strong>
+							</li>
+						))}
+					</ul>
+				)}
 		</>
 	);
 	if (isMobile)

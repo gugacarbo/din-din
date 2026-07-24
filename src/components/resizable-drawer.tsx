@@ -11,9 +11,10 @@ import {
 import { cn } from "#/lib/utils.ts";
 
 const drawerInitialHeight = (viewportHeight: number) =>
-	Math.round(viewportHeight * 0.9);
+	Math.round(viewportHeight * 0.72);
 const drawerMinimumHeight = (viewportHeight: number) =>
 	Math.round(viewportHeight * 0.72);
+const drawerCloseThreshold = 96;
 
 function clampDrawerHeight(height: number, viewportHeight: number) {
 	return Math.min(
@@ -48,6 +49,7 @@ function ResizableDrawer({
 	const drawerMaxHeight =
 		typeof window === "undefined" ? 0 : window.innerHeight;
 	const drawerValue = drawerHeight || drawerInitialHeight(drawerMaxHeight);
+	const canScroll = drawerValue >= drawerMaxHeight;
 
 	useEffect(() => {
 		if (!open) return;
@@ -73,49 +75,83 @@ function ResizableDrawer({
 				style={{ height: `${drawerValue}px` }}
 			>
 				<div
-					aria-label="Ajustar altura do drawer"
-					aria-valuemax={drawerMaxHeight}
-					aria-valuemin={drawerMinimumHeight(drawerMaxHeight)}
-					aria-valuenow={drawerValue}
-					className="mx-auto flex h-10 w-16 touch-none cursor-ns-resize items-center justify-center"
-					onKeyDown={(event) => {
-						if (event.key === "ArrowUp") {
-							event.preventDefault();
-							resizeDrawer(drawerValue + 64);
+					className={cn(
+						"min-h-0 flex-1 overflow-x-hidden",
+						canScroll ? "overflow-y-auto" : "overflow-y-hidden",
+					)}
+					onWheel={(event) => {
+						if (canScroll || event.deltaY === 0) return;
+						event.preventDefault();
+						if (event.deltaY < 0) {
+							resizeDrawer(drawerValue + Math.abs(event.deltaY));
+							return;
 						}
-						if (event.key === "ArrowDown") {
-							event.preventDefault();
-							resizeDrawer(drawerValue - 64);
+						const height = drawerValue - event.deltaY;
+						if (
+							height <
+							drawerMinimumHeight(drawerMaxHeight) - drawerCloseThreshold
+						) {
+							onOpenChange(false);
+							return;
 						}
+						resizeDrawer(height);
 					}}
-					onPointerDown={(event) => {
-						event.currentTarget.setPointerCapture(event.pointerId);
-						dragStart.current = {
-							pointerId: event.pointerId,
-							startHeight: drawerValue,
-							startY: event.clientY,
-						};
-					}}
-					onPointerMove={(event) => {
-						const start = dragStart.current;
-						if (!start || start.pointerId !== event.pointerId) return;
-						resizeDrawer(start.startHeight + start.startY - event.clientY);
-					}}
-					onPointerUp={(event) => {
-						if (dragStart.current?.pointerId !== event.pointerId) return;
-						event.currentTarget.releasePointerCapture(event.pointerId);
-						dragStart.current = null;
-					}}
-					role="slider"
-					tabIndex={0}
 				>
-					<span className="h-1.5 w-12 rounded-full bg-muted" />
+					<div className="flex min-h-full flex-col">
+						<div
+							aria-label="Ajustar altura do drawer"
+							aria-valuemax={drawerMaxHeight}
+							aria-valuemin={drawerMinimumHeight(drawerMaxHeight)}
+							aria-valuenow={drawerValue}
+							className="mx-auto flex h-10 w-16 touch-none cursor-ns-resize items-center justify-center"
+							onKeyDown={(event) => {
+								if (event.key === "ArrowUp") {
+									event.preventDefault();
+									resizeDrawer(drawerValue + 64);
+								}
+								if (event.key === "ArrowDown") {
+									event.preventDefault();
+									resizeDrawer(drawerValue - 64);
+								}
+							}}
+							onPointerDown={(event) => {
+								event.currentTarget.setPointerCapture(event.pointerId);
+								dragStart.current = {
+									pointerId: event.pointerId,
+									startHeight: drawerValue,
+									startY: event.clientY,
+								};
+							}}
+							onPointerMove={(event) => {
+								const start = dragStart.current;
+								if (!start || start.pointerId !== event.pointerId) return;
+								resizeDrawer(start.startHeight + start.startY - event.clientY);
+							}}
+							onPointerUp={(event) => {
+								const start = dragStart.current;
+								if (!start || start.pointerId !== event.pointerId) return;
+								event.currentTarget.releasePointerCapture(event.pointerId);
+								dragStart.current = null;
+								const height = start.startHeight + start.startY - event.clientY;
+								if (
+									height <
+									drawerMinimumHeight(drawerMaxHeight) - drawerCloseThreshold
+								) {
+									onOpenChange(false);
+								}
+							}}
+							role="slider"
+							tabIndex={0}
+						>
+							<span className="h-1.5 w-12 rounded-full bg-muted" />
+						</div>
+						<SheetHeader className="p-0 text-left">
+							<SheetTitle>{title}</SheetTitle>
+							<SheetDescription>{description}</SheetDescription>
+						</SheetHeader>
+						<div className="flex-1">{children}</div>
+					</div>
 				</div>
-				<SheetHeader className="p-0 text-left">
-					<SheetTitle>{title}</SheetTitle>
-					<SheetDescription>{description}</SheetDescription>
-				</SheetHeader>
-				<div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
 				{footer && <SheetFooter className="p-0 pt-2">{footer}</SheetFooter>}
 			</SheetContent>
 		</Sheet>

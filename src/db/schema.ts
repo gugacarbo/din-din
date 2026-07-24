@@ -408,12 +408,11 @@ export const transactions = sqliteTable(
 		currency: text("currency").notNull().default("BRL"),
 		occurredAt: text("occurred_at").notNull(),
 		description: text("description"),
-		invoiceCycleClosingDate: text("invoice_cycle_closing_date"),
-		invoiceCycleDueDate: text("invoice_cycle_due_date"),
 		archivedAt: integer("archived_at", { mode: "number" }),
 		...financeTimestamps,
 	},
 	(table) => [
+		uniqueIndex("transactions_id_user_unique").on(table.id, table.userId),
 		index("transactions_history_index").on(
 			table.userId,
 			table.occurredAt,
@@ -424,12 +423,6 @@ export const transactions = sqliteTable(
 			table.userId,
 			table.archivedAt,
 			table.id,
-		),
-		index("transactions_payment_cycle_index").on(
-			table.userId,
-			table.paymentMethodId,
-			table.invoiceCycleClosingDate,
-			table.invoiceCycleDueDate,
 		),
 		foreignKey({
 			columns: [table.categoryId, table.userId, table.type],
@@ -461,8 +454,102 @@ export const transactions = sqliteTable(
 	],
 );
 
+export const transactionInstallments = sqliteTable(
+	"transaction_installments",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id").notNull(),
+		transactionId: text("transaction_id").notNull(),
+		paymentMethodId: text("payment_method_id").notNull(),
+		installmentNumber: integer("installment_number").notNull(),
+		installmentCount: integer("installment_count").notNull(),
+		amountCents: integer("amount_cents").notNull(),
+		referenceMonth: text("reference_month").notNull(),
+		...financeTimestamps,
+	},
+	(table) => [
+		uniqueIndex("transaction_installments_transaction_number_unique").on(
+			table.transactionId,
+			table.installmentNumber,
+		),
+		index("transaction_installments_invoice_index").on(
+			table.userId,
+			table.paymentMethodId,
+			table.referenceMonth,
+		),
+		foreignKey({
+			columns: [table.transactionId, table.userId],
+			foreignColumns: [transactions.id, transactions.userId],
+			name: "transaction_installments_transaction_owner_fk",
+		}).onDelete("cascade"),
+		foreignKey({
+			columns: [table.paymentMethodId, table.userId],
+			foreignColumns: [paymentMethods.id, paymentMethods.userId],
+			name: "transaction_installments_payment_owner_fk",
+		}),
+		check(
+			"transaction_installments_position_check",
+			sql`${table.installmentCount} between 1 and 36 and ${table.installmentNumber} between 1 and ${table.installmentCount}`,
+		),
+		check(
+			"transaction_installments_amount_check",
+			sql`${table.amountCents} > 0 and ${table.amountCents} <= 9007199254740991`,
+		),
+		check(
+			"transaction_installments_reference_month_check",
+			sql`${table.referenceMonth} glob '????-??' and substr(${table.referenceMonth}, 6, 2) between '01' and '12'`,
+		),
+	],
+);
+
+export const creditCardInvoicePayments = sqliteTable(
+	"credit_card_invoice_payments",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id").notNull(),
+		paymentMethodId: text("payment_method_id").notNull(),
+		referenceMonth: text("reference_month").notNull(),
+		cycleClosingDate: text("cycle_closing_date").notNull(),
+		cycleDueDate: text("cycle_due_date").notNull(),
+		paidAt: text("paid_at").notNull(),
+		amountCents: integer("amount_cents").notNull(),
+		...financeTimestamps,
+	},
+	(table) => [
+		uniqueIndex("credit_card_invoice_payments_invoice_unique").on(
+			table.userId,
+			table.paymentMethodId,
+			table.referenceMonth,
+		),
+		index("credit_card_invoice_payments_history_index").on(
+			table.userId,
+			table.paidAt,
+			table.createdAt,
+			table.id,
+		),
+		foreignKey({
+			columns: [table.paymentMethodId, table.userId],
+			foreignColumns: [paymentMethods.id, paymentMethods.userId],
+			name: "credit_card_invoice_payments_owner_fk",
+		}),
+		check(
+			"credit_card_invoice_payments_reference_month_check",
+			sql`${table.referenceMonth} glob '????-??' and substr(${table.referenceMonth}, 6, 2) between '01' and '12'`,
+		),
+		check(
+			"credit_card_invoice_payments_dates_check",
+			sql`${table.cycleClosingDate} glob '????-??-??' and ${table.cycleDueDate} glob '????-??-??' and ${table.paidAt} glob '????-??-??'`,
+		),
+		check(
+			"credit_card_invoice_payments_amount_check",
+			sql`${table.amountCents} > 0 and ${table.amountCents} <= 9007199254740991`,
+		),
+	],
+);
+
 export const userRelations = relations(user, ({ many }) => ({
 	categories: many(categories),
 	paymentMethods: many(paymentMethods),
 	transactions: many(transactions),
+	creditCardInvoicePayments: many(creditCardInvoicePayments),
 }));

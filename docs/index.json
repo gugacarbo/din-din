@@ -27,5 +27,15 @@
       "src/server/support-queue.ts",
       "drizzle/0004_support_reports.sql"
     ]
+  },
+  {
+    "id": "SPEC-0011",
+    "path": "docs/specs/0011-conciliacao-de-faturas-e-compras-parceladas-no-cartao.md",
+    "layer": "specs",
+    "title": "Conciliação de faturas e compras parceladas no cartão",
+    "status": "accepted",
+    "builds-on": [],
+    "superseded-by": null,
+    "implemented-by": []
   }
 ]

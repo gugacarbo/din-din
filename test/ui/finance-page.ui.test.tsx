@@ -6,8 +6,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
 	archiveCategory: vi.fn(), archiveTransaction: vi.fn(), archivePaymentMethod: vi.fn(), createCategory: vi.fn(), createPaymentMethod: vi.fn(), createTransaction: vi.fn(),
-	getDashboard: vi.fn(), getReport: vi.fn(), getSessionUser: vi.fn(), listCategories: vi.fn(), listTransactions: vi.fn(),
-	listPaymentMethods: vi.fn(), listInvoices: vi.fn(), restoreCategory: vi.fn(), restorePaymentMethod: vi.fn(), restoreTransaction: vi.fn(), updateCategory: vi.fn(), updatePaymentMethod: vi.fn(), updateTransaction: vi.fn(),
+	getDashboard: vi.fn(), getReport: vi.fn(), getSessionUser: vi.fn(), listActivity: vi.fn(), listCategories: vi.fn(), listTransactions: vi.fn(),
+	listPaymentMethods: vi.fn(), listInvoices: vi.fn(), removeInvoicePayment: vi.fn(), restoreCategory: vi.fn(), restorePaymentMethod: vi.fn(), restoreTransaction: vi.fn(), saveInvoicePayment: vi.fn(), updateCategory: vi.fn(), updatePaymentMethod: vi.fn(), updateTransaction: vi.fn(),
 }));
 
 vi.mock("#/server/finance.ts", () => api);
@@ -48,19 +48,21 @@ function setOnline(value: boolean) {
 
 const expenseCategory = { id: "22222222-2222-4222-8222-222222222222", type: "expense", name: "Mercado", colorKey: "orange", iconKey: "Utensils", parentCategoryId: null, level: 1 as const, path: ["22222222-2222-4222-8222-222222222222"], archivedAt: null, createdAt: "2024-01-01T00:00:00.000Z", updatedAt: "2024-01-01T00:00:00.000Z" };
 const incomeCategory = { ...expenseCategory, id: "11111111-1111-4111-8111-111111111111", type: "income", name: "Salário", colorKey: "emerald", iconKey: "BriefcaseBusiness" };
-const transaction = { id: "33333333-3333-4333-8333-333333333333", type: "expense", categoryId: expenseCategory.id, category: expenseCategory, paymentMethodId: null, paymentMethod: null, amountCents: 1200, currency: "BRL" as const, occurredAt: "2024-02-10", description: "antes", invoiceCycleClosingDate: null, invoiceCycleDueDate: null, archivedAt: null, createdAt: "2024-02-10T00:00:00.000Z", updatedAt: "2024-02-10T00:00:00.000Z" };
+const creditCard = { id: "66666666-6666-4666-8666-666666666666", name: "Cartão teste", kind: "credit_card" as const, colorKey: "indigo", iconKey: "CreditCard", invoiceControl: true, closingDay: 25, dueDay: 5, archivedAt: null, createdAt: "2024-01-01T00:00:00.000Z", updatedAt: "2024-01-01T00:00:00.000Z" };
+const transaction = { id: "33333333-3333-4333-8333-333333333333", type: "expense", categoryId: expenseCategory.id, category: expenseCategory, paymentMethodId: null, paymentMethod: null, amountCents: 1200, currency: "BRL" as const, occurredAt: "2024-02-10", description: "antes", installmentPlan: null, archivedAt: null, createdAt: "2024-02-10T00:00:00.000Z", updatedAt: "2024-02-10T00:00:00.000Z" };
 
 describe("FinancePage", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		setOnline(true);
-		api.getDashboard.mockResolvedValue({ month: { incomeCents: 0, expenseCents: 0, balanceCents: 0 }, incomeByPaymentMethod: [], recentTransactions: [] });
+		api.getDashboard.mockResolvedValue({ month: { incomeCents: 0, expenseCents: 0, balanceCents: 0 }, incomeByPaymentMethod: [], recentActivity: [] });
 		api.getSessionUser.mockResolvedValue({ id: "user-1", name: "Ana Silva", email: "ana@example.com", image: null });
 		api.listCategories.mockResolvedValue([incomeCategory, expenseCategory]);
 		api.listTransactions.mockResolvedValue({ items: [transaction], nextCursor: null });
+		api.listActivity.mockResolvedValue({ items: [{ kind: "transaction", activityDate: transaction.occurredAt, transaction }], nextCursor: null });
 		api.listPaymentMethods.mockResolvedValue([]);
 		api.listInvoices.mockResolvedValue([]);
-		api.getReport.mockResolvedValue({ period: { granularity: "month", anchorDate: "2024-02-10", startDate: "2024-02-01", endDate: "2024-03-01" }, incomeCents: 0, expenseCents: 0, balanceCents: 0, expenseByCategory: [], expenseCategoryTree: [], incomeByPaymentMethod: [] });
+		api.getReport.mockResolvedValue({ period: { granularity: "month", anchorDate: "2024-02-10", startDate: "2024-02-01", endDate: "2024-03-01" }, incomeCents: 0, expenseCents: 0, unregisteredExpenseCents: 0, balanceCents: 0, expenseByCategory: [], expenseCategoryTree: [], incomeByPaymentMethod: [] });
 	});
 
 	it("requires an explicit type before allowing a new transaction", async () => {
@@ -232,9 +234,7 @@ describe("FinancePage", () => {
 				data: { status: "all" },
 			});
 			expect(api.listInvoices).toHaveBeenCalled();
-			expect(api.listTransactions).toHaveBeenCalledWith({
-				data: { scope: "active" },
-			});
+			expect(api.listActivity).toHaveBeenCalledWith({ data: {} });
 			expect(api.listTransactions).toHaveBeenCalledWith({
 				data: { scope: "archived" },
 			});
@@ -322,6 +322,138 @@ describe("FinancePage", () => {
 		]);
 	});
 
+	it("renders projected installments and registers a settlement without calling createTransaction", async () => {
+		const invoice = {
+			paymentMethodId: creditCard.id,
+			paymentMethod: creditCard,
+			referenceMonth: "2024-07",
+			cycleClosingDate: "2024-06-25",
+			cycleDueDate: "2024-07-05",
+			status: "projected" as const,
+			payment: null,
+			items: [{
+				transactionId: transaction.id,
+				occurredAt: "2024-06-20",
+				description: "Notebook",
+				amountCents: 333,
+				category: expenseCategory,
+				installmentNumber: 1,
+				installmentCount: 3,
+			}],
+			itemsTotalCents: 333,
+			effectiveExpenseCents: 333,
+			unregisteredExpenseCents: 0,
+			declaredOverPaymentCents: 0,
+		};
+		api.listPaymentMethods.mockResolvedValue([creditCard]);
+		api.listInvoices.mockResolvedValue([invoice]);
+		api.saveInvoicePayment.mockResolvedValue({ ...invoice, status: "paid" });
+		const user = userEvent.setup();
+		renderFinancePage("payments");
+		await user.click(screen.getByRole("tab", { name: "Faturas" }));
+		expect(await screen.findByText(/fatura 2024-07/)).toBeInTheDocument();
+		expect(screen.getByText(/1\/3/)).toBeInTheDocument();
+		await user.click(
+			screen.getAllByRole("button", { name: "Registrar pagamento" }).at(-1)!,
+		);
+		const dialog = await screen.findByRole("dialog");
+		expect(within(dialog).getByLabelText("Mês da fatura")).toHaveValue("2024-07");
+		await user.click(within(dialog).getByRole("button", { name: "Registrar pagamento" }));
+		await waitFor(() =>
+			expect(api.saveInvoicePayment).toHaveBeenCalledWith({
+				data: expect.objectContaining({
+					paymentMethodId: creditCard.id,
+					referenceMonth: "2024-07",
+					amountCents: 333,
+				}),
+			}),
+		);
+		expect(api.createTransaction).not.toHaveBeenCalled();
+	});
+
+	it("edits and removes an existing invoice settlement", async () => {
+		const invoice = {
+			paymentMethodId: creditCard.id,
+			paymentMethod: creditCard,
+			referenceMonth: "2024-07",
+			cycleClosingDate: "2024-06-25",
+			cycleDueDate: "2024-07-05",
+			status: "paid" as const,
+			payment: {
+				id: "77777777-7777-4777-8777-777777777777",
+				paymentMethodId: creditCard.id,
+				referenceMonth: "2024-07",
+				cycleClosingDate: "2024-06-25",
+				cycleDueDate: "2024-07-05",
+				paidAt: "2024-07-05",
+				amountCents: 500,
+				createdAt: "2024-07-05T00:00:00.000Z",
+				updatedAt: "2024-07-05T00:00:00.000Z",
+			},
+			items: [],
+			itemsTotalCents: 0,
+			effectiveExpenseCents: 500,
+			unregisteredExpenseCents: 500,
+			declaredOverPaymentCents: 0,
+		};
+		api.listPaymentMethods.mockResolvedValue([creditCard]);
+		api.listInvoices.mockResolvedValue([invoice]);
+		api.saveInvoicePayment.mockResolvedValue(invoice);
+		api.removeInvoicePayment.mockResolvedValue({ removed: true });
+		const user = userEvent.setup();
+		renderFinancePage("payments");
+		await user.click(screen.getByRole("tab", { name: "Faturas" }));
+		await user.click(
+			await screen.findByRole("button", { name: "Editar pagamento" }),
+		);
+		expect(await screen.findByRole("heading", { name: "Editar pagamento" })).toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "Salvar pagamento" }));
+		await waitFor(() =>
+			expect(api.saveInvoicePayment).toHaveBeenCalledWith({
+				data: expect.objectContaining({
+					paymentMethodId: creditCard.id,
+					referenceMonth: "2024-07",
+					amountCents: 500,
+				}),
+			}),
+		);
+
+		await user.click(
+			await screen.findByRole("button", { name: "Editar pagamento" }),
+		);
+		await user.click(screen.getByRole("button", { name: "Remover pagamento" }));
+		expect(await screen.findByRole("heading", { name: "Remover pagamento?" })).toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "Remover" }));
+		await waitFor(() =>
+			expect(api.removeInvoicePayment).toHaveBeenCalledWith({
+				data: {
+					paymentMethodId: creditCard.id,
+					referenceMonth: "2024-07",
+				},
+			}),
+		);
+	});
+
+	it("reveals installment controls only for an expense on a controlled credit card", async () => {
+		api.listPaymentMethods.mockResolvedValue([creditCard]);
+		const user = userEvent.setup();
+		renderFinancePage("dashboard");
+		await screen.findByText("Seu mês em movimento");
+		await user.click(screen.getByRole("button", { name: /novo lançamento/i }));
+		await user.click(screen.getByLabelText("Tipo"));
+		await user.click(await screen.findByRole("option", { name: "Despesa" }));
+		await user.click(screen.getByLabelText("Forma de pagamento (opcional)"));
+		await user.click(await screen.findByRole("option", { name: "Cartão teste" }));
+		const installmentSwitch = await screen.findByRole("switch", {
+			name: "Compra parcelada",
+		});
+		await user.click(installmentSwitch);
+		expect(screen.getByLabelText("Quantidade de parcelas")).toHaveValue(2);
+		expect(
+			(screen.getByLabelText("Primeira fatura") as HTMLInputElement).value,
+		).toMatch(/^\d{4}-\d{2}$/);
+	});
+
 	it("shows each category icon in the shared category selectors", async () => {
 		const user = userEvent.setup();
 		renderFinancePage("transactions");
@@ -361,6 +493,7 @@ describe("FinancePage", () => {
 			period: { granularity: "month", anchorDate: "2024-02-10", startDate: "2024-02-01", endDate: "2024-03-01" },
 			incomeCents: 0,
 			expenseCents: 3000,
+			unregisteredExpenseCents: 0,
 			balanceCents: -3000,
 			expenseByCategory: [],
 			expenseCategoryTree: [{ category: expenseCategory, directAmountCents: 1000, aggregateAmountCents: 3000, children: [{ category: child, directAmountCents: 2000, aggregateAmountCents: 2000, children: [] }] }],

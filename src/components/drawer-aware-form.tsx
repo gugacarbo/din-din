@@ -6,7 +6,7 @@ import { cn } from "#/lib/utils.ts";
 function DrawerFormActions({ children }: { children: ReactNode }) {
 	return (
 		<div
-			className="-mx-6 grid grid-cols-2 gap-3 border-t bg-background px-6 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+			className="sticky bottom-0 z-10 grid grid-cols-2 gap-3 border-t bg-popover pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]"
 			data-slot="drawer-form-actions"
 		>
 			{children}
@@ -34,12 +34,7 @@ function DrawerAwareForm({
 			)}
 			{...props}
 		>
-			<div
-				className={cn(
-					"grid content-start gap-4",
-					mobileDrawer && "min-h-0 overflow-y-auto pb-4",
-				)}
-			>
+			<div className={cn("grid content-start gap-4", mobileDrawer && "pb-4")}>
 				{children}
 			</div>
 			{mobileDrawer ? (

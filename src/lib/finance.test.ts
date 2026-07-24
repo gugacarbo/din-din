@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
 	CATEGORY_ICONS,
+	invoiceCycleFor,
+	invoiceCycleForReferenceMonth,
 	isCivilDate,
 	normalizeCategoryName,
 	periodFor,
+	shiftReferenceMonth,
+	splitInstallmentAmounts,
 } from "./finance.ts";
 
 describe("finance helpers", () => {
@@ -36,6 +40,29 @@ describe("finance helpers", () => {
 			startDate: "2024-12-01",
 			endDate: "2025-01-01",
 		});
+	});
+
+	it("maps purchases and reference months across closing boundaries", () => {
+		expect(invoiceCycleFor("2024-06-25", 25, 5)).toEqual({
+			closingDate: "2024-06-25",
+			dueDate: "2024-07-05",
+		});
+		expect(invoiceCycleFor("2024-06-26", 25, 5)).toEqual({
+			closingDate: "2024-07-25",
+			dueDate: "2024-08-05",
+		});
+		expect(invoiceCycleForReferenceMonth("2024-07", 31, 5)).toEqual({
+			closingDate: "2024-06-30",
+			dueDate: "2024-07-05",
+		});
+		expect(shiftReferenceMonth("2024-12", 1)).toBe("2025-01");
+	});
+
+	it("places indivisible cents in the final installment", () => {
+		expect(splitInstallmentAmounts(1000, 3)).toEqual([333, 333, 334]);
+		expect(() => splitInstallmentAmounts(2, 3)).toThrow(
+			"Parcelamento inválido.",
+		);
 	});
 
 	it("includes several animal icons among the choices available to categories and payments", () => {

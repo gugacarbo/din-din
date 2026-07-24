@@ -5,6 +5,7 @@ import {
 	getDashboard,
 	getReport,
 	getSessionUser,
+	listActivity,
 	listCategories,
 	listInvoices,
 	listPaymentMethods,
@@ -56,6 +57,16 @@ export const transactionsQueryOptions = (scope: "active" | "archived") =>
 			listTransactions({
 				data: pageParam ? { scope, cursor: pageParam } : { scope },
 			}),
+		getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+		staleTime: sidebarPrefetchStaleTime,
+	});
+
+export const activityQueryOptions = () =>
+	infiniteQueryOptions({
+		queryKey: [...financeQueryKey, "activity"],
+		initialPageParam: undefined as string | undefined,
+		queryFn: ({ pageParam }) =>
+			listActivity({ data: pageParam ? { cursor: pageParam } : {} }),
 		getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
 		staleTime: sidebarPrefetchStaleTime,
 	});

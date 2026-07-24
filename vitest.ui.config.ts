@@ -3,7 +3,15 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
 	plugins: [viteReact()],
-	resolve: { alias: { "#/": new URL("./src/", import.meta.url).pathname } },
+	resolve: {
+		alias: {
+			"#/": new URL("./src/", import.meta.url).pathname,
+			"cloudflare:workers": new URL(
+				"./test/ui/cloudflare-workers-stub.ts",
+				import.meta.url,
+			).pathname,
+		},
+	},
 	test: {
 		environment: "jsdom",
 		include: ["test/ui/**/*.test.tsx"],

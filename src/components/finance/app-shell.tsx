@@ -3,12 +3,14 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
 	BarChart3,
 	CircleUserRound,
+	CreditCard,
 	LayoutDashboard,
 	List,
 	LogOut,
 	Plus,
 	Settings,
 	ShieldCheck,
+	Tags,
 	WifiOff,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -52,6 +54,7 @@ import {
 } from "#/components/ui/sidebar.tsx";
 import { adminMembershipQueryOptions } from "#/lib/admin-support-query-options.ts";
 import {
+	activityQueryOptions,
 	categoriesQueryOptions,
 	dashboardQueryOptions,
 	invoicesQueryOptions,
@@ -66,6 +69,8 @@ const primaryNavigation = [
 	{ to: "/" as const, label: "Dashboard", icon: LayoutDashboard },
 	{ to: "/transactions" as const, label: "Histórico", icon: List },
 	{ to: "/reports" as const, label: "Relatórios", icon: BarChart3 },
+	{ to: "/categories" as const, label: "Categorias", icon: Tags },
+	{ to: "/payments" as const, label: "Tipos de pagamento", icon: CreditCard },
 ];
 
 function NavigationLink({
@@ -230,7 +235,7 @@ export function AppShell({
 		if (offline) return;
 		void Promise.allSettled([
 			queryClient.prefetchQuery(dashboardQueryOptions()),
-			queryClient.prefetchInfiniteQuery(transactionsQueryOptions("active")),
+			queryClient.prefetchInfiniteQuery(activityQueryOptions()),
 			queryClient.prefetchQuery(reportQueryOptions()),
 			queryClient.prefetchQuery(categoriesQueryOptions("active")),
 			queryClient.prefetchQuery(paymentMethodsQueryOptions()),
@@ -307,7 +312,7 @@ export function AppShell({
 							</SidebarMenu>
 						</SidebarFooter>
 					</Sidebar>
-					<SidebarInset className="bg-background [background-image:radial-gradient(900px_520px_at_-8%_-10%,color-mix(in_oklab,var(--primary)_18%,transparent),transparent_60%),radial-gradient(900px_520px_at_108%_-8%,color-mix(in_oklab,var(--accent)_55%,transparent),transparent_64%)]">
+					<SidebarInset className="bg-background [background-image:radial-gradient(circle_520px_at_50%_15%,color-mix(in_oklab,var(--primary)_12%,transparent),transparent_72%)] md:[background-image:radial-gradient(circle_1100px_at_50%_15%,color-mix(in_oklab,var(--primary)_12%,transparent),transparent_72%)]">
 						<header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-2 border-b border-border bg-background/90 px-4 backdrop-blur">
 							<div className="flex items-center gap-2">
 								<SidebarTrigger />

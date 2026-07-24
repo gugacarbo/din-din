@@ -38,6 +38,10 @@ export function CategorySelect({
 	"aria-describedby"?: string;
 	"aria-invalid"?: boolean;
 }) {
+	const selectedCategory = categories.find((category) => category.id === value);
+	const selectedRootOption =
+		rootOption?.value === value ? rootOption : undefined;
+
 	return (
 		<Select
 			disabled={disabled}
@@ -52,7 +56,25 @@ export function CategorySelect({
 				className={cn("w-full", className)}
 				id={id}
 			>
-				<SelectValue placeholder={placeholder} />
+				{selectedCategory ? (
+					<span className="flex min-w-0 items-center gap-2">
+						<CategoryMark
+							className="size-6 rounded-lg"
+							colorKey={selectedCategory.colorKey}
+							iconClassName="size-4"
+							iconKey={selectedCategory.iconKey}
+							variant="icon"
+						/>
+						<span className="truncate">
+							{"— ".repeat(selectedCategory.level - 1)}
+							{selectedCategory.name}
+						</span>
+					</span>
+				) : selectedRootOption ? (
+					<span className="truncate">{selectedRootOption.label}</span>
+				) : (
+					<SelectValue placeholder={placeholder} />
+				)}
 			</SelectTrigger>
 			<SelectContent>
 				{rootOption && (

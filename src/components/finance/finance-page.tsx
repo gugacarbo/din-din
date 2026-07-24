@@ -57,7 +57,13 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "#/components/ui/dialog.tsx";
-import { Field, FieldError, FieldLabel } from "#/components/ui/field.tsx";
+import {
+	Field,
+	FieldContent,
+	FieldDescription,
+	FieldError,
+	FieldLabel,
+} from "#/components/ui/field.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import {
 	formatMoneyInputFromCents,
@@ -88,9 +94,11 @@ import { authClient } from "#/lib/auth-client.ts";
 import {
 	CATEGORY_COLORS,
 	CATEGORY_ICONS,
+	invoiceCycleFor,
 	saoPauloToday,
 } from "#/lib/finance.ts";
 import {
+	activityQueryOptions,
 	categoriesQueryOptions,
 	dashboardQueryOptions,
 	financeQueryKey,
@@ -104,6 +112,8 @@ import { clearNavigationCache } from "#/lib/pwa.ts";
 import { cn } from "#/lib/utils.ts";
 import type {
 	CategoryDto,
+	FinanceActivityDto,
+	InvoiceDto,
 	PaymentMethodDto,
 	TransactionDto,
 } from "#/server/finance.ts";
@@ -114,9 +124,11 @@ import {
 	createCategory,
 	createPaymentMethod,
 	createTransaction,
+	removeInvoicePayment,
 	restoreCategory,
 	restorePaymentMethod,
 	restoreTransaction,
+	saveInvoicePayment,
 	updateCategory,
 	updatePaymentMethod,
 	updateTransaction,
@@ -140,19 +152,39 @@ type FinancePageKind =
 	| "profile"
 	| "archive";
 
-const transactionFormSchema = z.object({
-	paymentMethodId: z.string(),
-	type: z.enum(["income", "expense"], {
-		error: "Escolha o tipo do lançamento antes de salvar.",
-	}),
-	categoryId: z.string().min(1, "Escolha uma categoria."),
-	amount: z.string().refine((value) => {
-		const amountCents = moneyInputToCents(value);
-		return Number.isSafeInteger(amountCents) && amountCents > 0;
-	}, "Informe um valor maior que zero."),
-	occurredAt: z.string().min(1, "Informe a data do lançamento."),
-	description: z.string().max(280, "Use no máximo 280 caracteres."),
-});
+const transactionFormSchema = z
+	.object({
+		paymentMethodId: z.string(),
+		type: z.enum(["income", "expense"], {
+			error: "Escolha o tipo do lançamento antes de salvar.",
+		}),
+		categoryId: z.string().min(1, "Escolha uma categoria."),
+		amount: z.string().refine((value) => {
+			const amountCents = moneyInputToCents(value);
+			return Number.isSafeInteger(amountCents) && amountCents > 0;
+		}, "Informe um valor maior que zero."),
+		occurredAt: z.string().min(1, "Informe a data do lançamento."),
+		description: z.string().max(280, "Use no máximo 280 caracteres."),
+		isInstallment: z.boolean(),
+		installmentCount: z.string(),
+		firstInvoiceReferenceMonth: z.string(),
+	})
+	.superRefine((values, context) => {
+		if (!values.isInstallment) return;
+		const count = Number(values.installmentCount);
+		if (!Number.isInteger(count) || count < 2 || count > 36)
+			context.addIssue({
+				code: "custom",
+				message: "Informe entre 2 e 36 parcelas.",
+				path: ["installmentCount"],
+			});
+		if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(values.firstInvoiceReferenceMonth))
+			context.addIssue({
+				code: "custom",
+				message: "Informe a primeira fatura.",
+				path: ["firstInvoiceReferenceMonth"],
+			});
+	});
 type TransactionFormInput = z.input<typeof transactionFormSchema>;
 type TransactionFormValues = z.output<typeof transactionFormSchema>;
 
@@ -211,6 +243,20 @@ const paymentMethodFormSchema = z
 	});
 type PaymentMethodFormInput = z.input<typeof paymentMethodFormSchema>;
 type PaymentMethodFormValues = z.output<typeof paymentMethodFormSchema>;
+
+const invoicePaymentFormSchema = z.object({
+	paymentMethodId: z.string().min(1, "Escolha o cartão."),
+	referenceMonth: z
+		.string()
+		.regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Informe o mês da fatura."),
+	paidAt: z.string().min(1, "Informe a data do pagamento."),
+	amount: z.string().refine((value) => {
+		const amountCents = moneyInputToCents(value);
+		return Number.isSafeInteger(amountCents) && amountCents > 0;
+	}, "Informe um valor maior que zero."),
+});
+type InvoicePaymentFormInput = z.input<typeof invoicePaymentFormSchema>;
+type InvoicePaymentFormValues = z.output<typeof invoicePaymentFormSchema>;
 
 const money = new Intl.NumberFormat("pt-BR", {
 	style: "currency",
@@ -404,12 +450,122 @@ function TransactionRows({
 	);
 }
 
+function ActivityRows({
+	items,
+	onEdit,
+	onArchive,
+	onView,
+}: {
+	items: FinanceActivityDto[];
+	onEdit?: (item: TransactionDto) => void;
+	onArchive?: (item: TransactionDto) => void;
+	onView?: (item: TransactionDto) => void;
+}) {
+	if (!items.length)
+		return (
+			<p className="py-8 text-sm text-muted-foreground">
+				Nenhuma atividade por aqui.
+			</p>
+		);
+	return (
+		<ul className="divide-y divide-border">
+			{items.map((activity) => {
+				if (activity.kind === "transaction") {
+					const item = activity.transaction;
+					return (
+						<li className="flex items-center gap-3 py-3" key={`t:${item.id}`}>
+							<Button
+								aria-label={`Ver lançamento ${item.category.name}`}
+								className="h-auto min-w-0 flex-1 justify-start gap-3 p-0 text-left"
+								onClick={() => onView?.(item)}
+								type="button"
+								variant="ghost"
+							>
+								<CategoryMark
+									colorKey={item.category.colorKey}
+									iconKey={item.category.iconKey}
+								/>
+								<div className="min-w-0 flex-1">
+									<p className="font-semibold text-foreground">
+										{item.category.name}
+										{item.installmentPlan?.installmentCount &&
+										item.installmentPlan.installmentCount > 1
+											? ` · ${item.installmentPlan.installmentCount}x`
+											: ""}
+									</p>
+									<p className="truncate text-xs text-muted-foreground">
+										{item.occurredAt}
+										{item.description ? ` · ${item.description}` : ""}
+									</p>
+								</div>
+								<p
+									className={
+										item.type === "income"
+											? "font-bold text-emerald-600 dark:text-emerald-400"
+											: "font-bold text-destructive"
+									}
+								>
+									{item.type === "income" ? "+" : "−"}
+									{moneyFromCents(item.amountCents)}
+								</p>
+							</Button>
+							{onEdit && (
+								<Button
+									aria-label="Editar lançamento"
+									onClick={() => onEdit(item)}
+									size="icon"
+									variant="ghost"
+								>
+									<Pencil />
+								</Button>
+							)}
+							{onArchive && (
+								<Button
+									aria-label="Arquivar lançamento"
+									onClick={() => onArchive(item)}
+									size="icon"
+									variant="ghost"
+								>
+									<Trash2 />
+								</Button>
+							)}
+						</li>
+					);
+				}
+				return (
+					<li
+						className="flex items-center gap-3 py-3"
+						key={`p:${activity.payment.id}`}
+					>
+						<CategoryMark
+							colorKey={activity.paymentMethod.colorKey}
+							iconKey={activity.paymentMethod.iconKey}
+						/>
+						<div className="min-w-0 flex-1">
+							<p className="font-semibold text-foreground">
+								Pagamento da fatura · {activity.payment.referenceMonth}
+							</p>
+							<p className="truncate text-xs text-muted-foreground">
+								{activity.payment.paidAt} · {activity.paymentMethod.name} ·
+								liquidação, não é nova despesa
+							</p>
+						</div>
+						<p className="font-bold text-foreground">
+							{moneyFromCents(activity.payment.amountCents)}
+						</p>
+					</li>
+				);
+			})}
+		</ul>
+	);
+}
+
 function Dashboard({ onView }: { onView: (item: TransactionDto) => void }) {
 	const result = useQuery(dashboardQueryOptions());
 	if (result.isPending) return <Loading />;
 	if (result.error || !result.data)
 		return <Notice>{errorMessage(result.error)}</Notice>;
-	const { month, recentTransactions, incomeByPaymentMethod } = result.data;
+	const { month, recentActivity, incomeByPaymentMethod } = result.data;
 	return (
 		<>
 			<PageTitle compact eyebrow="visão geral" title="Seu mês em movimento" />
@@ -474,7 +630,7 @@ function Dashboard({ onView }: { onView: (item: TransactionDto) => void }) {
 					</CardAction>
 				</CardHeader>
 				<CardContent>
-					<TransactionRows items={recentTransactions} onView={onView} />
+					<ActivityRows items={recentActivity} onView={onView} />
 				</CardContent>
 			</Card>
 		</>
@@ -539,10 +695,17 @@ function TransactionForm({
 			amount: initial ? formatMoneyInputFromCents(initial.amountCents) : "0,00",
 			occurredAt: initial?.occurredAt ?? saoPauloToday(),
 			description: initial?.description ?? "",
+			isInstallment: (initial?.installmentPlan?.installmentCount ?? 1) > 1,
+			installmentCount: String(initial?.installmentPlan?.installmentCount ?? 2),
+			firstInvoiceReferenceMonth:
+				initial?.installmentPlan?.firstReferenceMonth ?? "",
 		},
 		resolver: zodResolver(transactionFormSchema),
 	});
 	const type = form.watch("type");
+	const paymentMethodId = form.watch("paymentMethodId");
+	const occurredAt = form.watch("occurredAt");
+	const isInstallment = form.watch("isInstallment");
 	const categoriesResult = useQuery(categoriesQueryOptions("active"));
 	const paymentMethodsResult = useQuery(paymentMethodsQueryOptions());
 	const saveTransaction = useMutation({
@@ -554,6 +717,12 @@ function TransactionForm({
 				occurredAt: values.occurredAt,
 				description: values.description || null,
 				paymentMethodId: values.paymentMethodId || null,
+				installmentCount: values.isInstallment
+					? Number(values.installmentCount)
+					: 1,
+				firstInvoiceReferenceMonth: values.isInstallment
+					? values.firstInvoiceReferenceMonth
+					: null,
 			};
 			if (initial)
 				return updateTransaction({ data: { ...data, id: initial.id } });
@@ -572,6 +741,15 @@ function TransactionForm({
 				method.archivedAt === null || method.id === initial?.paymentMethodId,
 		);
 	}, [paymentMethodsResult.data, initial?.paymentMethodId]);
+	const selectedPaymentMethod = paymentChoices.find(
+		(method) => method.id === paymentMethodId,
+	);
+	const canInstallments =
+		type === "expense" &&
+		selectedPaymentMethod?.kind === "credit_card" &&
+		selectedPaymentMethod.invoiceControl &&
+		selectedPaymentMethod.closingDay != null &&
+		selectedPaymentMethod.dueDay != null;
 	useEffect(() => {
 		if (
 			!choices.some((category) => category.id === form.getValues("categoryId"))
@@ -580,6 +758,38 @@ function TransactionForm({
 				shouldValidate: form.formState.isSubmitted,
 			});
 	}, [choices, form]);
+	useEffect(() => {
+		if (canInstallments || !isInstallment) return;
+		form.setValue("isInstallment", false);
+	}, [canInstallments, form, isInstallment]);
+	useEffect(() => {
+		const closingDay = selectedPaymentMethod?.closingDay;
+		const dueDay = selectedPaymentMethod?.dueDay;
+		if (
+			!canInstallments ||
+			!occurredAt ||
+			closingDay == null ||
+			dueDay == null ||
+			form.formState.dirtyFields.firstInvoiceReferenceMonth
+		)
+			return;
+		const suggested = invoiceCycleFor(
+			occurredAt,
+			closingDay,
+			dueDay,
+		).dueDate.slice(0, 7);
+		form.setValue("firstInvoiceReferenceMonth", suggested, {
+			shouldDirty: false,
+			shouldValidate: form.formState.isSubmitted,
+		});
+	}, [
+		canInstallments,
+		form,
+		form.formState.dirtyFields.firstInvoiceReferenceMonth,
+		form.formState.isSubmitted,
+		occurredAt,
+		selectedPaymentMethod,
+	]);
 	async function submit(values: TransactionFormValues) {
 		try {
 			await saveTransaction.mutateAsync(values);
@@ -645,7 +855,23 @@ function TransactionForm({
 								className="w-full"
 								id="transaction-payment-method"
 							>
-								<SelectValue placeholder="Não informado" />
+								{selectedPaymentMethod ? (
+									<span className="flex min-w-0 items-center gap-2">
+										<CategoryMark
+											className="size-6 rounded-lg"
+											colorKey={selectedPaymentMethod.colorKey}
+											iconClassName="size-4"
+											iconKey={selectedPaymentMethod.iconKey}
+											variant="icon"
+										/>
+										<span className="truncate">
+											{selectedPaymentMethod.name}
+											{selectedPaymentMethod.archivedAt ? " (arquivada)" : ""}
+										</span>
+									</span>
+								) : (
+									<span className="text-muted-foreground">Não informado</span>
+								)}
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value="none">Não informado</SelectItem>
@@ -713,6 +939,74 @@ function TransactionForm({
 					</Field>
 				)}
 			/>
+			{canInstallments && (
+				<>
+					<Controller
+						control={form.control}
+						name="isInstallment"
+						render={({ field }) => (
+							<Field
+								className="justify-between rounded-xl border p-4"
+								orientation="horizontal"
+							>
+								<FieldContent>
+									<FieldLabel htmlFor="transaction-installment">
+										Compra parcelada
+									</FieldLabel>
+									<FieldDescription>
+										Distribui o valor entre as próximas faturas.
+									</FieldDescription>
+								</FieldContent>
+								<Switch
+									checked={field.value}
+									id="transaction-installment"
+									onCheckedChange={field.onChange}
+								/>
+							</Field>
+						)}
+					/>
+					{isInstallment && (
+						<div className="grid gap-4 sm:grid-cols-2">
+							<Field
+								data-invalid={Boolean(form.formState.errors.installmentCount)}
+							>
+								<FieldLabel htmlFor="transaction-installment-count">
+									Quantidade de parcelas
+								</FieldLabel>
+								<Input
+									aria-invalid={Boolean(form.formState.errors.installmentCount)}
+									{...form.register("installmentCount")}
+									id="transaction-installment-count"
+									max={36}
+									min={2}
+									type="number"
+								/>
+								<FieldError errors={[form.formState.errors.installmentCount]} />
+							</Field>
+							<Field
+								data-invalid={Boolean(
+									form.formState.errors.firstInvoiceReferenceMonth,
+								)}
+							>
+								<FieldLabel htmlFor="transaction-first-invoice">
+									Primeira fatura
+								</FieldLabel>
+								<Input
+									aria-invalid={Boolean(
+										form.formState.errors.firstInvoiceReferenceMonth,
+									)}
+									{...form.register("firstInvoiceReferenceMonth")}
+									id="transaction-first-invoice"
+									type="month"
+								/>
+								<FieldError
+									errors={[form.formState.errors.firstInvoiceReferenceMonth]}
+								/>
+							</Field>
+						</div>
+					)}
+				</>
+			)}
 			<Field data-invalid={Boolean(form.formState.errors.occurredAt)}>
 				<FieldLabel htmlFor="transaction-date">Data</FieldLabel>
 				<Input
@@ -807,7 +1101,7 @@ function Transactions({
 }) {
 	const queryClient = useQueryClient();
 	const [archiving, setArchiving] = useState<TransactionDto | null>(null);
-	const result = useInfiniteQuery(transactionsQueryOptions("active"));
+	const result = useInfiniteQuery(activityQueryOptions());
 	const archiveMutation = useMutation({
 		mutationFn: (id: string) => archiveTransaction({ data: { id } }),
 		onSuccess: () =>
@@ -823,7 +1117,7 @@ function Transactions({
 			toast.error(errorMessage(cause));
 		}
 	}
-	const transactions = result.data?.pages.flatMap((page) => page.items) ?? [];
+	const activities = result.data?.pages.flatMap((page) => page.items) ?? [];
 	return (
 		<>
 			<PageTitle eyebrow="histórico" title="Lançamentos">
@@ -848,8 +1142,8 @@ function Transactions({
 				<Notice>{errorMessage(result.error)}</Notice>
 			) : (
 				<FinanceCard className="p-5">
-					<TransactionRows
-						items={transactions}
+					<ActivityRows
+						items={activities}
 						onArchive={setArchiving}
 						onEdit={onEdit}
 						onView={onView}
@@ -1505,10 +1799,250 @@ function PaymentMethodDialog({
 	);
 }
 
+function InvoicePaymentDialog({
+	invoice,
+	open,
+	onOpenChange,
+	onSaved,
+}: {
+	invoice: InvoiceDto | null;
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	onSaved: () => void;
+}) {
+	const isMobile = useIsMobile();
+	const [confirmRemove, setConfirmRemove] = useState(false);
+	const methods = useQuery(paymentMethodsQueryOptions());
+	const form = useForm<
+		InvoicePaymentFormInput,
+		unknown,
+		InvoicePaymentFormValues
+	>({
+		defaultValues: {
+			paymentMethodId: invoice?.paymentMethodId ?? "",
+			referenceMonth: invoice?.referenceMonth ?? saoPauloToday().slice(0, 7),
+			paidAt: invoice?.payment?.paidAt ?? saoPauloToday(),
+			amount: formatMoneyInputFromCents(
+				invoice?.payment?.amountCents ?? invoice?.itemsTotalCents ?? 0,
+			),
+		},
+		resolver: zodResolver(invoicePaymentFormSchema),
+	});
+	const savePayment = useMutation({
+		mutationFn: (values: InvoicePaymentFormValues) =>
+			saveInvoicePayment({
+				data: {
+					paymentMethodId: values.paymentMethodId,
+					referenceMonth: values.referenceMonth,
+					paidAt: values.paidAt,
+					amountCents: moneyInputToCents(values.amount),
+				},
+			}),
+	});
+	const removePayment = useMutation({
+		mutationFn: () => {
+			if (!invoice?.payment) throw new Error("Pagamento não encontrado.");
+			return removeInvoicePayment({
+				data: {
+					paymentMethodId: invoice.paymentMethodId,
+					referenceMonth: invoice.referenceMonth,
+				},
+			});
+		},
+	});
+	async function submit(values: InvoicePaymentFormValues) {
+		try {
+			await savePayment.mutateAsync(values);
+			toast.success(
+				invoice?.payment ? "Pagamento atualizado." : "Fatura paga.",
+			);
+			onSaved();
+		} catch (cause) {
+			toast.error(errorMessage(cause));
+		}
+	}
+	async function remove() {
+		try {
+			await removePayment.mutateAsync();
+			toast.success("Pagamento removido.");
+			setConfirmRemove(false);
+			onSaved();
+		} catch (cause) {
+			toast.error(errorMessage(cause));
+		}
+	}
+	const cardChoices = (methods.data ?? []).filter(
+		(method) =>
+			method.kind === "credit_card" &&
+			method.invoiceControl &&
+			(method.archivedAt === null || method.id === invoice?.paymentMethodId),
+	);
+	const actions = (
+		<>
+			{invoice?.payment && (
+				<Button
+					className={isMobile ? "h-12 w-full" : undefined}
+					onClick={() => setConfirmRemove(true)}
+					type="button"
+					variant="destructive"
+				>
+					Remover pagamento
+				</Button>
+			)}
+			<Button
+				className={isMobile ? "h-12 w-full" : undefined}
+				onClick={() => onOpenChange(false)}
+				type="button"
+				variant="outline"
+			>
+				Cancelar
+			</Button>
+			<Button
+				className={isMobile ? "h-12 w-full" : undefined}
+				disabled={form.formState.isSubmitting}
+				type="submit"
+			>
+				{form.formState.isSubmitting
+					? "Salvando…"
+					: invoice?.payment
+						? "Salvar pagamento"
+						: "Registrar pagamento"}
+			</Button>
+		</>
+	);
+	const content = (
+		<>
+			<AlertDialog onOpenChange={setConfirmRemove} open={confirmRemove}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Remover pagamento?</AlertDialogTitle>
+						<AlertDialogDescription>
+							A fatura voltará a ficar em aberto e o gasto não cadastrado
+							deixará os somatórios.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancelar</AlertDialogCancel>
+						<AlertDialogAction onClick={() => void remove()}>
+							Remover
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+			<DrawerAwareForm
+				actions={actions}
+				mobileDrawer={isMobile}
+				noValidate
+				onSubmit={form.handleSubmit(submit)}
+			>
+				<Controller
+					control={form.control}
+					name="paymentMethodId"
+					render={({ field, fieldState }) => (
+						<Field data-invalid={fieldState.invalid}>
+							<FieldLabel htmlFor="invoice-payment-card">Cartão</FieldLabel>
+							<Select
+								disabled={Boolean(invoice)}
+								onValueChange={field.onChange}
+								value={field.value}
+							>
+								<SelectTrigger
+									aria-invalid={fieldState.invalid}
+									className="w-full"
+									id="invoice-payment-card"
+								>
+									<SelectValue placeholder="Escolha o cartão" />
+								</SelectTrigger>
+								<SelectContent>
+									{cardChoices.map((method) => (
+										<SelectItem key={method.id} value={method.id}>
+											{method.name}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+							<FieldError errors={[fieldState.error]} />
+						</Field>
+					)}
+				/>
+				<Field data-invalid={Boolean(form.formState.errors.referenceMonth)}>
+					<FieldLabel htmlFor="invoice-payment-month">Mês da fatura</FieldLabel>
+					<Input
+						aria-invalid={Boolean(form.formState.errors.referenceMonth)}
+						{...form.register("referenceMonth")}
+						disabled={Boolean(invoice)}
+						id="invoice-payment-month"
+						type="month"
+					/>
+					<FieldError errors={[form.formState.errors.referenceMonth]} />
+				</Field>
+				<Field data-invalid={Boolean(form.formState.errors.paidAt)}>
+					<FieldLabel htmlFor="invoice-payment-date">
+						Data do pagamento
+					</FieldLabel>
+					<Input
+						aria-invalid={Boolean(form.formState.errors.paidAt)}
+						{...form.register("paidAt")}
+						id="invoice-payment-date"
+						type="date"
+					/>
+					<FieldError errors={[form.formState.errors.paidAt]} />
+				</Field>
+				<Controller
+					control={form.control}
+					name="amount"
+					render={({ field, fieldState }) => (
+						<Field data-invalid={fieldState.invalid}>
+							<FieldLabel htmlFor="invoice-payment-amount">
+								Valor pago
+							</FieldLabel>
+							<MoneyInput
+								aria-invalid={fieldState.invalid}
+								id="invoice-payment-amount"
+								onBlur={field.onBlur}
+								onValueChange={field.onChange}
+								value={field.value}
+							/>
+							<FieldError errors={[fieldState.error]} />
+						</Field>
+					)}
+				/>
+			</DrawerAwareForm>
+		</>
+	);
+	const title = invoice?.payment ? "Editar pagamento" : "Pagar fatura";
+	const description =
+		"O pagamento fica no histórico como liquidação e não duplica suas despesas.";
+	if (isMobile)
+		return (
+			<ResizableDrawer
+				description={description}
+				onOpenChange={onOpenChange}
+				open={open}
+				title={title}
+			>
+				{content}
+			</ResizableDrawer>
+		);
+	return (
+		<Dialog onOpenChange={onOpenChange} open={open}>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>{title}</DialogTitle>
+					<DialogDescription>{description}</DialogDescription>
+				</DialogHeader>
+				{content}
+			</DialogContent>
+		</Dialog>
+	);
+}
+
 function Payments() {
 	const queryClient = useQueryClient();
 	const [tab, setTab] = useState<"methods" | "invoices">("methods");
 	const [editing, setEditing] = useState<PaymentMethodDto | null>(null);
+	const [paymentOpen, setPaymentOpen] = useState(false);
+	const [payingInvoice, setPayingInvoice] = useState<InvoiceDto | null>(null);
 	const methods = useQuery(paymentMethodsQueryOptions());
 	const invoices = useQuery(invoicesQueryOptions());
 	const archiveMutation = useMutation({
@@ -1551,6 +2085,16 @@ function Payments() {
 					<Button onClick={() => setEditing({} as PaymentMethodDto)}>
 						<Plus /> Nova forma
 					</Button>
+					{tab === "invoices" && (
+						<Button
+							onClick={() => {
+								setPayingInvoice(null);
+								setPaymentOpen(true);
+							}}
+						>
+							<Plus /> Registrar pagamento
+						</Button>
+					)}
 				</div>
 			</PageTitle>
 			<PaymentMethodDialog
@@ -1562,6 +2106,20 @@ function Payments() {
 					setEditing(null);
 					void queryClient.invalidateQueries({ queryKey: financeQueryKey });
 				}}
+			/>
+			<InvoicePaymentDialog
+				invoice={payingInvoice}
+				key={`${paymentOpen}:${payingInvoice?.paymentMethodId ?? "new"}:${payingInvoice?.referenceMonth ?? ""}`}
+				onOpenChange={(open) => {
+					setPaymentOpen(open);
+					if (!open) setPayingInvoice(null);
+				}}
+				onSaved={() => {
+					setPaymentOpen(false);
+					setPayingInvoice(null);
+					void queryClient.invalidateQueries({ queryKey: financeQueryKey });
+				}}
+				open={paymentOpen}
 			/>
 			<Tabs
 				className="mb-4"
@@ -1646,36 +2204,108 @@ function Payments() {
 							invoices.data.map((invoice) => (
 								<FinanceCard
 									className="p-5"
-									key={`${invoice.paymentMethodId}-${invoice.cycleClosingDate}-${invoice.cycleDueDate}`}
+									key={`${invoice.paymentMethodId}-${invoice.referenceMonth}`}
 								>
-									<div className="flex justify-between gap-3">
+									<div className="flex flex-wrap justify-between gap-3">
 										<div>
 											<CardTitle className="font-semibold text-foreground">
-												{invoice.paymentMethod.name}
+												{invoice.paymentMethod.name} · fatura{" "}
+												{invoice.referenceMonth}
 												{invoice.paymentMethod.archivedAt ? " (arquivado)" : ""}
 											</CardTitle>
 											<p className="text-xs text-muted-foreground">
 												Ciclo até {invoice.cycleClosingDate} · vence em{" "}
-												{invoice.cycleDueDate}
+												{invoice.cycleDueDate} ·{" "}
+												{invoice.status === "paid"
+													? "paga"
+													: invoice.status === "projected"
+														? "projetada"
+														: "aberta"}
 											</p>
 										</div>
-										<p className="font-bold">
-											{moneyFromCents(invoice.totalCents)}
+										<div className="text-right">
+											<p className="text-xs text-muted-foreground">
+												Gasto considerado
+											</p>
+											<p className="font-bold">
+												{moneyFromCents(invoice.effectiveExpenseCents)}
+											</p>
+										</div>
+									</div>
+									<div className="mt-4 grid gap-2 rounded-xl bg-muted/50 p-3 text-sm sm:grid-cols-3">
+										<p>
+											<span className="block text-xs text-muted-foreground">
+												Itens cadastrados
+											</span>
+											<strong>{moneyFromCents(invoice.itemsTotalCents)}</strong>
+										</p>
+										<p>
+											<span className="block text-xs text-muted-foreground">
+												Valor pago
+											</span>
+											<strong>
+												{invoice.payment
+													? moneyFromCents(invoice.payment.amountCents)
+													: "Não pago"}
+											</strong>
+										</p>
+										<p>
+											<span className="block text-xs text-muted-foreground">
+												Gastos não cadastrados
+											</span>
+											<strong>
+												{moneyFromCents(invoice.unregisteredExpenseCents)}
+											</strong>
 										</p>
 									</div>
+									{invoice.unregisteredExpenseCents > 0 && (
+										<Alert className="mt-3">
+											<CircleAlert />
+											<AlertDescription>
+												{moneyFromCents(invoice.unregisteredExpenseCents)} foram
+												incluídos como gastos não cadastrados.
+											</AlertDescription>
+										</Alert>
+									)}
+									{invoice.declaredOverPaymentCents > 0 && (
+										<Alert className="mt-3" variant="destructive">
+											<CircleAlert />
+											<AlertDescription>
+												Os itens superam o pagamento em{" "}
+												{moneyFromCents(invoice.declaredOverPaymentCents)}; a
+												soma dos itens permanece como gasto real.
+											</AlertDescription>
+										</Alert>
+									)}
 									<ul className="mt-3 divide-y divide-border">
 										{invoice.items.map((item) => (
 											<li
 												className="flex justify-between py-2 text-sm"
-												key={item.transactionId}
+												key={`${item.transactionId}:${item.installmentNumber}`}
 											>
 												<span>
 													{item.category.name} · {item.occurredAt}
+													{item.installmentCount > 1
+														? ` · ${item.installmentNumber}/${item.installmentCount}`
+														: ""}
 												</span>
 												<span>{moneyFromCents(item.amountCents)}</span>
 											</li>
 										))}
 									</ul>
+									<div className="mt-4 flex justify-end">
+										<Button
+											onClick={() => {
+												setPayingInvoice(invoice);
+												setPaymentOpen(true);
+											}}
+											variant={invoice.payment ? "outline" : "default"}
+										>
+											{invoice.payment
+												? "Editar pagamento"
+												: "Registrar pagamento"}
+										</Button>
+									</div>
 								</FinanceCard>
 							))
 						)}
@@ -1939,11 +2569,24 @@ function Reports() {
 		fuchsia: "#d946ef",
 	};
 	const chartData =
-		report?.expenseByCategory.map((item) => ({
-			amountCents: item.amountCents,
-			category: item.categoryName,
-			fill: chartColors[item.colorKey] ?? "#64748b",
-		})) ?? [];
+		report == null
+			? []
+			: [
+					...report.expenseByCategory.map((item) => ({
+						amountCents: item.amountCents,
+						category: item.categoryName,
+						fill: chartColors[item.colorKey] ?? "#64748b",
+					})),
+					...(report.unregisteredExpenseCents > 0
+						? [
+								{
+									amountCents: report.unregisteredExpenseCents,
+									category: "Gastos não cadastrados",
+									fill: "#64748b",
+								},
+							]
+						: []),
+				];
 	const chartConfig = Object.fromEntries(
 		chartData.map((item) => [item.category, { label: item.category }]),
 	) satisfies ChartConfig;
@@ -2044,6 +2687,14 @@ function Reports() {
 									result.data.expenseCategoryTree as ExpenseCategoryTreeNode[]
 								}
 							/>
+							{result.data.unregisteredExpenseCents > 0 && (
+								<div className="mt-3 flex justify-between rounded-lg bg-muted px-3 py-2 text-sm">
+									<span>Gastos não cadastrados</span>
+									<strong>
+										{moneyFromCents(result.data.unregisteredExpenseCents)}
+									</strong>
+								</div>
+							)}
 						</div>
 					</FinanceCard>
 					<FinanceCard className="mt-7 p-5">

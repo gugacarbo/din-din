@@ -37,6 +37,8 @@ export function KindSelect({
 	"aria-describedby"?: string;
 	"aria-invalid"?: boolean;
 }) {
+	const SelectedIcon = value ? kindIcons[value] : null;
+
 	return (
 		<Select
 			disabled={disabled}
@@ -51,7 +53,22 @@ export function KindSelect({
 				className={cn("w-full", className)}
 				id={id}
 			>
-				<SelectValue placeholder="Selecione o tipo" />
+				{value && SelectedIcon ? (
+					<span className="flex min-w-0 items-center gap-2">
+						<SelectedIcon
+							aria-hidden
+							className={cn(
+								"size-4 shrink-0",
+								value === "income"
+									? "text-emerald-600 dark:text-emerald-400"
+									: "text-destructive",
+							)}
+						/>
+						<span className="truncate">{kindLabels[value]}</span>
+					</span>
+				) : (
+					<SelectValue placeholder="Selecione o tipo" />
+				)}
 			</SelectTrigger>
 			<SelectContent>
 				{(Object.keys(kindLabels) as Kind[]).map((kind) => {

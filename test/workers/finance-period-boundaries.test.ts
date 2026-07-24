@@ -63,9 +63,12 @@ describe("finance periods through the test-only HTTP Worker", () => {
 		expect(response.status).toBe(200);
 		const result = (await response.json()) as Dashboard;
 		expect(result.month).toEqual({ incomeCents: 10000, expenseCents: 10000, balanceCents: 0 });
-		expect(result.recentTransactions).toHaveLength(5);
-		expect(result.recentTransactions.map((item) => item.description)).toContain("a-boundary");
-		expect(result.recentTransactions.every((item) => item.description?.startsWith("a-") && item.description !== "a-archived")).toBe(true);
+		expect(result.recentActivity).toHaveLength(5);
+		const recentTransactions = result.recentActivity
+			.filter((item) => item.kind === "transaction")
+			.map((item) => item.transaction);
+		expect(recentTransactions.map((item) => item.description)).toContain("a-boundary");
+		expect(recentTransactions.every((item) => item.description?.startsWith("a-") && item.description !== "a-archived")).toBe(true);
 	});
 
 	for (const scenario of [

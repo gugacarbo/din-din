@@ -20,6 +20,7 @@ const supportLeases = path.join(migrationDir, "0005_support_report_leases.sql");
 const supportReservations = path.join(migrationDir, "0006_support_publication_reservations.sql");
 const aiLogging = path.join(migrationDir, "0007_ai_usage_logging.sql");
 const admin = path.join(migrationDir, "0008_admin_support_review.sql");
+const invoices = path.join(migrationDir, "0009_sturdy_dust.sql");
 const downFile = path.join(scratch, "down.sql");
 
 function run(args) {
@@ -230,8 +231,13 @@ try {
 	const restored = run(["--command", "select count(*) as legacy_transactions from transactions; pragma table_info(categories); pragma foreign_key_check;", "--json"]);
 	if (!restored.includes("legacy_transactions") || restored.includes("parent_category_id")) throw new Error("Down local did not restore the legacy category shape.");
 	run(["--file", feature]);
+	run(["--command", "insert into payment_methods (id,user_id,name,kind,invoice_control,closing_day,due_day,created_at,updated_at) values ('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000001','Legacy card','credit_card',1,25,5,1,1); update transactions set payment_method_id='00000000-0000-4000-8000-000000000004', invoice_cycle_closing_date='2024-01-25', invoice_cycle_due_date='2024-02-05';"]);
+	run(["--file", invoices]);
+	const invoiceMigration = run(["--command", "select count(*) as installment_count from transaction_installments where installment_number=1 and installment_count=1 and reference_month='2024-02'; select count(*) as removed_columns from pragma_table_info('transactions') where name in ('invoice_cycle_closing_date','invoice_cycle_due_date'); pragma foreign_key_check;", "--json"]);
+	if (!/"installment_count"\s*:\s*1/.test(invoiceMigration) || !/"removed_columns"\s*:\s*0/.test(invoiceMigration))
+		throw new Error("Invoice migration did not backfill 1/1 or remove legacy cycle columns.");
 	run(["--command", "pragma foreign_key_check;", "--json"]);
-	console.log("PASS verify:migration-rollback: legacy fixture, guarded support and feature down, private-table removal, legacy restore and reapply passed in disposable D1.");
+	console.log("PASS verify:migration-rollback: legacy fixture, guarded support and feature down, invoice 1/1 backfill, private-table removal, legacy restore and reapply passed in disposable D1.");
 } finally {
 	await rm(scratch, { recursive: true, force: true });
 }

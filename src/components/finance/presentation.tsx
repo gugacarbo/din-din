@@ -154,24 +154,46 @@ const colorClasses: Record<string, string> = {
 	fuchsia: "bg-fuchsia-500",
 };
 
+const iconColorClasses: Record<string, string> = {
+	amber: "text-amber-500",
+	blue: "text-blue-500",
+	cyan: "text-cyan-500",
+	emerald: "text-emerald-500",
+	indigo: "text-indigo-500",
+	lime: "text-lime-500",
+	orange: "text-orange-500",
+	pink: "text-pink-500",
+	red: "text-red-500",
+	rose: "text-rose-500",
+	sky: "text-sky-500",
+	slate: "text-slate-500",
+	teal: "text-teal-500",
+	violet: "text-violet-500",
+	fuchsia: "text-fuchsia-500",
+};
+
 export function CategoryMark({
 	colorKey,
 	iconKey,
 	className,
 	iconClassName,
+	variant = "badge",
 }: {
 	colorKey: string;
 	iconKey: string;
 	className?: string;
 	iconClassName?: string;
+	variant?: "badge" | "icon";
 }) {
 	const Icon = categoryIcons[iconKey] ?? Tags;
 
 	return (
 		<span
 			className={cn(
-				"inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-white",
-				colorClasses[colorKey] ?? "bg-slate-500",
+				"inline-flex size-9 shrink-0 items-center justify-center",
+				variant === "badge"
+					? ["rounded-xl text-white", colorClasses[colorKey] ?? "bg-slate-500"]
+					: (iconColorClasses[colorKey] ?? "text-slate-500"),
 				className,
 			)}
 		>

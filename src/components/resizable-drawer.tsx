@@ -14,7 +14,8 @@ const drawerInitialHeight = (viewportHeight: number) =>
 	Math.round(viewportHeight * 0.72);
 const drawerMinimumHeight = (viewportHeight: number) =>
 	Math.round(viewportHeight * 0.72);
-const drawerCloseThreshold = 96;
+const drawerCloseThreshold = (viewportHeight: number) =>
+	Math.max(180, Math.round(viewportHeight * 0.28));
 
 function clampDrawerHeight(height: number, viewportHeight: number) {
 	return Math.min(
@@ -87,13 +88,6 @@ function ResizableDrawer({
 							return;
 						}
 						const height = drawerValue - event.deltaY;
-						if (
-							height <
-							drawerMinimumHeight(drawerMaxHeight) - drawerCloseThreshold
-						) {
-							onOpenChange(false);
-							return;
-						}
 						resizeDrawer(height);
 					}}
 				>
@@ -132,11 +126,8 @@ function ResizableDrawer({
 								if (!start || start.pointerId !== event.pointerId) return;
 								event.currentTarget.releasePointerCapture(event.pointerId);
 								dragStart.current = null;
-								const height = start.startHeight + start.startY - event.clientY;
-								if (
-									height <
-									drawerMinimumHeight(drawerMaxHeight) - drawerCloseThreshold
-								) {
+								const downwardDistance = event.clientY - start.startY;
+								if (downwardDistance >= drawerCloseThreshold(drawerMaxHeight)) {
 									onOpenChange(false);
 								}
 							}}

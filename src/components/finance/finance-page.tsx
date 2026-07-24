@@ -139,6 +139,7 @@ import { CategorySelect } from "./category-select.tsx";
 import { ColorSelect } from "./color-select.tsx";
 import { IconSelect } from "./icon-select.tsx";
 import { type Kind, KindSelect } from "./kind-select.tsx";
+import { PaymentMethodSelect } from "./payment-method-select.tsx";
 import { CategoryMark } from "./presentation.tsx";
 import { TransactionDetailsDialog } from "./transaction-details-dialog.tsx";
 
@@ -844,45 +845,16 @@ function TransactionForm({
 						<FieldLabel htmlFor="transaction-payment-method">
 							Forma de pagamento (opcional)
 						</FieldLabel>
-						<Select
+						<PaymentMethodSelect
+							aria-invalid={fieldState.invalid}
+							emptyOption={{ label: "Não informado", value: "none" }}
+							id="transaction-payment-method"
+							methods={paymentChoices}
 							onValueChange={(value) =>
 								field.onChange(value === "none" ? "" : value)
 							}
 							value={field.value || "none"}
-						>
-							<SelectTrigger
-								aria-invalid={fieldState.invalid}
-								className="w-full"
-								id="transaction-payment-method"
-							>
-								{selectedPaymentMethod ? (
-									<span className="flex min-w-0 items-center gap-2">
-										<CategoryMark
-											className="size-6 rounded-lg"
-											colorKey={selectedPaymentMethod.colorKey}
-											iconClassName="size-4"
-											iconKey={selectedPaymentMethod.iconKey}
-											variant="icon"
-										/>
-										<span className="truncate">
-											{selectedPaymentMethod.name}
-											{selectedPaymentMethod.archivedAt ? " (arquivada)" : ""}
-										</span>
-									</span>
-								) : (
-									<span className="text-muted-foreground">Não informado</span>
-								)}
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="none">Não informado</SelectItem>
-								{paymentChoices.map((method: PaymentMethodDto) => (
-									<SelectItem key={method.id} value={method.id}>
-										{method.name}
-										{method.archivedAt ? " (arquivada)" : ""}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
+						/>
 						<FieldError errors={[fieldState.error]} />
 					</Field>
 				)}
@@ -1941,26 +1913,15 @@ function InvoicePaymentDialog({
 					render={({ field, fieldState }) => (
 						<Field data-invalid={fieldState.invalid}>
 							<FieldLabel htmlFor="invoice-payment-card">Cartão</FieldLabel>
-							<Select
+							<PaymentMethodSelect
+								aria-invalid={fieldState.invalid}
 								disabled={Boolean(invoice)}
+								id="invoice-payment-card"
+								methods={cardChoices}
 								onValueChange={field.onChange}
+								placeholder="Escolha o cartão"
 								value={field.value}
-							>
-								<SelectTrigger
-									aria-invalid={fieldState.invalid}
-									className="w-full"
-									id="invoice-payment-card"
-								>
-									<SelectValue placeholder="Escolha o cartão" />
-								</SelectTrigger>
-								<SelectContent>
-									{cardChoices.map((method) => (
-										<SelectItem key={method.id} value={method.id}>
-											{method.name}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
+							/>
 							<FieldError errors={[fieldState.error]} />
 						</Field>
 					)}

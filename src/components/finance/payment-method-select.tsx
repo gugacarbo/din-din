@@ -6,41 +6,38 @@ import {
 	SelectValue,
 } from "#/components/ui/select.tsx";
 import { cn } from "#/lib/utils.ts";
-import type { CategoryDto } from "#/server/finance.ts";
+import type { PaymentMethodDto } from "#/server/finance.ts";
 
 import { CategoryMark } from "./presentation.tsx";
 
-type RootOption = {
-	value: string;
-	label: string;
-};
+type EmptyOption = { label: string; value: string };
 
-export function CategorySelect({
-	categories,
+export function PaymentMethodSelect({
+	methods,
 	value,
 	onValueChange,
 	id,
 	className,
 	disabled,
-	placeholder = "Selecione uma categoria",
-	rootOption,
+	placeholder = "Escolha uma forma de pagamento",
+	emptyOption,
 	"aria-describedby": ariaDescribedBy,
 	"aria-invalid": ariaInvalid,
 }: {
-	categories: CategoryDto[];
+	methods: PaymentMethodDto[];
 	value: string;
 	onValueChange: (value: string) => void;
 	id?: string;
 	className?: string;
 	disabled?: boolean;
 	placeholder?: string;
-	rootOption?: RootOption;
+	emptyOption?: EmptyOption;
 	"aria-describedby"?: string;
 	"aria-invalid"?: boolean;
 }) {
-	const selectedCategory = categories.find((category) => category.id === value);
-	const selectedRootOption =
-		rootOption?.value === value ? rootOption : undefined;
+	const selectedMethod = methods.find((method) => method.id === value);
+	const selectedEmptyOption =
+		emptyOption?.value === value ? emptyOption : undefined;
 
 	return (
 		<Select
@@ -56,43 +53,45 @@ export function CategorySelect({
 				className={cn("w-full", className)}
 				id={id}
 			>
-				{selectedCategory ? (
+				{selectedMethod ? (
 					<span className="flex min-w-0 items-center gap-2">
 						<CategoryMark
-							className="size-6 rounded-lg"
-							colorKey={selectedCategory.colorKey}
+							className="size-6"
+							colorKey={selectedMethod.colorKey}
 							iconClassName="size-4"
-							iconKey={selectedCategory.iconKey}
+							iconKey={selectedMethod.iconKey}
 							variant="icon"
 						/>
 						<span className="truncate">
-							{"— ".repeat(selectedCategory.level - 1)}
-							{selectedCategory.name}
+							{selectedMethod.name}
+							{selectedMethod.archivedAt ? " (arquivada)" : ""}
 						</span>
 					</span>
-				) : selectedRootOption ? (
-					<span className="truncate">{selectedRootOption.label}</span>
+				) : selectedEmptyOption ? (
+					<span className="text-muted-foreground">
+						{selectedEmptyOption.label}
+					</span>
 				) : (
 					<SelectValue placeholder={placeholder} />
 				)}
 			</SelectTrigger>
 			<SelectContent>
-				{rootOption && (
-					<SelectItem value={rootOption.value}>{rootOption.label}</SelectItem>
+				{emptyOption && (
+					<SelectItem value={emptyOption.value}>{emptyOption.label}</SelectItem>
 				)}
-				{categories.map((category) => (
-					<SelectItem key={category.id} value={category.id}>
+				{methods.map((method) => (
+					<SelectItem key={method.id} value={method.id}>
 						<span className="flex min-w-0 items-center gap-2">
 							<CategoryMark
 								className="size-6"
-								colorKey={category.colorKey}
+								colorKey={method.colorKey}
 								iconClassName="size-4"
-								iconKey={category.iconKey}
+								iconKey={method.iconKey}
 								variant="icon"
 							/>
 							<span className="truncate">
-								{"— ".repeat(category.level - 1)}
-								{category.name}
+								{method.name}
+								{method.archivedAt ? " (arquivada)" : ""}
 							</span>
 						</span>
 					</SelectItem>

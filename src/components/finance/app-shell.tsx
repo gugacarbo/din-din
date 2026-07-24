@@ -28,6 +28,7 @@ import { Button } from "#/components/ui/button.tsx";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
@@ -39,6 +40,7 @@ import {
 	SidebarFooter,
 	SidebarGroup,
 	SidebarGroupContent,
+	SidebarGroupLabel,
 	SidebarHeader,
 	SidebarInset,
 	SidebarMenu,
@@ -66,16 +68,10 @@ const primaryNavigation = [
 	{ to: "/reports" as const, label: "Relatórios", icon: BarChart3 },
 ];
 
-const secondaryNavigation = [
-	{ to: "/profile" as const, label: "Perfil", icon: CircleUserRound },
-];
-
 function NavigationLink({
 	item,
 }: {
-	item:
-		| (typeof primaryNavigation)[number]
-		| (typeof secondaryNavigation)[number];
+	item: (typeof primaryNavigation)[number];
 }) {
 	const pathname = useRouterState({
 		select: (state) => state.location.pathname,
@@ -86,15 +82,12 @@ function NavigationLink({
 	return (
 		<SidebarMenuItem>
 			<SidebarMenuButton
-				asChild
-				className="text-foreground hover:text-foreground active:text-foreground data-active:text-foreground"
 				isActive={active}
+				render={<Link to={item.to} />}
 				tooltip={item.label}
 			>
-				<Link to={item.to}>
-					<Icon />
-					<span>{item.label}</span>
-				</Link>
+				<Icon />
+				<span>{item.label}</span>
 			</SidebarMenuButton>
 		</SidebarMenuItem>
 	);
@@ -111,25 +104,23 @@ function UserMenuItems({
 }) {
 	return (
 		<>
-			<DropdownMenuLabel className="max-w-56">
-				<p className="truncate">{userName}</p>
-				{email && (
-					<p className="truncate text-xs font-normal text-muted-foreground">
-						{email}
-					</p>
-				)}
-			</DropdownMenuLabel>
-			<DropdownMenuSeparator />
-			<DropdownMenuItem asChild>
-				<Link to="/profile">
+			<DropdownMenuGroup>
+				<DropdownMenuLabel className="max-w-56">
+					<p className="truncate">{userName}</p>
+					{email && (
+						<p className="truncate text-xs font-normal text-muted-foreground">
+							{email}
+						</p>
+					)}
+				</DropdownMenuLabel>
+				<DropdownMenuSeparator />
+				<DropdownMenuItem render={<Link to="/profile" />}>
 					<CircleUserRound /> Perfil
-				</Link>
-			</DropdownMenuItem>
-			<DropdownMenuItem asChild>
-				<Link to="/settings">
+				</DropdownMenuItem>
+				<DropdownMenuItem render={<Link to="/settings" />}>
 					<Settings /> Configurações
-				</Link>
-			</DropdownMenuItem>
+				</DropdownMenuItem>
+			</DropdownMenuGroup>
 			<DropdownMenuSeparator />
 			<ThemeToggle />
 			<DropdownMenuSeparator />
@@ -186,18 +177,20 @@ function UserMenu({
 	return (
 		<>
 			<DropdownMenu>
-				<DropdownMenuTrigger asChild>
-					<SidebarMenuButton
-						aria-label="Menu do usuário"
-						className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-						size="lg"
-						tooltip="Menu do usuário"
-					>
-						{avatar}
-						<span className="truncate group-data-[collapsible=icon]:hidden">
-							{userName}
-						</span>
-					</SidebarMenuButton>
+				<DropdownMenuTrigger
+					render={
+						<SidebarMenuButton
+							aria-label="Menu do usuário"
+							className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+							size="lg"
+							tooltip="Menu do usuário"
+						/>
+					}
+				>
+					{avatar}
+					<span className="truncate group-data-[collapsible=icon]:hidden">
+						{userName}
+					</span>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="start" className="w-56" side="top">
 					<UserMenuItems
@@ -259,10 +252,12 @@ export function AppShell({
 					<Sidebar className="border-sidebar-border bg-sidebar/90 backdrop-blur">
 						<SidebarHeader className="px-4 py-6">
 							<Link className="px-2" to="/">
-								<p className="display-title text-3xl font-bold text-foreground">
+								<p className="font-serif text-3xl font-bold text-primary">
 									Din Din
 								</p>
-								<p className="island-kicker mt-1">suas finanças, claras</p>
+								<p className="mt-1 text-[0.69rem] font-bold uppercase tracking-[0.16em]">
+									suas finanças, claras
+								</p>
 							</Link>
 						</SidebarHeader>
 						<SidebarContent>
@@ -277,33 +272,22 @@ export function AppShell({
 							</SidebarGroup>
 							{membership.data?.isAdmin && (
 								<SidebarGroup>
+									<SidebarGroupLabel>Admin</SidebarGroupLabel>
 									<SidebarGroupContent>
-										<SidebarMenu aria-label="Administração">
+										<SidebarMenu aria-label="Admin">
 											<SidebarMenuItem>
 												<SidebarMenuButton
-													asChild
-													className="text-foreground hover:text-foreground active:text-foreground data-active:text-foreground"
+													render={<Link to="/admin/suport" />}
 													tooltip="Suporte"
 												>
-													<Link to="/admin/suport">
-														<ShieldCheck />
-														<span>Suporte</span>
-													</Link>
+													<ShieldCheck />
+													<span>Suporte</span>
 												</SidebarMenuButton>
 											</SidebarMenuItem>
 										</SidebarMenu>
 									</SidebarGroupContent>
 								</SidebarGroup>
 							)}
-							<SidebarGroup>
-								<SidebarGroupContent>
-									<SidebarMenu aria-label="Secundária">
-										{secondaryNavigation.map((item) => (
-											<NavigationLink item={item} key={item.to} />
-										))}
-									</SidebarMenu>
-								</SidebarGroupContent>
-							</SidebarGroup>
 						</SidebarContent>
 						<SidebarFooter>
 							<SidebarSeparator />
@@ -324,7 +308,7 @@ export function AppShell({
 							<div className="flex items-center gap-2">
 								<SidebarTrigger />
 								<Link
-									className="display-title text-2xl font-bold text-foreground md:hidden"
+									className="font-serif text-2xl font-bold text-primary md:hidden"
 									to="/"
 								>
 									Din Din
@@ -340,7 +324,7 @@ export function AppShell({
 								</Button>
 							</div>
 						</header>
-						<main className="page-wrap py-6 md:max-w-none md:px-8">
+						<main className="mx-auto w-full max-w-[1080px] px-4 py-6 md:max-w-none md:px-8">
 							{children}
 						</main>
 					</SidebarInset>

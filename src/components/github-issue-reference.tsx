@@ -1,4 +1,4 @@
-import { Button } from "#/components/ui/button.tsx";
+import { buttonVariants } from "#/components/ui/button.tsx";
 
 type GitHubIssueReferenceProps = {
 	issueNumber: number | null;
@@ -36,14 +36,16 @@ export function GitHubIssueReference({
 		return null;
 
 	return (
-		<Button
-			asChild
-			className="h-auto p-0 text-foreground hover:text-foreground"
-			variant="link"
+		<a
+			className={buttonVariants({
+				className: "h-auto p-0 text-foreground hover:text-foreground",
+				variant: "link",
+			})}
+			href={issueUrl}
+			rel="noreferrer"
+			target="_blank"
 		>
-			<a href={issueUrl} rel="noreferrer" target="_blank">
-				Issue #{issueNumber}
-			</a>
-		</Button>
+			Issue #{issueNumber}
+		</a>
 	);
 }

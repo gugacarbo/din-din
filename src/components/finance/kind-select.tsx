@@ -57,7 +57,9 @@ export function KindSelect({
 									aria-hidden
 									className={cn(
 										"size-4 shrink-0",
-										kind === "income" ? "text-income" : "text-expense",
+										kind === "income"
+											? "text-emerald-600 dark:text-emerald-400"
+											: "text-destructive",
 									)}
 								/>
 								<span>{kindLabels[kind]}</span>

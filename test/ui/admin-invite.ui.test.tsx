@@ -1,22 +1,31 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { lazy, Suspense, type ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const social = vi.hoisted(() => vi.fn());
+const notifyError = vi.hoisted(() => vi.fn());
 
 vi.mock("#/lib/auth-client.ts", () => ({
 	authClient: { signIn: { social } },
 }));
 vi.mock("@tanstack/react-router", () => ({
-	createFileRoute: () => () => ({}),
+	createFileRoute: () => (options: object) => ({ options }),
+	lazyRouteComponent: (
+		importer: () => Promise<Record<string, ComponentType>>,
+		exportName: string,
+	) => lazy(async () => ({ default: (await importer())[exportName] })),
 }));
+vi.mock("sonner", () => ({ toast: { error: notifyError } }));
 
 import {
 	adminInviteTokenStorageKey,
 	inviteFragmentScript,
 } from "#/lib/admin-invite-client.ts";
-import { InvitePage } from "#/routes/admin/convite.tsx";
+import { Route } from "#/routes/admin/convite.tsx";
+
+const InvitePage = Route.options.component;
 
 function renderInvite() {
 	const queryClient = new QueryClient({
@@ -24,7 +33,9 @@ function renderInvite() {
 	});
 	return render(
 		<QueryClientProvider client={queryClient}>
-			<InvitePage />
+			<Suspense fallback={null}>
+				<InvitePage />
+			</Suspense>
 		</QueryClientProvider>,
 	);
 }
@@ -35,6 +46,7 @@ describe("admin invite page", () => {
 		window.history.replaceState(null, "", "/admin/convite");
 		social.mockReset();
 		social.mockResolvedValue({});
+		notifyError.mockReset();
 		vi.stubGlobal("fetch", vi.fn());
 	});
 
@@ -60,16 +72,18 @@ describe("admin invite page", () => {
 		const user = userEvent.setup();
 		const view = renderInvite();
 
-		view.rerender(
+	view.rerender(
 			<QueryClientProvider
 				client={new QueryClient({
 					defaultOptions: { mutations: { retry: false } },
 				})}
 			>
-				<InvitePage />
+				<Suspense fallback={null}>
+					<InvitePage />
+				</Suspense>
 			</QueryClientProvider>,
 		);
-		await user.type(screen.getByLabelText("E-mail"), "admin@example.com");
+		await user.type(await screen.findByLabelText("E-mail"), "admin@example.com");
 		await user.click(screen.getByRole("button", { name: "Continuar com Google" }));
 
 		await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
@@ -96,11 +110,11 @@ describe("admin invite page", () => {
 		);
 		const user = userEvent.setup();
 		renderInvite();
-		await user.type(screen.getByLabelText("E-mail"), "admin@example.com");
+		await user.type(await screen.findByLabelText("E-mail"), "admin@example.com");
 		await user.click(screen.getByRole("button", { name: "Continuar com Google" }));
 
-		expect(await screen.findByRole("alert")).toHaveTextContent(
-			"Convite inválido ou expirado.",
+		await waitFor(() =>
+			expect(notifyError).toHaveBeenCalledWith("Convite inválido ou expirado."),
 		);
 		expect(window.sessionStorage.getItem(adminInviteTokenStorageKey)).toBe(token);
 		expect(social).not.toHaveBeenCalled();

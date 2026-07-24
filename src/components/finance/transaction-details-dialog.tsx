@@ -73,8 +73,8 @@ export function TransactionDetailsDialog({
 				<p
 					className={
 						isIncome
-							? "font-extrabold text-income"
-							: "font-extrabold text-expense"
+							? "font-extrabold text-emerald-600 dark:text-emerald-400"
+							: "font-extrabold text-destructive"
 					}
 				>
 					{isIncome ? "+" : "−"}

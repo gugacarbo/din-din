@@ -309,22 +309,24 @@ export function IconSelect({
 				}}
 				open={mobileDrawerOpen}
 			>
-				<SheetTrigger asChild>
-					<Button
-						aria-haspopup="dialog"
-						className={cn("w-full justify-between", className)}
-						id={id}
-						type="button"
-						variant="outline"
-					>
-						<span className="flex items-center gap-2">
-							{SelectedIcon ? (
-								<SelectedIcon aria-hidden className="size-4" />
-							) : null}
-							<span>{value}</span>
-						</span>
-						<ChevronDown aria-hidden className="size-4 opacity-50" />
-					</Button>
+				<SheetTrigger
+					render={
+						<Button
+							aria-haspopup="dialog"
+							className={cn("w-full justify-between", className)}
+							id={id}
+							type="button"
+							variant="outline"
+						/>
+					}
+				>
+					<span className="flex items-center gap-2">
+						{SelectedIcon ? (
+							<SelectedIcon aria-hidden className="size-4" />
+						) : null}
+						<span>{value}</span>
+					</span>
+					<ChevronDown aria-hidden className="size-4 opacity-50" />
 				</SheetTrigger>
 				<SheetContent className="h-[85dvh] rounded-t-2xl" side="bottom">
 					<SheetHeader className="shrink-0 pr-12 text-left">

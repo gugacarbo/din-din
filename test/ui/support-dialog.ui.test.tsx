@@ -9,7 +9,7 @@ const canvas = vi.hoisted(() => vi.fn());
 vi.mock("#/lib/support-diagnostics.ts", () => ({
 	supportDiagnosticsSnapshot: diagnostics.snapshot,
 }));
-vi.mock("html2canvas", () => ({ default: canvas }));
+vi.mock("html-to-image", () => ({ toCanvas: canvas }));
 
 import { SupportDialog } from "#/components/support-dialog.tsx";
 
@@ -106,18 +106,44 @@ describe("SupportDialog", () => {
 		const dialog = await openDialog();
 		fireEvent.click(screen.getByRole("button", { name: "Tirar print" }));
 		await waitFor(() => expect(canvas).toHaveBeenCalledTimes(1));
+		expect(
+			await screen.findByAltText("Preview do print de suporte"),
+		).toBeVisible();
 
 		const options = canvas.mock.calls[0][1] as {
-			ignoreElements: (element: Element) => boolean;
+			filter: (element: HTMLElement) => boolean;
 		};
 		const excluded = document.createElement("div");
 		excluded.dataset.supportCaptureExclude = "";
-		expect(options.ignoreElements(dialog)).toBe(true);
-		expect(options.ignoreElements(excluded)).toBe(true);
-		expect(options.ignoreElements(document.createElement("main"))).toBe(false);
+		const overlay = document.createElement("div");
+		overlay.dataset.slot = "dialog-overlay";
+		const externalImage = document.createElement("img");
+		externalImage.src = "https://lh3.googleusercontent.com/avatar";
+		const localImage = document.createElement("img");
+		localImage.src = "/avatar.png";
+		expect(options.filter(dialog)).toBe(false);
+		expect(options.filter(excluded)).toBe(false);
+		expect(options.filter(overlay)).toBe(false);
+		expect(options.filter(externalImage)).toBe(false);
+		expect(options.filter(localImage)).toBe(true);
+		expect(options.filter(document.createElement("main"))).toBe(true);
+		expect(
+			options.filter(
+				document.createTextNode("conteúdo") as unknown as HTMLElement,
+			),
+		).toBe(true);
 		expect(canvas.mock.calls[0][1]).toMatchObject({
-			scrollX: -320,
-			scrollY: -180,
+			canvasHeight: window.innerHeight,
+			canvasWidth: window.innerWidth,
+			height: window.innerHeight,
+			imagePlaceholder: expect.stringMatching(/^data:image\/gif;base64,/),
+			onImageErrorHandler: expect.any(Function),
+			pixelRatio: 1,
+			style: {
+				transform: "translate(-320px, -180px)",
+				transformOrigin: "top left",
+			},
+			width: window.innerWidth,
 		});
 	});
 });

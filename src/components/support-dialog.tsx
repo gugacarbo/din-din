@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
-import html2canvas from "html2canvas";
+import { toCanvas } from "html-to-image";
 import { Camera, CircleHelp, Trash2 } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -38,6 +38,27 @@ type FrozenAttempt = {
 	payload: string;
 	screenshot: File | null;
 };
+
+const transparentImageDataUrl =
+	"data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+const captureExclusionSelector =
+	"[data-support-dialog], [data-support-capture-exclude], [data-slot='dialog-overlay']";
+
+function shouldCaptureElement(element: HTMLElement) {
+	if (!(element instanceof Element)) return true;
+	if (element instanceof HTMLImageElement) {
+		const source = element.currentSrc || element.src;
+		if (source) {
+			const url = new URL(source, window.location.href);
+			if (
+				(url.protocol === "http:" || url.protocol === "https:") &&
+				url.origin !== window.location.origin
+			)
+				return false;
+		}
+	}
+	return element.closest(captureExclusionSelector) === null;
+}
 
 function blobFromCanvas(
 	canvas: HTMLCanvasElement,
@@ -124,18 +145,19 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 		try {
 			document.documentElement.dataset.supportCapture = "true";
 			await new Promise((resolve) => requestAnimationFrame(resolve));
-			const canvas = await html2canvas(document.body, {
-				backgroundColor: getComputedStyle(document.body).backgroundColor,
+			const canvas = await toCanvas(document.body, {
 				width: window.innerWidth,
 				height: window.innerHeight,
-				scrollX: -window.scrollX,
-				scrollY: -window.scrollY,
-				windowWidth: window.innerWidth,
-				windowHeight: window.innerHeight,
-				ignoreElements: (element) =>
-					element.closest(
-						"[data-support-dialog], [data-support-capture-exclude]",
-					) !== null,
+				canvasWidth: window.innerWidth,
+				canvasHeight: window.innerHeight,
+				pixelRatio: 1,
+				imagePlaceholder: transparentImageDataUrl,
+				onImageErrorHandler: () => undefined,
+				style: {
+					transform: `translate(${-window.scrollX}px, ${-window.scrollY}px)`,
+					transformOrigin: "top left",
+				},
+				filter: shouldCaptureElement,
 			});
 			const blob = await blobFromCanvas(canvas, "image/webp");
 			if (!blob || blob.size > 2 * 1024 * 1024)
@@ -144,6 +166,7 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 			setPreview(URL.createObjectURL(blob));
 			setScreenshot(new File([blob], "suporte.webp", { type: "image/webp" }));
 		} catch (error) {
+			console.error("support_screenshot_failed", error);
 			toast.error(
 				error instanceof Error
 					? error.message
@@ -160,16 +183,18 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 			}}
 			open={open}
 		>
-			<DialogTrigger asChild>
-				<Button
-					aria-label="Ajuda e suporte"
-					size="icon"
-					type="button"
-					variant="ghost"
-				>
-					<CircleHelp />
-					<span className="sr-only">Ajuda e suporte</span>
-				</Button>
+			<DialogTrigger
+				render={
+					<Button
+						aria-label="Ajuda e suporte"
+						size="icon"
+						type="button"
+						variant="ghost"
+					/>
+				}
+			>
+				<CircleHelp />
+				<span className="sr-only">Ajuda e suporte</span>
 			</DialogTrigger>
 			<DialogContent
 				aria-labelledby={titleId}

@@ -64,7 +64,7 @@ export function ThemeToggle() {
 		theme === "system" ? "light" : theme === "light" ? "dark" : "system";
 
 	return (
-		<DropdownMenuItem onSelect={() => updateTheme(nextTheme)}>
+		<DropdownMenuItem onClick={() => updateTheme(nextTheme)}>
 			<Icon /> Tema: {themeLabels[theme]}
 		</DropdownMenuItem>
 	);

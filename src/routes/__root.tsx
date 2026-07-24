@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import {
 	createRootRouteWithContext,
 	HeadContent,
+	Link,
 	ScriptOnce,
 	Scripts,
 } from "@tanstack/react-router";
@@ -41,6 +42,10 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 			{
 				name: "theme-color",
 				content: "#4fb8b2",
+			},
+			{
+				name: "mobile-web-app-capable",
+				content: "yes",
 			},
 			{
 				name: "apple-mobile-web-app-capable",
@@ -89,8 +94,29 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 			},
 		],
 	}),
+	notFoundComponent: NotFoundPage,
 	shellComponent: RootDocument,
 });
+
+function NotFoundPage() {
+	return (
+		<main className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 text-center">
+			<div className="space-y-2">
+				<p className="text-sm font-medium text-muted-foreground">Erro 404</p>
+				<h1 className="text-2xl font-semibold">Página não encontrada</h1>
+				<p className="text-muted-foreground">
+					O endereço acessado não existe ou não está mais disponível.
+				</p>
+			</div>
+			<Link
+				className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+				to="/"
+			>
+				Voltar ao início
+			</Link>
+		</main>
+	);
+}
 
 function RootDocument({ children }: { children: React.ReactNode }) {
 	return (

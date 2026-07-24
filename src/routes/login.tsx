@@ -1,8 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useForm } from "react-hook-form";
 import { useState } from "react";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -39,7 +39,7 @@ export const Route = createFileRoute("/login")({
 	component: Login,
 });
 
-export function Login() {
+function Login() {
 	const [loading, setLoading] = useState(false);
 	const form = useForm<DevLoginValues>({
 		defaultValues: { email: "" },
@@ -85,11 +85,13 @@ export function Login() {
 		}
 	}
 	return (
-		<main className="page-wrap grid min-h-dvh place-items-center py-8">
+		<main className="mx-auto grid min-h-dvh w-full max-w-[1080px] place-items-center px-4 py-8">
 			<Card className="w-full max-w-md">
 				<CardHeader className="text-center">
-					<p className="island-kicker">finanças pessoais</p>
-					<CardTitle className="display-title text-5xl font-bold text-foreground">
+					<p className="text-[0.69rem] font-bold uppercase tracking-[0.16em]">
+						finanças pessoais
+					</p>
+					<CardTitle className="font-serif text-5xl font-bold text-foreground">
 						Din Din
 					</CardTitle>
 					<CardDescription>

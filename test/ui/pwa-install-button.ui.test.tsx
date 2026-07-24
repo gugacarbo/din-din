@@ -54,4 +54,22 @@ describe("PwaInstallButton", () => {
 
 		expect(screen.queryByRole("button", { name: /instalar/i })).not.toBeInTheDocument();
 	});
+
+	it("shows iPhone installation instructions when iOS cannot open a native prompt", async () => {
+		vi.mocked(window.matchMedia).mockReturnValue({
+			matches: false,
+		} as MediaQueryList);
+		vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue(
+			"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
+		);
+
+		render(<PwaInstallButton />);
+
+		const button = await screen.findByRole("button", { name: /instalar/i });
+		fireEvent.click(button);
+
+		expect(screen.getByRole("dialog")).toHaveTextContent(
+			"Adicionar à Tela de Início",
+		);
+	});
 });

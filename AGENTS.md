@@ -66,6 +66,10 @@ placeholder `YOUR_DATABASE_ID`.
 - Workers AI não é simulado pelo Miniflare. Os testes Workers usam
   `test/fixtures/wrangler-workers-test.jsonc`, sem binding `AI`, e doubles para
   fluxos de suporte; não aponte a suite para recursos remotos.
+- O `filter` de `html-to-image` também recebe nós de texto em runtime, apesar
+  do tipo `HTMLElement`; teste `instanceof Element` antes de usar `.closest()`.
+  Exclua imagens cross-origin: respostas HTTP como `429` viram data URLs
+  inválidas e fazem a renderização SVG inteira falhar.
 
 ## Mapa de contexto
 

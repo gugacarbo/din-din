@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
+import { lazy, Suspense, type ComponentType } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("#/server/finance.ts", () => ({ getSessionUser: vi.fn() }));
@@ -8,11 +9,17 @@ vi.mock("#/lib/auth-client.ts", () => ({
 	authClient: { signIn: { social: vi.fn() } },
 }));
 vi.mock("@tanstack/react-router", () => ({
-	createFileRoute: () => () => ({}),
+	createFileRoute: () => (options: object) => ({ options }),
+	lazyRouteComponent: (
+		importer: () => Promise<Record<string, ComponentType>>,
+		exportName: string,
+	) => lazy(async () => ({ default: (await importer())[exportName] })),
 	redirect: vi.fn(),
 }));
 
-import { Login } from "#/routes/login.tsx";
+import { Route } from "#/routes/login.tsx";
+
+const Login = Route.options.component;
 
 function renderLogin() {
 	const queryClient = new QueryClient({
@@ -20,16 +27,18 @@ function renderLogin() {
 	});
 	return render(
 		<QueryClientProvider client={queryClient}>
-			<Login />
+			<Suspense fallback={null}>
+				<Login />
+			</Suspense>
 		</QueryClientProvider>,
 	);
 }
 
 describe("Login", () => {
-	it("shows the direct-email form in development", () => {
+	it("shows the direct-email form in development", async () => {
 		renderLogin();
 
-		expect(screen.getByLabelText("E-mail de desenvolvimento")).toHaveAttribute(
+		expect(await screen.findByLabelText("E-mail de desenvolvimento")).toHaveAttribute(
 			"type",
 			"email",
 		);
@@ -43,7 +52,7 @@ describe("Login", () => {
 		renderLogin();
 
 		await user.type(
-			screen.getByLabelText("E-mail de desenvolvimento"),
+			await screen.findByLabelText("E-mail de desenvolvimento"),
 			"invalido",
 		);
 		await user.click(

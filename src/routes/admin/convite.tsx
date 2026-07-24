@@ -24,7 +24,7 @@ export const Route = createFileRoute("/admin/convite")({
 	component: InvitePage,
 });
 
-export function InvitePage() {
+function InvitePage() {
 	const [token, setToken] = useState(() =>
 		typeof window === "undefined" ? undefined : readAdminInviteToken(),
 	);
@@ -82,7 +82,7 @@ export function InvitePage() {
 		}
 	}
 	return (
-		<main className="page-wrap grid min-h-dvh place-items-center py-8">
+		<main className="mx-auto grid min-h-dvh w-full max-w-[1080px] place-items-center px-4 py-8">
 			<Card className="w-full max-w-md">
 				<CardContent className="p-6">
 					<h1 className="text-xl font-semibold text-foreground">

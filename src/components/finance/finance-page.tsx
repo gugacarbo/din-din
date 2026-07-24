@@ -19,6 +19,7 @@ import {
 import { type ComponentProps, useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { Cell, Pie, PieChart } from "recharts";
+import { toast } from "sonner";
 import { z } from "zod";
 
 import { DrawerAwareForm } from "#/components/drawer-aware-form.tsx";
@@ -34,7 +35,7 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "#/components/ui/alert-dialog.tsx";
-import { Button } from "#/components/ui/button.tsx";
+import { Button, buttonVariants } from "#/components/ui/button.tsx";
 import {
 	Card,
 	CardAction,
@@ -242,12 +243,7 @@ function Loading() {
 }
 
 function FinanceCard({ className, ...props }: ComponentProps<typeof Card>) {
-	return (
-		<Card
-			className={cn("island-shell rounded-2xl py-0 shadow-none", className)}
-			{...props}
-		/>
-	);
+	return <Card className={cn("py-0", className)} {...props} />;
 }
 
 function ArchiveConfirmation({
@@ -301,7 +297,9 @@ function PageTitle({
 			)}
 		>
 			<div>
-				<p className="island-kicker">{eyebrow}</p>
+				<p className="text-[0.69rem] font-bold uppercase tracking-[0.16em]">
+					{eyebrow}
+				</p>
 				<h1
 					className={cn(
 						"mt-1 font-semibold text-foreground",
@@ -362,8 +360,8 @@ function TransactionRows({
 						<p
 							className={
 								item.type === "income"
-									? "font-bold text-income"
-									: "font-bold text-expense"
+									? "font-bold text-emerald-600 dark:text-emerald-400"
+									: "font-bold text-destructive"
 							}
 						>
 							{item.type === "income" ? "+" : "−"}
@@ -463,13 +461,16 @@ function Dashboard({ onView }: { onView: (item: TransactionDto) => void }) {
 						Últimos lançamentos
 					</CardTitle>
 					<CardAction>
-						<Button
-							asChild
-							className="h-auto p-0 font-bold text-foreground hover:text-foreground"
-							variant="link"
+						<Link
+							className={buttonVariants({
+								className:
+									"h-auto p-0 font-bold text-foreground hover:text-foreground",
+								variant: "link",
+							})}
+							to="/transactions"
 						>
-							<Link to="/transactions">Ver histórico</Link>
-						</Button>
+							Ver histórico
+						</Link>
 					</CardAction>
 				</CardHeader>
 				<CardContent>
@@ -493,9 +494,9 @@ function Summary({
 }) {
 	const className =
 		tone === "income"
-			? "text-income"
+			? "text-emerald-600 dark:text-emerald-400"
 			: tone === "expense"
-				? "text-expense"
+				? "text-destructive"
 				: "text-foreground";
 	return (
 		<Card size={compact ? "sm" : "default"}>
@@ -544,7 +545,6 @@ function TransactionForm({
 	const type = form.watch("type");
 	const categoriesResult = useQuery(categoriesQueryOptions("active"));
 	const paymentMethodsResult = useQuery(paymentMethodsQueryOptions());
-	const [submitError, setSubmitError] = useState<string | null>(null);
 	const saveTransaction = useMutation({
 		mutationFn: async (values: TransactionFormValues) => {
 			const data = {
@@ -581,12 +581,14 @@ function TransactionForm({
 			});
 	}, [choices, form]);
 	async function submit(values: TransactionFormValues) {
-		setSubmitError(null);
 		try {
 			await saveTransaction.mutateAsync(values);
+			toast.success(
+				initial ? "Lançamento atualizado." : "Lançamento adicionado.",
+			);
 			onSaved();
 		} catch (cause) {
-			setSubmitError(
+			toast.error(
 				cause instanceof Error ? cause.message : "Não foi possível salvar.",
 			);
 		}
@@ -736,7 +738,6 @@ function TransactionForm({
 				/>
 				<FieldError errors={[form.formState.errors.description]} />
 			</Field>
-			{submitError && <Notice>{submitError}</Notice>}
 		</DrawerAwareForm>
 	);
 }
@@ -814,18 +815,24 @@ function Transactions({
 	});
 	async function archive() {
 		if (!archiving) return;
-		await archiveMutation.mutateAsync(archiving.id);
-		setArchiving(null);
+		try {
+			await archiveMutation.mutateAsync(archiving.id);
+			toast.success("Lançamento arquivado.");
+			setArchiving(null);
+		} catch (cause) {
+			toast.error(errorMessage(cause));
+		}
 	}
 	const transactions = result.data?.pages.flatMap((page) => page.items) ?? [];
 	return (
 		<>
 			<PageTitle eyebrow="histórico" title="Lançamentos">
-				<Button asChild variant="outline">
-					<Link to="/transactions/archive">
-						<ArchiveRestore /> Arquivo
-					</Link>
-				</Button>
+				<Link
+					className={buttonVariants({ variant: "outline" })}
+					to="/transactions/archive"
+				>
+					<ArchiveRestore /> Arquivo
+				</Link>
 			</PageTitle>
 			<ArchiveConfirmation
 				itemName={archiving?.category.name ?? "este lançamento"}
@@ -900,7 +907,6 @@ function CategoryForm({
 			),
 		[categoriesResult.data, type, initial?.id],
 	);
-	const [submitError, setSubmitError] = useState<string | null>(null);
 	const saveCategory = useMutation({
 		mutationFn: async (values: CategoryFormValues) => {
 			const data = {
@@ -915,12 +921,12 @@ function CategoryForm({
 		},
 	});
 	async function submit(values: CategoryFormValues) {
-		setSubmitError(null);
 		try {
 			await saveCategory.mutateAsync(values);
+			toast.success(initial ? "Categoria atualizada." : "Categoria criada.");
 			onSaved();
 		} catch (cause) {
-			setSubmitError(
+			toast.error(
 				cause instanceof Error ? cause.message : "Não foi possível salvar.",
 			);
 		}
@@ -1035,7 +1041,6 @@ function CategoryForm({
 					</Field>
 				)}
 			/>
-			{submitError && <Notice>{submitError}</Notice>}
 		</DrawerAwareForm>
 	);
 }
@@ -1114,22 +1119,33 @@ function Categories() {
 	});
 	async function archive() {
 		if (!archiving) return;
-		await archiveMutation.mutateAsync(archiving.id);
-		setArchiving(null);
+		try {
+			await archiveMutation.mutateAsync(archiving.id);
+			toast.success("Categoria arquivada.");
+			setArchiving(null);
+		} catch (cause) {
+			toast.error(errorMessage(cause));
+		}
 	}
 	async function restore(category: CategoryDto) {
-		await restoreMutation.mutateAsync(category.id);
+		try {
+			await restoreMutation.mutateAsync(category.id);
+			toast.success("Categoria restaurada.");
+		} catch (cause) {
+			toast.error(errorMessage(cause));
+		}
 	}
 	return (
 		<>
 			<PageTitle eyebrow="organização" title="Categorias">
 				<div className="flex gap-2">
-					<Button asChild variant="outline">
-						<Link to="/profile">
-							<ArrowLeft />
-							Voltar
-						</Link>
-					</Button>
+					<Link
+						className={buttonVariants({ variant: "outline" })}
+						to="/profile"
+					>
+						<ArrowLeft />
+						Voltar
+					</Link>
 					<Button onClick={() => setEditing({} as CategoryDto)}>
 						<Plus /> Nova
 					</Button>
@@ -1251,7 +1267,6 @@ function PaymentMethodForm({
 	});
 	const kind = form.watch("kind");
 	const invoiceControl = form.watch("invoiceControl");
-	const [submitError, setSubmitError] = useState<string | null>(null);
 	const canInvoice = kind === "credit_card" && invoiceControl;
 	const savePaymentMethod = useMutation({
 		mutationFn: async (values: PaymentMethodFormValues) => {
@@ -1272,12 +1287,16 @@ function PaymentMethodForm({
 		},
 	});
 	async function submit(values: PaymentMethodFormValues) {
-		setSubmitError(null);
 		try {
 			await savePaymentMethod.mutateAsync(values);
+			toast.success(
+				initial
+					? "Forma de pagamento atualizada."
+					: "Forma de pagamento criada.",
+			);
 			onSaved();
 		} catch (cause) {
-			setSubmitError(
+			toast.error(
 				cause instanceof Error ? cause.message : "Não foi possível salvar.",
 			);
 		}
@@ -1430,7 +1449,6 @@ function PaymentMethodForm({
 					</Field>
 				</div>
 			)}
-			{submitError && <Notice>{submitError}</Notice>}
 		</DrawerAwareForm>
 	);
 }
@@ -1504,21 +1522,32 @@ function Payments() {
 			queryClient.invalidateQueries({ queryKey: financeQueryKey }),
 	});
 	async function archive(method: PaymentMethodDto) {
-		await archiveMutation.mutateAsync(method.id);
+		try {
+			await archiveMutation.mutateAsync(method.id);
+			toast.success("Forma de pagamento arquivada.");
+		} catch (cause) {
+			toast.error(errorMessage(cause));
+		}
 	}
 	async function restore(method: PaymentMethodDto) {
-		await restoreMutation.mutateAsync(method.id);
+		try {
+			await restoreMutation.mutateAsync(method.id);
+			toast.success("Forma de pagamento restaurada.");
+		} catch (cause) {
+			toast.error(errorMessage(cause));
+		}
 	}
 	return (
 		<>
 			<PageTitle eyebrow="pagamentos" title="Formas e faturas">
 				<div className="flex gap-2">
-					<Button asChild variant="outline">
-						<Link to="/profile">
-							<ArrowLeft />
-							Voltar
-						</Link>
-					</Button>
+					<Link
+						className={buttonVariants({ variant: "outline" })}
+						to="/profile"
+					>
+						<ArrowLeft />
+						Voltar
+					</Link>
 					<Button onClick={() => setEditing({} as PaymentMethodDto)}>
 						<Plus /> Nova forma
 					</Button>
@@ -1761,18 +1790,24 @@ function Archive({ onView }: { onView: (item: TransactionDto) => void }) {
 			queryClient.invalidateQueries({ queryKey: financeQueryKey }),
 	});
 	async function restore(item: TransactionDto) {
-		await restoreMutation.mutateAsync(item.id);
+		try {
+			await restoreMutation.mutateAsync(item.id);
+			toast.success("Lançamento restaurado.");
+		} catch (cause) {
+			toast.error(errorMessage(cause));
+		}
 	}
 	const transactions = result.data?.pages.flatMap((page) => page.items) ?? [];
 	return (
 		<>
 			<PageTitle eyebrow="arquivo" title="Lançamentos arquivados">
-				<Button asChild variant="outline">
-					<Link to="/transactions">
-						<ArrowLeft />
-						Voltar para lançamentos
-					</Link>
-				</Button>
+				<Link
+					className={buttonVariants({ variant: "outline" })}
+					to="/transactions"
+				>
+					<ArrowLeft />
+					Voltar para lançamentos
+				</Link>
 			</PageTitle>
 			{result.isPending ? (
 				<Loading />
@@ -1998,7 +2033,7 @@ function Reports() {
 							</div>
 						</div>
 						<div>
-							<p className="island-kicker">
+							<p className="text-[0.69rem] font-bold uppercase tracking-[0.16em]">
 								{result.data.period.startDate} a {result.data.period.endDate}
 							</p>
 							<CardTitle className="mt-1 text-2xl font-semibold text-foreground">

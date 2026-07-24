@@ -67,6 +67,29 @@ describe("SupportDialog", () => {
 		vi.restoreAllMocks();
 	});
 
+	it("uses the reusable resizable drawer on mobile", async () => {
+		const originalInnerWidth = window.innerWidth;
+		Object.defineProperty(window, "innerWidth", {
+			configurable: true,
+			value: 640,
+		});
+		try {
+			renderDialog();
+			await openDialog();
+			const slider = await screen.findByRole("slider", {
+				name: "Ajustar altura do drawer",
+			});
+			const dialog = screen.getByRole("dialog");
+			expect(dialog).toHaveAttribute("data-slot", "sheet-content");
+			expect(slider).toBeVisible();
+		} finally {
+			Object.defineProperty(window, "innerWidth", {
+				configurable: true,
+				value: originalInnerWidth,
+			});
+		}
+	});
+
 	it("reuses the exact diagnostic payload for an ambiguous retry", async () => {
 		const fetcher = vi
 			.fn()
@@ -90,6 +113,21 @@ describe("SupportDialog", () => {
 		);
 		expect(payloads[1]).toBe(payloads[0]);
 		expect(diagnostics.snapshot).toHaveBeenCalledTimes(1);
+	});
+
+	it("shows the selected category label and icons in the category options", async () => {
+		const user = userEvent.setup();
+		renderDialog();
+		await openDialog();
+		const category = screen.getByLabelText("Categoria");
+		expect(category).toHaveTextContent("Problema/erro");
+		expect(category.querySelector("svg")).not.toBeNull();
+
+		await user.click(category);
+		const questionLabel = await screen.findByText("Dúvida/ajuda");
+		const question = questionLabel.closest('[data-slot="select-item"]');
+		if (!question) throw new Error("Item de categoria não encontrado.");
+		expect(question.querySelector("svg")).not.toBeNull();
 	});
 
 	it("excludes the dialog and every marked element from the viewport capture", async () => {

@@ -1,4 +1,10 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+	type ComponentProps,
+	type ReactNode,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 
 import {
 	Sheet,
@@ -28,6 +34,7 @@ function clampDrawerHeight(height: number, viewportHeight: number) {
 function ResizableDrawer({
 	children,
 	className,
+	contentProps,
 	description,
 	footer,
 	onOpenChange,
@@ -36,6 +43,10 @@ function ResizableDrawer({
 }: {
 	children: ReactNode;
 	className?: string;
+	contentProps?: Omit<
+		ComponentProps<typeof SheetContent>,
+		"children" | "className" | "side"
+	> & { [key: `data-${string}`]: boolean | string | undefined };
 	description: ReactNode;
 	footer?: ReactNode;
 	onOpenChange: (open: boolean) => void;
@@ -77,6 +88,7 @@ function ResizableDrawer({
 				)}
 				side="bottom"
 				style={{ height: `${drawerValue}px` }}
+				{...contentProps}
 			>
 				<div
 					className={cn(

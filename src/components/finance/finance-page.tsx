@@ -8,7 +8,6 @@ import {
 import { Link } from "@tanstack/react-router";
 import {
 	ArchiveRestore,
-	ArrowLeft,
 	CircleAlert,
 	Pencil,
 	Plus,
@@ -22,6 +21,7 @@ import { Cell, Pie, PieChart } from "recharts";
 import { toast } from "sonner";
 import { z } from "zod";
 
+import { BackButton } from "#/components/back-button.tsx";
 import { DrawerAwareForm } from "#/components/drawer-aware-form.tsx";
 import { ResizableDrawer } from "#/components/resizable-drawer.tsx";
 import { Alert, AlertDescription } from "#/components/ui/alert.tsx";
@@ -621,7 +621,7 @@ function Dashboard({ onView }: { onView: (item: TransactionDto) => void }) {
 						<Link
 							className={buttonVariants({
 								className:
-									"h-auto p-0 font-bold text-foreground hover:text-foreground",
+									"h-auto p-0 font-bold !text-foreground hover:!text-foreground visited:!text-foreground",
 								variant: "link",
 							})}
 							to="/transactions"
@@ -656,17 +656,29 @@ function Summary({
 				? "text-destructive"
 				: "text-foreground";
 	return (
-		<Card size={compact ? "sm" : "default"}>
+		<Card
+			className={
+				compact ? "gap-1 py-2 [--card-spacing:--spacing(2)]" : undefined
+			}
+			size={compact ? "sm" : "default"}
+		>
 			<CardHeader>
-				<CardDescription className="font-medium tracking-widest uppercase">
+				<CardDescription
+					className={cn(
+						"font-medium tracking-widest uppercase",
+						compact && "text-[0.65rem]/none sm:text-xs/none",
+					)}
+				>
 					{label}
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
 				<p
 					className={cn(
-						"font-semibold",
-						compact ? "text-lg md:text-2xl" : "text-2xl",
+						"font-semibold whitespace-nowrap tabular-nums tracking-tight",
+						compact
+							? "text-[clamp(0.75rem,3vw,1.125rem)] md:text-2xl"
+							: "text-2xl",
 						className,
 					)}
 				>
@@ -1405,13 +1417,7 @@ function Categories() {
 		<>
 			<PageTitle eyebrow="organização" title="Categorias">
 				<div className="flex gap-2">
-					<Link
-						className={buttonVariants({ variant: "outline" })}
-						to="/profile"
-					>
-						<ArrowLeft />
-						Voltar
-					</Link>
+					<BackButton />
 					<Button onClick={() => setEditing({} as CategoryDto)}>
 						<Plus /> Nova
 					</Button>
@@ -2036,13 +2042,7 @@ function Payments() {
 		<>
 			<PageTitle eyebrow="pagamentos" title="Formas e faturas">
 				<div className="flex gap-2">
-					<Link
-						className={buttonVariants({ variant: "outline" })}
-						to="/profile"
-					>
-						<ArrowLeft />
-						Voltar
-					</Link>
+					<BackButton />
 					<Button onClick={() => setEditing({} as PaymentMethodDto)}>
 						<Plus /> Nova forma
 					</Button>
@@ -2392,13 +2392,7 @@ function Archive({ onView }: { onView: (item: TransactionDto) => void }) {
 	return (
 		<>
 			<PageTitle eyebrow="arquivo" title="Lançamentos arquivados">
-				<Link
-					className={buttonVariants({ variant: "outline" })}
-					to="/transactions"
-				>
-					<ArrowLeft />
-					Voltar para lançamentos
-				</Link>
+				<BackButton>Voltar para lançamentos</BackButton>
 			</PageTitle>
 			{result.isPending ? (
 				<Loading />

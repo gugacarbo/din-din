@@ -1,10 +1,18 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { toCanvas } from "html-to-image";
-import { Camera, CircleHelp, Trash2 } from "lucide-react";
+import {
+	Camera,
+	CircleAlert,
+	CircleHelp,
+	Lightbulb,
+	MessageCircleQuestion,
+	Trash2,
+} from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { ResizableDrawer } from "#/components/resizable-drawer.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
 	Dialog,
@@ -21,10 +29,11 @@ import {
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
-	SelectValue,
 } from "#/components/ui/select.tsx";
 import { Textarea } from "#/components/ui/textarea.tsx";
+import { useIsMobile } from "#/hooks/use-mobile.ts";
 import {
+	type SupportCategory,
 	type SupportInput,
 	supportCategories,
 	supportCategoryLabels,
@@ -43,6 +52,18 @@ const transparentImageDataUrl =
 	"data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
 const captureExclusionSelector =
 	"[data-support-dialog], [data-support-capture-exclude], [data-slot='dialog-overlay']";
+
+const supportCategoryIcons = {
+	problem: CircleAlert,
+	question: MessageCircleQuestion,
+	suggestion: Lightbulb,
+} satisfies Record<SupportCategory, typeof CircleAlert>;
+
+const supportCategoryIconClasses: Record<SupportCategory, string> = {
+	problem: "text-destructive",
+	question: "text-sky-500",
+	suggestion: "text-amber-500",
+};
 
 function shouldCaptureElement(element: HTMLElement) {
 	if (!(element instanceof Element)) return true;
@@ -70,6 +91,7 @@ function blobFromCanvas(
 }
 
 export function SupportDialog({ offline }: { offline: boolean }) {
+	const isMobile = useIsMobile();
 	const [open, setOpen] = useState(false);
 	const [screenshot, setScreenshot] = useState<File | null>(null);
 	const [preview, setPreview] = useState<string | null>(null);
@@ -176,6 +198,157 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 			delete document.documentElement.dataset.supportCapture;
 		}
 	}
+	const submitAction = (
+		<Button
+			disabled={offline || submission.isPending}
+			form="support-form"
+			type="submit"
+		>
+			{submission.isPending ? "Enviando…" : "Enviar mensagem"}
+		</Button>
+	);
+	const formFields = (
+		<>
+			<Field
+				data-invalid={Boolean(form.formState.errors.category) || undefined}
+			>
+				<FieldLabel htmlFor="support-category">Categoria</FieldLabel>
+				<Controller
+					control={form.control}
+					name="category"
+					render={({ field }) => {
+						const SelectedIcon = supportCategoryIcons[field.value];
+						return (
+							<Select onValueChange={field.onChange} value={field.value}>
+								<SelectTrigger
+									aria-invalid={Boolean(form.formState.errors.category)}
+									id="support-category"
+								>
+									<span className="flex min-w-0 items-center gap-2">
+										<SelectedIcon
+											aria-hidden
+											className={supportCategoryIconClasses[field.value]}
+										/>
+										<span className="truncate">
+											{supportCategoryLabels[field.value]}
+										</span>
+									</span>
+								</SelectTrigger>
+								<SelectContent>
+									{supportCategories.map((category) => {
+										const Icon = supportCategoryIcons[category];
+										return (
+											<SelectItem key={category} value={category}>
+												<span className="flex items-center gap-2">
+													<Icon
+														aria-hidden
+														className={supportCategoryIconClasses[category]}
+													/>
+													<span>{supportCategoryLabels[category]}</span>
+												</span>
+											</SelectItem>
+										);
+									})}
+								</SelectContent>
+							</Select>
+						);
+					}}
+				/>
+				<FieldError errors={[form.formState.errors.category]} />
+			</Field>
+			<Field data-invalid={Boolean(form.formState.errors.message) || undefined}>
+				<FieldLabel htmlFor="support-message">Mensagem</FieldLabel>
+				<Textarea
+					aria-invalid={Boolean(form.formState.errors.message)}
+					id="support-message"
+					maxLength={4000}
+					placeholder="Conte o que aconteceu e como podemos ajudar."
+					{...form.register("message")}
+				/>
+				<FieldError errors={[form.formState.errors.message]} />
+			</Field>
+			<div className="grid gap-2">
+				<Button
+					disabled={submission.isPending || offline}
+					onClick={takeScreenshot}
+					type="button"
+					variant="outline"
+				>
+					<Camera /> {screenshot ? "Tirar novamente" : "Tirar print"}
+				</Button>
+				{preview && (
+					<div className="grid gap-2">
+						<img
+							alt="Preview do print de suporte"
+							className="max-h-40 rounded border object-contain"
+							src={preview}
+						/>
+						<Button
+							onClick={() => {
+								URL.revokeObjectURL(preview);
+								setPreview(null);
+								setScreenshot(null);
+							}}
+							type="button"
+							variant="ghost"
+						>
+							<Trash2 /> Remover
+						</Button>
+					</div>
+				)}
+			</div>
+			{submission.error && (
+				<div className="grid gap-2">
+					<p className="text-sm font-medium text-destructive" role="alert">
+						{submission.error.message}
+					</p>
+					{(submission.error as { ambiguous?: boolean }).ambiguous && (
+						<Button onClick={startNewAttempt} type="button" variant="ghost">
+							Criar novo relato
+						</Button>
+					)}
+				</div>
+			)}
+		</>
+	);
+	const supportForm = (
+		<form
+			className="grid gap-4"
+			id="support-form"
+			onSubmit={form.handleSubmit((values) => submission.mutate(values))}
+		>
+			{formFields}
+		</form>
+	);
+
+	if (isMobile)
+		return (
+			<>
+				<Button
+					aria-label="Ajuda e suporte"
+					onClick={() => setOpen(true)}
+					size="icon"
+					type="button"
+					variant="ghost"
+				>
+					<CircleHelp />
+					<span className="sr-only">Ajuda e suporte</span>
+				</Button>
+				<ResizableDrawer
+					contentProps={{
+						"data-support-capture-exclude": true,
+						"data-support-dialog": true,
+					}}
+					description="Envie uma mensagem com dados técnicos limitados: até 50 logs e 50 requests sem conteúdos, credenciais ou URLs com parâmetros."
+					footer={submitAction}
+					onOpenChange={setOpen}
+					open={open}
+					title="Ajuda e suporte"
+				>
+					{supportForm}
+				</ResizableDrawer>
+			</>
+		);
 	return (
 		<Dialog
 			onOpenChange={(next) => {
@@ -208,98 +381,8 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 						requests sem conteúdos, credenciais ou URLs com parâmetros.
 					</DialogDescription>
 				</DialogHeader>
-				<form
-					className="grid gap-4"
-					onSubmit={form.handleSubmit((values) => submission.mutate(values))}
-				>
-					<Field
-						data-invalid={Boolean(form.formState.errors.category) || undefined}
-					>
-						<FieldLabel htmlFor="support-category">Categoria</FieldLabel>
-						<Controller
-							control={form.control}
-							name="category"
-							render={({ field }) => (
-								<Select onValueChange={field.onChange} value={field.value}>
-									<SelectTrigger
-										aria-invalid={Boolean(form.formState.errors.category)}
-										id="support-category"
-									>
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										{supportCategories.map((category) => (
-											<SelectItem key={category} value={category}>
-												{supportCategoryLabels[category]}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							)}
-						/>
-						<FieldError errors={[form.formState.errors.category]} />
-					</Field>
-					<Field
-						data-invalid={Boolean(form.formState.errors.message) || undefined}
-					>
-						<FieldLabel htmlFor="support-message">Mensagem</FieldLabel>
-						<Textarea
-							aria-invalid={Boolean(form.formState.errors.message)}
-							id="support-message"
-							maxLength={4000}
-							placeholder="Conte o que aconteceu e como podemos ajudar."
-							{...form.register("message")}
-						/>
-						<FieldError errors={[form.formState.errors.message]} />
-					</Field>
-					<div className="grid gap-2">
-						<Button
-							disabled={submission.isPending || offline}
-							onClick={takeScreenshot}
-							type="button"
-							variant="outline"
-						>
-							<Camera /> {screenshot ? "Tirar novamente" : "Tirar print"}
-						</Button>
-						{preview && (
-							<div className="grid gap-2">
-								<img
-									alt="Preview do print de suporte"
-									className="max-h-40 rounded border object-contain"
-									src={preview}
-								/>
-								<Button
-									onClick={() => {
-										URL.revokeObjectURL(preview);
-										setPreview(null);
-										setScreenshot(null);
-									}}
-									type="button"
-									variant="ghost"
-								>
-									<Trash2 /> Remover
-								</Button>
-							</div>
-						)}
-					</div>
-					{submission.error && (
-						<div className="grid gap-2">
-							<p className="text-sm font-medium text-destructive" role="alert">
-								{submission.error.message}
-							</p>
-							{(submission.error as { ambiguous?: boolean }).ambiguous && (
-								<Button onClick={startNewAttempt} type="button" variant="ghost">
-									Criar novo relato
-								</Button>
-							)}
-						</div>
-					)}
-					<DialogFooter>
-						<Button disabled={offline || submission.isPending} type="submit">
-							{submission.isPending ? "Enviando…" : "Enviar mensagem"}
-						</Button>
-					</DialogFooter>
-				</form>
+				{supportForm}
+				<DialogFooter>{submitAction}</DialogFooter>
 			</DialogContent>
 		</Dialog>
 	);

@@ -5,7 +5,7 @@ import { createElement, type ComponentProps, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
-	archiveCategory: vi.fn(), archiveTransaction: vi.fn(), archivePaymentMethod: vi.fn(), createCategory: vi.fn(), createPaymentMethod: vi.fn(), createTransaction: vi.fn(),
+	archiveCategory: vi.fn(), archiveTransaction: vi.fn(), archivePaymentMethod: vi.fn(), createCategory: vi.fn(), createPaymentMethod: vi.fn(), createTransaction: vi.fn(), routerBack: vi.fn(),
 	getDashboard: vi.fn(), getReport: vi.fn(), getSessionUser: vi.fn(), listActivity: vi.fn(), listCategories: vi.fn(), listTransactions: vi.fn(),
 	listPaymentMethods: vi.fn(), listInvoices: vi.fn(), removeInvoicePayment: vi.fn(), restoreCategory: vi.fn(), restorePaymentMethod: vi.fn(), restoreTransaction: vi.fn(), saveInvoicePayment: vi.fn(), updateCategory: vi.fn(), updatePaymentMethod: vi.fn(), updateTransaction: vi.fn(),
 }));
@@ -14,6 +14,8 @@ vi.mock("#/server/finance.ts", () => api);
 vi.mock("#/lib/auth-client.ts", () => ({ authClient: { signOut: vi.fn() } }));
 vi.mock("@tanstack/react-router", () => ({
 	Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => createElement("a", { href: to, ...props }, children),
+	useCanGoBack: () => true,
+	useRouter: () => ({ history: { back: api.routerBack } }),
 	useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) => select({ location: { pathname: "/" } }),
 }));
 vi.mock("recharts", () => ({
@@ -211,15 +213,18 @@ describe("FinancePage", () => {
 		).not.toBeInTheDocument();
   });
 
-  it("returns from Archive to History", async () => {
-    renderFinancePage("archive");
+	it("returns from Archive through router history", async () => {
+		const user = userEvent.setup();
+		renderFinancePage("archive");
 
-    const backLink = await screen.findByRole("link", {
-      name: "Voltar para lançamentos",
-    });
+		await user.click(
+			await screen.findByRole("button", {
+				name: "Voltar para lançamentos",
+			}),
+		);
 
-    expect(backLink).toHaveAttribute("href", "/transactions");
-  });
+		expect(api.routerBack).toHaveBeenCalledOnce();
+	});
 
 	it("prefetches the data for every item exposed by the sidebar", async () => {
 		renderFinancePage("dashboard");
@@ -265,19 +270,16 @@ describe("FinancePage", () => {
 		expect(await screen.findByText("— Restaurante")).toBeInTheDocument();
 	});
 
-	it("returns to Profile from both configuration pages", async () => {
+	it("returns through router history from both configuration pages", async () => {
+		const user = userEvent.setup();
 		const categoriesPage = renderFinancePage("categories");
-		expect(await screen.findByRole("link", { name: "Voltar" })).toHaveAttribute(
-			"href",
-			"/profile",
-		);
+		await user.click(await screen.findByRole("button", { name: "Voltar" }));
+		expect(api.routerBack).toHaveBeenCalledTimes(1);
 
 		categoriesPage.unmount();
 		renderFinancePage("payments");
-		expect(screen.getByRole("link", { name: "Voltar" })).toHaveAttribute(
-			"href",
-			"/profile",
-		);
+		await user.click(screen.getByRole("button", { name: "Voltar" }));
+		expect(api.routerBack).toHaveBeenCalledTimes(2);
 	});
 
 	it("uses the shared drawer and fixed actions for category forms", async () => {

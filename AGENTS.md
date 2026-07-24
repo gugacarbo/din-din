@@ -70,6 +70,10 @@ placeholder `YOUR_DATABASE_ID`.
   do tipo `HTMLElement`; teste `instanceof Element` antes de usar `.closest()`.
   Exclua imagens cross-origin: respostas HTTP como `429` viram data URLs
   inválidas e fazem a renderização SVG inteira falhar.
+- A suíte `test:ui` atualmente não resolve `cloudflare:workers` em
+  `finance-page.ui.test.tsx`; além disso, `card.ui.test.tsx` e
+  `icon-select.ui.test.tsx` ainda esperam a API visual anterior. Essas falhas
+  não são introduzidas por formatação, lint ou typecheck.
 
 ## Mapa de contexto
 

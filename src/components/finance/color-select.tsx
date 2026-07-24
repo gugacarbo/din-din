@@ -42,7 +42,12 @@ export function ColorSelect({
 	className?: string;
 }) {
 	return (
-		<Select onValueChange={onValueChange} value={value}>
+		<Select
+			onValueChange={(nextValue) => {
+				if (nextValue !== null) onValueChange(nextValue);
+			}}
+			value={value}
+		>
 			<SelectTrigger className={cn("w-full", className)} id={id}>
 				<SelectValue />
 			</SelectTrigger>

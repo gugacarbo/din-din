@@ -215,7 +215,7 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 					<Field
 						data-invalid={Boolean(form.formState.errors.category) || undefined}
 					>
-						<FieldLabel>Categoria</FieldLabel>
+						<FieldLabel htmlFor="support-category">Categoria</FieldLabel>
 						<Controller
 							control={form.control}
 							name="category"
@@ -223,6 +223,7 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 								<Select onValueChange={field.onChange} value={field.value}>
 									<SelectTrigger
 										aria-invalid={Boolean(form.formState.errors.category)}
+										id="support-category"
 									>
 										<SelectValue />
 									</SelectTrigger>

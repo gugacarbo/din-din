@@ -39,7 +39,13 @@ export function CategorySelect({
 	"aria-invalid"?: boolean;
 }) {
 	return (
-		<Select disabled={disabled} onValueChange={onValueChange} value={value}>
+		<Select
+			disabled={disabled}
+			onValueChange={(nextValue) => {
+				if (nextValue !== null) onValueChange(nextValue);
+			}}
+			value={value}
+		>
 			<SelectTrigger
 				aria-describedby={ariaDescribedBy}
 				aria-invalid={ariaInvalid}

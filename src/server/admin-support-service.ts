@@ -81,6 +81,15 @@ async function activePayload(d1: D1Database, reportId: string) {
 		.first<{ message: string; diagnostics: string }>();
 }
 
+async function activePrivateMessage(d1: D1Database, reportId: string) {
+	return d1
+		.prepare(
+			"select message from support_report_payloads where report_id = ? and expires_at > ?",
+		)
+		.bind(reportId, Date.now())
+		.first<{ message: string }>();
+}
+
 export async function listAdminSupport(
 	d1: D1Database,
 	headers: Headers,
@@ -117,8 +126,10 @@ export async function adminSupportDetail(
 		.first<AdminSupportReportRow>();
 	if (!report) throw new AdminSupportError(404, "report_not_found");
 	const payload = await activePayload(d1, reportId);
+	const privatePayload = await activePrivateMessage(d1, reportId);
 	return {
 		...supportReportFromRow(report),
+		message: privatePayload?.message ?? null,
 		canManualPublish: report.status === "manual_review" && Boolean(payload),
 		unavailableReason:
 			report.status === "manual_review" && !payload

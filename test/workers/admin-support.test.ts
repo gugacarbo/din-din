@@ -128,6 +128,9 @@ describe("admin HTTP route handlers", () => {
 				.prepare("insert into support_reports (report_id, category, status, attempts, issue_number, issue_url, created_at, updated_at) values (?, 'problem', 'published', 3, 31, 'https://github.com/gugacarbo/din-din/issues/31', ?, ?)")
 				.bind(reportId, now, now),
 			env.DB
+				.prepare("insert into support_report_payloads (report_id, user_id, client_request_id, fingerprint, message, diagnostics, metadata, received_at, expires_at) values (?, ?, ?, 'fingerprint', 'Mensagem privada de teste', '{}', '{}', ?, ?)")
+				.bind(reportId, a.id, crypto.randomUUID(), now, now + 60_000),
+			env.DB
 				.prepare("insert into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) values (?, ?, 'manual_review', 'needs_human', 'pending', ?, ?)")
 				.bind(reviewEventId, reportId, now, now),
 		]);
@@ -194,6 +197,7 @@ describe("admin HTTP route handlers", () => {
 			attempts: 3,
 			issue_number: 31,
 			issue_url: "https://github.com/gugacarbo/din-din/issues/31",
+			message: "Mensagem privada de teste",
 			review_tasks: [
 				expect.objectContaining({ event_id: reviewEventId }),
 			],

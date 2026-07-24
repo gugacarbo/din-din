@@ -216,12 +216,15 @@ export function AppShell({
 	offline: boolean;
 	user: { name: string; email: string; image?: string | null } | null;
 	onLogout: () => void;
-	onNewTransaction: () => void;
+	onNewTransaction?: () => void;
 }) {
 	const queryClient = useQueryClient();
 	const membership = useQuery(adminMembershipQueryOptions());
 	const userName = user?.name || user?.email || "Usuário";
 	const userInitial = userName.trim().charAt(0).toUpperCase() || "U";
+	const pathname = useRouterState({
+		select: (state) => state.location.pathname,
+	});
 
 	useEffect(() => {
 		if (offline) return;
@@ -277,6 +280,7 @@ export function AppShell({
 										<SidebarMenu aria-label="Admin">
 											<SidebarMenuItem>
 												<SidebarMenuButton
+													isActive={pathname.startsWith("/admin/suport")}
 													render={<Link to="/admin/suport" />}
 													tooltip="Suporte"
 												>
@@ -303,7 +307,7 @@ export function AppShell({
 							</SidebarMenu>
 						</SidebarFooter>
 					</Sidebar>
-					<SidebarInset className="bg-transparent">
+					<SidebarInset className="bg-background [background-image:radial-gradient(900px_520px_at_-8%_-10%,color-mix(in_oklab,var(--primary)_18%,transparent),transparent_60%),radial-gradient(900px_520px_at_108%_-8%,color-mix(in_oklab,var(--accent)_55%,transparent),transparent_64%)]">
 						<header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-2 border-b border-border bg-background/90 px-4 backdrop-blur">
 							<div className="flex items-center gap-2">
 								<SidebarTrigger />
@@ -317,11 +321,13 @@ export function AppShell({
 							</div>
 							<div className="flex items-center gap-2">
 								<SupportDialog offline={offline} />
-								<Button onClick={onNewTransaction} size="sm">
-									<Plus />{" "}
-									<span className="hidden sm:inline">Novo lançamento</span>
-									<span className="sm:hidden">Novo</span>
-								</Button>
+								{onNewTransaction && (
+									<Button onClick={onNewTransaction} size="sm">
+										<Plus />{" "}
+										<span className="hidden sm:inline">Novo lançamento</span>
+										<span className="sm:hidden">Novo</span>
+									</Button>
+								)}
 							</div>
 						</header>
 						<main className="mx-auto w-full max-w-[1080px] px-4 py-6 md:max-w-none md:px-8">

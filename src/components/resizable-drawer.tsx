@@ -16,6 +16,8 @@ const drawerMinimumHeight = (viewportHeight: number) =>
 	Math.round(viewportHeight * 0.72);
 const drawerCloseThreshold = (viewportHeight: number) =>
 	Math.max(180, Math.round(viewportHeight * 0.28));
+const interactiveDrawerSelector =
+	"button, input, textarea, select, a, label, [role='button'], [role='combobox'], [role='switch']";
 
 function clampDrawerHeight(height: number, viewportHeight: number) {
 	return Math.min(
@@ -44,6 +46,7 @@ function ResizableDrawer({
 	const [drawerHeight, setDrawerHeight] = useState(0);
 	const dragStart = useRef<{
 		pointerId: number;
+		scrollTop: number;
 		startHeight: number;
 		startY: number;
 	} | null>(null);
@@ -77,9 +80,55 @@ function ResizableDrawer({
 			>
 				<div
 					className={cn(
-						"min-h-0 flex-1 overflow-x-hidden",
+						"min-h-0 flex-1 touch-none overflow-x-hidden",
 						canScroll ? "overflow-y-auto" : "overflow-y-hidden",
 					)}
+					onPointerCancel={() => {
+						dragStart.current = null;
+					}}
+					onPointerDown={(event) => {
+						if (
+							event.target instanceof Element &&
+							event.target.closest(interactiveDrawerSelector)
+						)
+							return;
+						event.currentTarget.setPointerCapture(event.pointerId);
+						dragStart.current = {
+							pointerId: event.pointerId,
+							scrollTop: event.currentTarget.scrollTop,
+							startHeight: drawerValue,
+							startY: event.clientY,
+						};
+					}}
+					onPointerMove={(event) => {
+						const start = dragStart.current;
+						if (!start || start.pointerId !== event.pointerId) return;
+						event.preventDefault();
+						const deltaY = event.clientY - start.startY;
+						if (start.startHeight >= drawerMaxHeight && deltaY < 0) {
+							event.currentTarget.scrollTop = start.scrollTop - deltaY;
+							return;
+						}
+						const scrollDistance = Math.min(
+							start.scrollTop,
+							Math.max(0, deltaY),
+						);
+						event.currentTarget.scrollTop = start.scrollTop - scrollDistance;
+						resizeDrawer(start.startHeight - (deltaY - scrollDistance));
+					}}
+					onPointerUp={(event) => {
+						const start = dragStart.current;
+						if (!start || start.pointerId !== event.pointerId) return;
+						event.currentTarget.releasePointerCapture(event.pointerId);
+						dragStart.current = null;
+						const effectiveDownwardDistance =
+							event.clientY - start.startY - start.scrollTop;
+						if (
+							effectiveDownwardDistance >= drawerCloseThreshold(drawerMaxHeight)
+						) {
+							onOpenChange(false);
+						}
+					}}
 					onWheel={(event) => {
 						if (canScroll || event.deltaY === 0) return;
 						event.preventDefault();
@@ -106,29 +155,6 @@ function ResizableDrawer({
 								if (event.key === "ArrowDown") {
 									event.preventDefault();
 									resizeDrawer(drawerValue - 64);
-								}
-							}}
-							onPointerDown={(event) => {
-								event.currentTarget.setPointerCapture(event.pointerId);
-								dragStart.current = {
-									pointerId: event.pointerId,
-									startHeight: drawerValue,
-									startY: event.clientY,
-								};
-							}}
-							onPointerMove={(event) => {
-								const start = dragStart.current;
-								if (!start || start.pointerId !== event.pointerId) return;
-								resizeDrawer(start.startHeight + start.startY - event.clientY);
-							}}
-							onPointerUp={(event) => {
-								const start = dragStart.current;
-								if (!start || start.pointerId !== event.pointerId) return;
-								event.currentTarget.releasePointerCapture(event.pointerId);
-								dragStart.current = null;
-								const downwardDistance = event.clientY - start.startY;
-								if (downwardDistance >= drawerCloseThreshold(drawerMaxHeight)) {
-									onOpenChange(false);
 								}
 							}}
 							role="slider"

@@ -4,6 +4,8 @@
 # Cobre: git push origin main, git push origin feature:main, git push origin :main, etc.
 # Não cobre: git push --no-verify (use branch protection no GitHub).
 
+# Altere para 1 para impedir pushes diretos para main/master neste clone.
+should_block=0
 blocked=0
 refspecs_file=$(mktemp)
 
@@ -18,18 +20,19 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       remote_branch_lower=$(printf '%s' "$remote_branch" | tr '[:upper:]' '[:lower:]')
       case "$remote_branch_lower" in
         main | master)
-          blocked=1
-          printf '\n'
-          printf '\033[1;31m✖ Push para a branch %s está bloqueado\033[0m\n' "$remote_branch"
-          if [ -n "$local_ref" ]; then
-            local_branch="${local_ref#refs/heads/}"
-            printf '\033[0m   Refspec: %s → %s\033[0m\n' "$local_branch" "$remote_branch"
-          elif [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
-            printf '\033[0m   Refspec: (delete) → %s\033[0m\n' "$remote_branch"
+          if [ "$should_block" -eq 1 ]; then
+            blocked=1
+            printf '\n'
+            printf '\033[1;31m✖ Push para a branch %s está bloqueado\033[0m\n' "$remote_branch"
+            if [ -n "$local_ref" ]; then
+              local_branch="${local_ref#refs/heads/}"
+              printf '\033[0m   Refspec: %s → %s\033[0m\n' "$local_branch" "$remote_branch"
+            elif [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+              printf '\033[0m   Refspec: (delete) → %s\033[0m\n' "$remote_branch"
+            fi
+            printf '\033[1;33m↳ Faça push para staging (ex.: git push origin HEAD:staging).\033[0m\n'
+            printf '\n'
           fi
-          printf '\033[1;33m↳ Faça push para staging (ex.: git push origin HEAD:staging).\033[0m\n'
-          #! printf '\033[0;90m   --no-verify ignora este hook; proteja main no remoto também.\033[0m\n'
-          printf '\n'
           ;;
       esac
       ;;

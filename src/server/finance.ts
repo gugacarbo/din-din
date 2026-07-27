@@ -8,6 +8,7 @@ import {
 	type FinanceActivityDto,
 	financeSchemas,
 	type InvoiceDto,
+	type InvoicePageDto,
 	type InvoicePaymentDto,
 	type PaymentMethodDto,
 	type TransactionDto,
@@ -17,6 +18,7 @@ export type {
 	CategoryDto,
 	FinanceActivityDto,
 	InvoiceDto,
+	InvoicePageDto,
 	InvoicePaymentDto,
 	PaymentMethodDto,
 	TransactionDto,
@@ -70,9 +72,9 @@ export const restorePaymentMethod = createServerFn({ method: "POST" })
 	.validator(financeSchemas.id)
 	.handler(async ({ data }) => (await service()).restorePaymentMethod(data));
 
-export const listInvoices = createServerFn({ method: "GET" }).handler(
-	async () => (await service()).listInvoices(),
-);
+export const listInvoices = createServerFn({ method: "GET" })
+	.validator(financeSchemas.listInvoices)
+	.handler(async ({ data }) => (await service()).listInvoices(data));
 
 export const saveInvoicePayment = createServerFn({ method: "POST" })
 	.validator(financeSchemas.invoicePaymentInput)

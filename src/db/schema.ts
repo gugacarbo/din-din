@@ -86,6 +86,13 @@ export const userBootstrap = sqliteTable("user_bootstrap", {
 	seededAt: integer("seeded_at", { mode: "number" }).notNull(),
 });
 
+export const paymentMethodBootstrap = sqliteTable("payment_method_bootstrap", {
+	userId: text("user_id")
+		.primaryKey()
+		.references(() => user.id, { onDelete: "cascade" }),
+	seededAt: integer("seeded_at", { mode: "number" }).notNull(),
+});
+
 /** O pai deliberadamente não guarda identidade nem conteúdo privado. */
 export const supportReports = sqliteTable(
 	"support_reports",

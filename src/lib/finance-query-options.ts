@@ -43,9 +43,12 @@ export const paymentMethodsQueryOptions = () =>
 	});
 
 export const invoicesQueryOptions = () =>
-	queryOptions({
+	infiniteQueryOptions({
 		queryKey: [...financeQueryKey, "invoices"],
-		queryFn: listInvoices,
+		initialPageParam: undefined as string | undefined,
+		queryFn: ({ pageParam }) =>
+			listInvoices({ data: pageParam ? { cursor: pageParam } : {} }),
+		getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
 		staleTime: sidebarPrefetchStaleTime,
 	});
 

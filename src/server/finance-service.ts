@@ -1,12 +1,24 @@
 // biome-ignore-all lint/style/noNonNullAssertion: Lookups are guarded by the service's owned-record checks.
 // biome-ignore-all lint/suspicious/noExplicitAny: The recursive report tree is serialized JSON.
-import { and, asc, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
+import {
+	and,
+	asc,
+	desc,
+	eq,
+	gte,
+	inArray,
+	isNull,
+	lt,
+	or,
+	sql,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { createDb } from "#/db";
 import {
 	categories,
 	creditCardInvoicePayments,
+	paymentMethodBootstrap,
 	paymentMethods,
 	transactionInstallments,
 	transactions,
@@ -24,6 +36,7 @@ import {
 	saoPauloToday,
 	shiftReferenceMonth,
 	splitInstallmentAmounts,
+	sumMoneyCents,
 } from "#/lib/finance";
 
 export { invoiceCycleFor } from "#/lib/finance";
@@ -95,6 +108,8 @@ type Database = ReturnType<typeof createDb>;
 type CategoryType = z.infer<typeof categoryType>;
 type PaymentKind = z.infer<typeof paymentKind>;
 type Cursor = { occurredAt: string; createdAt: number; id: string };
+type InvoiceCursor = { referenceMonth: string; paymentMethodId: string };
+type InvoiceKey = InvoiceCursor;
 type CategoryRow = typeof categories.$inferSelect;
 type PaymentRow = typeof paymentMethods.$inferSelect;
 
@@ -181,6 +196,10 @@ export type InvoiceDto = {
 	unregisteredExpenseCents: number;
 	declaredOverPaymentCents: number;
 };
+export type InvoicePageDto = {
+	items: InvoiceDto[];
+	nextCursor: string | null;
+};
 export type FinanceActivityDto =
 	| { kind: "transaction"; activityDate: string; transaction: TransactionDto }
 	| {
@@ -220,6 +239,10 @@ export const financeSchemas = {
 	listTransactions: z.object({
 		scope: z.enum(["active", "archived"]).default("active"),
 		cursor: z.string().optional(),
+	}),
+	listInvoices: z.object({
+		cursor: z.string().optional(),
+		limit: z.number().int().min(1).max(24).default(12),
 	}),
 	listActivity: z.object({
 		cursor: z.string().optional(),
@@ -262,6 +285,22 @@ function decodeCursor(value?: string): Cursor | undefined {
 			.parse(JSON.parse(atob(value)));
 	} catch {
 		throw new FinanceError("VALIDATION_ERROR", "Cursor inválido.");
+	}
+}
+function encodeInvoiceCursor(cursor: InvoiceCursor) {
+	return btoa(JSON.stringify(cursor));
+}
+function decodeInvoiceCursor(value?: string): InvoiceCursor | undefined {
+	if (!value) return undefined;
+	try {
+		return z
+			.object({
+				referenceMonth,
+				paymentMethodId: idSchema,
+			})
+			.parse(JSON.parse(atob(value)));
+	} catch {
+		throw new FinanceError("VALIDATION_ERROR", "Cursor de fatura inválido.");
 	}
 }
 function paymentDto(row: PaymentRow): PaymentMethodDto {
@@ -417,11 +456,12 @@ async function bootstrap(db: Database, d1: D1Database, userId: string) {
 		await d1.batch(statements);
 	}
 
-	const existingMethods = await db
-		.select({ kind: paymentMethods.kind })
-		.from(paymentMethods)
-		.where(eq(paymentMethods.userId, userId));
-	const existingKinds = new Set(existingMethods.map((method) => method.kind));
+	const paymentMarker = await db
+		.select({ userId: paymentMethodBootstrap.userId })
+		.from(paymentMethodBootstrap)
+		.where(eq(paymentMethodBootstrap.userId, userId))
+		.limit(1);
+	if (paymentMarker.length) return;
 	const paymentDefaults: Array<{
 		name: string;
 		kind: PaymentKind;
@@ -448,32 +488,33 @@ async function bootstrap(db: Database, d1: D1Database, userId: string) {
 			iconKey: "WalletCards",
 		},
 	];
-	const missingDefaults = paymentDefaults.filter(
-		(method) => !existingKinds.has(method.kind),
-	);
-	if (!missingDefaults.length) return;
 	const timestamp = now();
-	await d1.batch(
-		missingDefaults.map((method) =>
-			d1
-				.prepare(
-					"insert into payment_methods (id, user_id, name, kind, color_key, icon_key, invoice_control, closing_day, due_day, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-				)
-				.bind(
-					crypto.randomUUID(),
-					userId,
-					method.name,
-					method.kind,
-					method.colorKey,
-					method.iconKey,
-					false,
-					null,
-					null,
-					timestamp,
-					timestamp,
-				),
-		),
+	const statements = paymentDefaults.map((method) =>
+		d1
+			.prepare(
+				"insert into payment_methods (id, user_id, name, kind, color_key, icon_key, invoice_control, closing_day, due_day, created_at, updated_at) select ?, ?, ?, ?, ?, ?, 0, null, null, ?, ? where not exists (select 1 from payment_methods where user_id = ? and kind = ?)",
+			)
+			.bind(
+				crypto.randomUUID(),
+				userId,
+				method.name,
+				method.kind,
+				method.colorKey,
+				method.iconKey,
+				timestamp,
+				timestamp,
+				userId,
+				method.kind,
+			),
 	);
+	statements.push(
+		d1
+			.prepare(
+				"insert or ignore into payment_method_bootstrap (user_id, seeded_at) values (?, ?)",
+			)
+			.bind(userId, timestamp),
+	);
+	await d1.batch(statements);
 }
 
 async function ownedCategory(
@@ -511,13 +552,14 @@ async function categoryMap(db: Database, userId: string) {
 		await db.select().from(categories).where(eq(categories.userId, userId)),
 	);
 }
-async function transactionDto(
+async function transactionDtos(
 	db: Database,
 	userId: string,
-	id: string,
-): Promise<TransactionDto> {
-	const row = (
-		await db
+	ids: string[],
+): Promise<Map<string, TransactionDto>> {
+	if (!ids.length) return new Map();
+	const [rows, categoryById, installments] = await Promise.all([
+		db
 			.select({
 				transaction: transactions,
 				category: categories,
@@ -539,50 +581,83 @@ async function transactionDto(
 					eq(transactions.userId, paymentMethods.userId),
 				),
 			)
-			.where(and(eq(transactions.id, id), eq(transactions.userId, userId)))
-			.limit(1)
-	)[0];
-	if (!row) throw new FinanceError("NOT_FOUND", "Lançamento não encontrado.");
-	const map = await categoryMap(db, userId);
-	const category = map.get(row.category.id);
-	if (!category)
-		throw new FinanceError("NOT_FOUND", "Categoria não encontrada.");
-	const installments = await db
-		.select()
-		.from(transactionInstallments)
-		.where(
-			and(
-				eq(transactionInstallments.userId, userId),
-				eq(transactionInstallments.transactionId, id),
+			.where(
+				and(eq(transactions.userId, userId), inArray(transactions.id, ids)),
 			),
-		)
-		.orderBy(asc(transactionInstallments.installmentNumber));
-	return {
-		id: row.transaction.id,
-		type: row.transaction.type as CategoryType,
-		categoryId: row.transaction.categoryId,
-		category,
-		paymentMethodId: row.transaction.paymentMethodId,
-		paymentMethod: row.paymentMethod ? paymentDto(row.paymentMethod) : null,
-		amountCents: row.transaction.amountCents,
-		currency: "BRL",
-		occurredAt: row.transaction.occurredAt,
-		description: row.transaction.description,
-		installmentPlan: installments.length
-			? {
-					installmentCount: installments[0].installmentCount,
-					firstReferenceMonth: installments[0].referenceMonth,
-					installments: installments.map((installment) => ({
-						number: installment.installmentNumber,
-						amountCents: installment.amountCents,
-						referenceMonth: installment.referenceMonth,
-					})),
-				}
-			: null,
-		archivedAt: iso(row.transaction.archivedAt),
-		createdAt: new Date(row.transaction.createdAt).toISOString(),
-		updatedAt: new Date(row.transaction.updatedAt).toISOString(),
-	};
+		categoryMap(db, userId),
+		db
+			.select()
+			.from(transactionInstallments)
+			.where(
+				and(
+					eq(transactionInstallments.userId, userId),
+					inArray(transactionInstallments.transactionId, ids),
+				),
+			)
+			.orderBy(
+				asc(transactionInstallments.transactionId),
+				asc(transactionInstallments.installmentNumber),
+			),
+	]);
+	const installmentsByTransaction = new Map<
+		string,
+		(typeof transactionInstallments.$inferSelect)[]
+	>();
+	for (const installment of installments) {
+		const grouped =
+			installmentsByTransaction.get(installment.transactionId) ?? [];
+		grouped.push(installment);
+		installmentsByTransaction.set(installment.transactionId, grouped);
+	}
+	return new Map(
+		rows.map((row) => {
+			const category = categoryById.get(row.category.id);
+			if (!category)
+				throw new FinanceError("NOT_FOUND", "Categoria não encontrada.");
+			const schedule = installmentsByTransaction.get(row.transaction.id) ?? [];
+			return [
+				row.transaction.id,
+				{
+					id: row.transaction.id,
+					type: row.transaction.type as CategoryType,
+					categoryId: row.transaction.categoryId,
+					category,
+					paymentMethodId: row.transaction.paymentMethodId,
+					paymentMethod: row.paymentMethod
+						? paymentDto(row.paymentMethod)
+						: null,
+					amountCents: row.transaction.amountCents,
+					currency: "BRL" as const,
+					occurredAt: row.transaction.occurredAt,
+					description: row.transaction.description,
+					installmentPlan: schedule.length
+						? {
+								installmentCount: schedule[0].installmentCount,
+								firstReferenceMonth: schedule[0].referenceMonth,
+								installments: schedule.map((installment) => ({
+									number: installment.installmentNumber,
+									amountCents: installment.amountCents,
+									referenceMonth: installment.referenceMonth,
+								})),
+							}
+						: null,
+					archivedAt: iso(row.transaction.archivedAt),
+					createdAt: new Date(row.transaction.createdAt).toISOString(),
+					updatedAt: new Date(row.transaction.updatedAt).toISOString(),
+				} satisfies TransactionDto,
+			];
+		}),
+	);
+}
+
+async function transactionDto(
+	db: Database,
+	userId: string,
+	id: string,
+): Promise<TransactionDto> {
+	const dto = (await transactionDtos(db, userId, [id])).get(id);
+	if (!dto) throw new FinanceError("NOT_FOUND", "Lançamento não encontrado.");
+	return dto;
 }
 
 export function createFinanceService({
@@ -752,7 +827,65 @@ export function createFinanceService({
 			referenceMonth: shiftReferenceMonth(firstReferenceMonth, index),
 		}));
 	}
-	async function buildInvoices(id: string): Promise<InvoiceDto[]> {
+	type InvoiceReadOptions = {
+		keys?: InvoiceKey[];
+		startReferenceMonth?: string;
+		endReferenceMonth?: string;
+	};
+	async function buildInvoices(
+		id: string,
+		options: InvoiceReadOptions = {},
+	): Promise<InvoiceDto[]> {
+		if (options.keys?.length === 0) return [];
+		const installmentRange = options.keys
+			? or(
+					...options.keys.map((key) =>
+						and(
+							eq(transactionInstallments.paymentMethodId, key.paymentMethodId),
+							eq(transactionInstallments.referenceMonth, key.referenceMonth),
+						),
+					),
+				)
+			: and(
+					options.startReferenceMonth
+						? gte(
+								transactionInstallments.referenceMonth,
+								options.startReferenceMonth,
+							)
+						: undefined,
+					options.endReferenceMonth
+						? lt(
+								transactionInstallments.referenceMonth,
+								options.endReferenceMonth,
+							)
+						: undefined,
+				);
+		const paymentRange = options.keys
+			? or(
+					...options.keys.map((key) =>
+						and(
+							eq(
+								creditCardInvoicePayments.paymentMethodId,
+								key.paymentMethodId,
+							),
+							eq(creditCardInvoicePayments.referenceMonth, key.referenceMonth),
+						),
+					),
+				)
+			: and(
+					options.startReferenceMonth
+						? gte(
+								creditCardInvoicePayments.referenceMonth,
+								options.startReferenceMonth,
+							)
+						: undefined,
+					options.endReferenceMonth
+						? lt(
+								creditCardInvoicePayments.referenceMonth,
+								options.endReferenceMonth,
+							)
+						: undefined,
+				);
 		const installmentRows = await db
 			.select({
 				installment: transactionInstallments,
@@ -787,6 +920,7 @@ export function createFinanceService({
 				and(
 					eq(transactionInstallments.userId, id),
 					isNull(transactions.archivedAt),
+					installmentRange,
 				),
 			);
 		const paymentRows = await db
@@ -802,7 +936,7 @@ export function createFinanceService({
 					eq(creditCardInvoicePayments.userId, paymentMethods.userId),
 				),
 			)
-			.where(eq(creditCardInvoicePayments.userId, id));
+			.where(and(eq(creditCardInvoicePayments.userId, id), paymentRange));
 		type InvoiceDraft = {
 			paymentMethod: PaymentRow;
 			referenceMonth: string;
@@ -871,9 +1005,8 @@ export function createFinanceService({
 						: cycle.closingDate;
 				const cycleDueDate =
 					"cycleDueDate" in cycle ? cycle.cycleDueDate : cycle.dueDate;
-				const itemsTotalCents = draft.items.reduce(
-					(sum, item) => sum + item.amountCents,
-					0,
+				const itemsTotalCents = sumMoneyCents(
+					draft.items.map((item) => item.amountCents),
 				);
 				const paidAmountCents = payment?.amountCents ?? null;
 				const unregisteredExpenseCents =
@@ -916,6 +1049,54 @@ export function createFinanceService({
 					a.paymentMethod.name.localeCompare(b.paymentMethod.name),
 			);
 	}
+	async function invoicePageKeys(
+		id: string,
+		cursor: InvoiceCursor | undefined,
+		limit: number,
+	) {
+		const result = await d1
+			.prepare(
+				`with invoice_keys as (
+					select transaction_installments.payment_method_id, transaction_installments.reference_month
+					from transaction_installments
+					inner join transactions
+						on transactions.id = transaction_installments.transaction_id
+						and transactions.user_id = transaction_installments.user_id
+					where transaction_installments.user_id = ? and transactions.archived_at is null
+					union
+					select payment_method_id, reference_month
+					from credit_card_invoice_payments
+					where user_id = ?
+				)
+				select payment_method_id as paymentMethodId, reference_month as referenceMonth
+				from invoice_keys
+				where ? is null
+					or reference_month < ?
+					or (reference_month = ? and payment_method_id < ?)
+				order by reference_month desc, payment_method_id desc
+				limit ?`,
+			)
+			.bind(
+				id,
+				id,
+				cursor?.referenceMonth ?? null,
+				cursor?.referenceMonth ?? null,
+				cursor?.referenceMonth ?? null,
+				cursor?.paymentMethodId ?? null,
+				limit + 1,
+			)
+			.all<InvoiceKey>();
+		return result.results;
+	}
+	function invoiceRange(startDate: string, endDate: string) {
+		const endMonth = endDate.slice(0, 7);
+		return {
+			startReferenceMonth: startDate.slice(0, 7),
+			endReferenceMonth: endDate.endsWith("-01")
+				? endMonth
+				: shiftReferenceMonth(endMonth, 1),
+		};
+	}
 	async function activityPage(
 		id: string,
 		cursor: Cursor | undefined,
@@ -949,7 +1130,7 @@ export function createFinanceService({
 					),
 				)
 			: undefined;
-		const [transactionRows, paymentRows, invoices] = await Promise.all([
+		const [transactionRows, paymentRows] = await Promise.all([
 			db
 				.select({
 					id: transactions.id,
@@ -990,14 +1171,7 @@ export function createFinanceService({
 					desc(creditCardInvoicePayments.id),
 				)
 				.limit(limit + 1),
-			buildInvoices(id),
 		]);
-		const invoiceByKey = new Map(
-			invoices.map((invoice) => [
-				`${invoice.paymentMethodId}|${invoice.referenceMonth}`,
-				invoice,
-			]),
-		);
 		const candidates = [
 			...transactionRows.map((row) => ({
 				kind: "transaction" as const,
@@ -1021,29 +1195,50 @@ export function createFinanceService({
 			)
 			.slice(0, limit + 1);
 		const page = candidates.slice(0, limit);
-		const items: FinanceActivityDto[] = await Promise.all(
-			page.map(async (item) => {
-				if (item.kind === "transaction")
-					return {
-						kind: "transaction" as const,
-						activityDate: item.activityDate,
-						transaction: await transactionDto(db, id, item.id),
-					};
-				const invoice = invoiceByKey.get(
-					`${item.row.payment.paymentMethodId}|${item.row.payment.referenceMonth}`,
-				);
-				return {
-					kind: "invoice_payment" as const,
-					activityDate: item.activityDate,
-					payment: invoicePaymentDto(item.row.payment),
-					paymentMethod: paymentDto(item.row.paymentMethod),
-					itemsTotalCents: invoice?.itemsTotalCents ?? 0,
-					unregisteredExpenseCents:
-						invoice?.unregisteredExpenseCents ?? item.row.payment.amountCents,
-					declaredOverPaymentCents: invoice?.declaredOverPaymentCents ?? 0,
-				};
+		const [transactionById, pageInvoices] = await Promise.all([
+			transactionDtos(
+				db,
+				id,
+				page
+					.filter((item) => item.kind === "transaction")
+					.map((item) => item.id),
+			),
+			buildInvoices(id, {
+				keys: page
+					.filter((item) => item.kind === "invoice_payment")
+					.map((item) => ({
+						paymentMethodId: item.row.payment.paymentMethodId,
+						referenceMonth: item.row.payment.referenceMonth,
+					})),
 			}),
+		]);
+		const invoiceByKey = new Map(
+			pageInvoices.map((invoice) => [
+				`${invoice.paymentMethodId}|${invoice.referenceMonth}`,
+				invoice,
+			]),
 		);
+		const items: FinanceActivityDto[] = page.map((item) => {
+			if (item.kind === "transaction")
+				return {
+					kind: "transaction" as const,
+					activityDate: item.activityDate,
+					transaction: transactionById.get(item.id)!,
+				};
+			const invoice = invoiceByKey.get(
+				`${item.row.payment.paymentMethodId}|${item.row.payment.referenceMonth}`,
+			);
+			return {
+				kind: "invoice_payment" as const,
+				activityDate: item.activityDate,
+				payment: invoicePaymentDto(item.row.payment),
+				paymentMethod: paymentDto(item.row.paymentMethod),
+				itemsTotalCents: invoice?.itemsTotalCents ?? 0,
+				unregisteredExpenseCents:
+					invoice?.unregisteredExpenseCents ?? item.row.payment.amountCents,
+				declaredOverPaymentCents: invoice?.declaredOverPaymentCents ?? 0,
+			};
+		});
 		const last = page.at(-1);
 		return {
 			items,
@@ -1424,10 +1619,10 @@ export function createFinanceService({
 			if (!current)
 				throw new FinanceError("NOT_FOUND", "Lançamento não encontrado.");
 			const category = await ownedCategory(db, id, data.categoryId, data.type);
-			if (category.archivedAt)
+			if (category.archivedAt && data.categoryId !== current.categoryId)
 				throw new FinanceError(
 					"CONFLICT",
-					"Categoria arquivada não pode receber lançamentos.",
+					"Categoria arquivada só pode permanecer no lançamento atual.",
 				);
 			let method: PaymentRow | null = null;
 			if (data.paymentMethodId) {
@@ -1547,10 +1742,18 @@ export function createFinanceService({
 				)
 				.limit(31);
 			const page = rows.slice(0, 30);
+			const dtoById = await transactionDtos(
+				db,
+				id,
+				page.map((row) => row.id),
+			);
 			return {
-				items: await Promise.all(
-					page.map((row) => transactionDto(db, id, row.id)),
-				),
+				items: page.map((row) => {
+					const item = dtoById.get(row.id);
+					if (!item)
+						throw new FinanceError("NOT_FOUND", "Lançamento não encontrado.");
+					return item;
+				}),
 				nextCursor:
 					rows.length > 30 && page.length
 						? encodeCursor(page[page.length - 1])
@@ -1561,9 +1764,34 @@ export function createFinanceService({
 			const id = await userId();
 			return activityPage(id, decodeCursor(data.cursor), 30);
 		},
-		async listInvoices() {
+		async listInvoices(
+			data: z.infer<typeof financeSchemas.listInvoices>,
+		): Promise<InvoicePageDto> {
 			const id = await userId();
-			return buildInvoices(id);
+			const cursor = decodeInvoiceCursor(data.cursor);
+			const keys = await invoicePageKeys(id, cursor, data.limit);
+			const pageKeys = keys.slice(0, data.limit);
+			const items = await buildInvoices(id, { keys: pageKeys });
+			const byKey = new Map(
+				items.map((invoice) => [
+					`${invoice.paymentMethodId}|${invoice.referenceMonth}`,
+					invoice,
+				]),
+			);
+			const orderedItems = pageKeys.map((key) => {
+				const invoice = byKey.get(
+					`${key.paymentMethodId}|${key.referenceMonth}`,
+				);
+				if (!invoice)
+					throw new FinanceError("NOT_FOUND", "Fatura não encontrada.");
+				return invoice;
+			});
+			const last = pageKeys.at(-1);
+			return {
+				items: orderedItems,
+				nextCursor:
+					keys.length > data.limit && last ? encodeInvoiceCursor(last) : null,
+			};
 		},
 		async saveInvoicePayment(data: z.infer<typeof invoicePaymentInput>) {
 			const id = await userId();
@@ -1646,11 +1874,16 @@ export function createFinanceService({
 					timestamp,
 				)
 				.run();
-			const invoice = (await buildInvoices(id)).find(
-				(item) =>
-					item.paymentMethodId === data.paymentMethodId &&
-					item.referenceMonth === data.referenceMonth,
-			);
+			const invoice = (
+				await buildInvoices(id, {
+					keys: [
+						{
+							paymentMethodId: data.paymentMethodId,
+							referenceMonth: data.referenceMonth,
+						},
+					],
+				})
+			)[0];
 			if (!invoice)
 				throw new FinanceError("NOT_FOUND", "Fatura não encontrada.");
 			return invoice;
@@ -1696,30 +1929,40 @@ export function createFinanceService({
 							lt(transactions.occurredAt, endDate),
 						),
 					),
-				buildInvoices(id),
+				buildInvoices(id, invoiceRange(startDate, endDate)),
 			]);
 			const scheduledTransactionIds = new Set(
 				invoices.flatMap((invoice) =>
 					invoice.items.map((item) => item.transactionId),
 				),
 			);
-			const incomeCents = rows
-				.filter((row) => row.transaction.type === "income")
-				.reduce((sum, row) => sum + row.transaction.amountCents, 0);
-			const regularExpenseCents = rows
-				.filter(
-					(row) =>
-						row.transaction.type === "expense" &&
-						!scheduledTransactionIds.has(row.transaction.id),
-				)
-				.reduce((sum, row) => sum + row.transaction.amountCents, 0);
-			const invoiceExpenseCents = invoices
-				.filter(
-					(invoice) =>
-						invoice.cycleDueDate >= startDate && invoice.cycleDueDate < endDate,
-				)
-				.reduce((sum, invoice) => sum + invoice.effectiveExpenseCents, 0);
-			const expenseCents = regularExpenseCents + invoiceExpenseCents;
+			const incomeCents = sumMoneyCents(
+				rows
+					.filter((row) => row.transaction.type === "income")
+					.map((row) => row.transaction.amountCents),
+			);
+			const regularExpenseCents = sumMoneyCents(
+				rows
+					.filter(
+						(row) =>
+							row.transaction.type === "expense" &&
+							!scheduledTransactionIds.has(row.transaction.id),
+					)
+					.map((row) => row.transaction.amountCents),
+			);
+			const invoiceExpenseCents = sumMoneyCents(
+				invoices
+					.filter(
+						(invoice) =>
+							invoice.cycleDueDate >= startDate &&
+							invoice.cycleDueDate < endDate,
+					)
+					.map((invoice) => invoice.effectiveExpenseCents),
+			);
+			const expenseCents = sumMoneyCents([
+				regularExpenseCents,
+				invoiceExpenseCents,
+			]);
 			const byPayment = new Map<
 				string,
 				{ paymentMethodId: string | null; name: string; amountCents: number }
@@ -1733,7 +1976,10 @@ export function createFinanceService({
 					name: row.paymentMethod?.name ?? "Não informado",
 					amountCents: 0,
 				};
-				item.amountCents += row.transaction.amountCents;
+				item.amountCents = sumMoneyCents([
+					item.amountCents,
+					row.transaction.amountCents,
+				]);
 				byPayment.set(key, item);
 			}
 			const recentActivity = await activityPage(id, undefined, 5);
@@ -1741,7 +1987,7 @@ export function createFinanceService({
 				month: {
 					incomeCents,
 					expenseCents,
-					balanceCents: incomeCents - expenseCents,
+					balanceCents: sumMoneyCents([incomeCents, -expenseCents]),
 				},
 				incomeByPaymentMethod: [...byPayment.values()].sort(
 					(a, b) => b.amountCents - a.amountCents,
@@ -1783,16 +2029,18 @@ export function createFinanceService({
 							lt(transactions.occurredAt, period.endDate),
 						),
 					),
-				buildInvoices(id),
+				buildInvoices(id, invoiceRange(period.startDate, period.endDate)),
 			]);
 			const scheduledTransactionIds = new Set(
 				invoices.flatMap((invoice) =>
 					invoice.items.map((item) => item.transactionId),
 				),
 			);
-			const incomeCents = rows
-				.filter((row) => row.transaction.type === "income")
-				.reduce((sum, row) => sum + row.transaction.amountCents, 0);
+			const incomeCents = sumMoneyCents(
+				rows
+					.filter((row) => row.transaction.type === "income")
+					.map((row) => row.transaction.amountCents),
+			);
 			const expenseRows = rows.filter(
 				(row) =>
 					row.transaction.type === "expense" &&
@@ -1803,28 +2051,33 @@ export function createFinanceService({
 					invoice.cycleDueDate >= period.startDate &&
 					invoice.cycleDueDate < period.endDate,
 			);
-			const unregisteredExpenseCents = periodInvoices.reduce(
-				(sum, invoice) => sum + invoice.unregisteredExpenseCents,
-				0,
+			const unregisteredExpenseCents = sumMoneyCents(
+				periodInvoices.map((invoice) => invoice.unregisteredExpenseCents),
 			);
 			const map = await categoryMap(db, id);
 			const direct = new Map<string, number>();
 			for (const row of expenseRows)
 				direct.set(
 					row.category.id,
-					(direct.get(row.category.id) ?? 0) + row.transaction.amountCents,
+					sumMoneyCents([
+						direct.get(row.category.id) ?? 0,
+						row.transaction.amountCents,
+					]),
 				);
 			for (const invoice of periodInvoices)
 				for (const item of invoice.items)
 					direct.set(
 						item.category.id,
-						(direct.get(item.category.id) ?? 0) + item.amountCents,
+						sumMoneyCents([
+							direct.get(item.category.id) ?? 0,
+							item.amountCents,
+						]),
 					);
-			const categorizedExpenseCents = [...direct.values()].reduce(
-				(sum, amount) => sum + amount,
-				0,
-			);
-			const expenseCents = categorizedExpenseCents + unregisteredExpenseCents;
+			const categorizedExpenseCents = sumMoneyCents(direct.values());
+			const expenseCents = sumMoneyCents([
+				categorizedExpenseCents,
+				unregisteredExpenseCents,
+			]);
 			const nodes = new Map<
 				string,
 				{
@@ -1843,8 +2096,15 @@ export function createFinanceService({
 						aggregateAmountCents: 0,
 						children: [],
 					};
-					node.aggregateAmountCents += amount;
-					if (category.id === categoryId) node.directAmountCents += amount;
+					node.aggregateAmountCents = sumMoneyCents([
+						node.aggregateAmountCents,
+						amount,
+					]);
+					if (category.id === categoryId)
+						node.directAmountCents = sumMoneyCents([
+							node.directAmountCents,
+							amount,
+						]);
 					nodes.set(category.id, node);
 					category = category.parentCategoryId
 						? map.get(category.parentCategoryId)
@@ -1884,7 +2144,10 @@ export function createFinanceService({
 					name: row.paymentMethod?.name ?? "Não informado",
 					amountCents: 0,
 				};
-				item.amountCents += row.transaction.amountCents;
+				item.amountCents = sumMoneyCents([
+					item.amountCents,
+					row.transaction.amountCents,
+				]);
 				income.set(key, item);
 			}
 			return {
@@ -1896,7 +2159,7 @@ export function createFinanceService({
 				incomeCents,
 				expenseCents,
 				unregisteredExpenseCents,
-				balanceCents: incomeCents - expenseCents,
+				balanceCents: sumMoneyCents([incomeCents, -expenseCents]),
 				expenseByCategory,
 				expenseCategoryTree: roots,
 				incomeByPaymentMethod: [...income.values()].sort(

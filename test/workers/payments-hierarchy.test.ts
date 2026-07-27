@@ -8,6 +8,22 @@ function serviceFor(cookieHeader: string) {
 	return createFinanceService({ d1: env.DB, headers: headersWithCookie(cookieHeader) });
 }
 
+async function listAllInvoices(
+	service: ReturnType<typeof createFinanceService>,
+) {
+	const items: Awaited<ReturnType<typeof service.listInvoices>>["items"] = [];
+	let cursor: string | undefined;
+	do {
+		const page = await service.listInvoices({
+			cursor,
+			limit: 24,
+		});
+		items.push(...page.items);
+		cursor = page.nextCursor ?? undefined;
+	} while (cursor);
+	return items;
+}
+
 describe("payment methods and category hierarchy", () => {
 	it("accepts animal icons for categories and payment methods", async () => {
 		const { a } = await createAuthedPair();
@@ -71,7 +87,7 @@ describe("payment methods and category hierarchy", () => {
 		await expect(service.createTransaction({ type: "expense", categoryId: grandchild.id, paymentMethodId: card.id, amountCents: 1, occurredAt: "2024-02-11" })).rejects.toMatchObject({ code: "CONFLICT" });
 		const retained = await service.updateTransaction({ id: transaction.id, type: "expense", categoryId: grandchild.id, paymentMethodId: card.id, amountCents: 2600, occurredAt: "2024-02-11", description: "retained" });
 		expect(retained.installmentPlan?.firstReferenceMonth).toBe("2024-03");
-		const invoices = await service.listInvoices();
+		const invoices = await listAllInvoices(service);
 		expect(invoices).toEqual([expect.objectContaining({ paymentMethodId: card.id, itemsTotalCents: 2600, effectiveExpenseCents: 2600, cycleClosingDate: "2024-03-10", cycleDueDate: "2024-03-20" })]);
 	});
 
@@ -96,7 +112,7 @@ describe("payment methods and category hierarchy", () => {
 			{ number: 2, amountCents: 333, referenceMonth: "2024-08" },
 			{ number: 3, amountCents: 334, referenceMonth: "2024-09" },
 		]);
-		let invoices = await service.listInvoices();
+		let invoices = await listAllInvoices(service);
 		expect(invoices.map((invoice) => [invoice.referenceMonth, invoice.itemsTotalCents])).toEqual([
 			["2024-09", 334],
 			["2024-08", 333],
@@ -109,7 +125,7 @@ describe("payment methods and category hierarchy", () => {
 			paidAt: "2024-07-05",
 			amountCents: 500,
 		});
-		invoices = await service.listInvoices();
+		invoices = await listAllInvoices(service);
 		expect(invoices.find((invoice) => invoice.referenceMonth === "2024-07")).toMatchObject({
 			status: "paid",
 			itemsTotalCents: 333,
@@ -133,7 +149,7 @@ describe("payment methods and category hierarchy", () => {
 			installmentCount: 3,
 			firstInvoiceReferenceMonth: "2024-07",
 		});
-		const corrected = (await service.listInvoices()).find((invoice) => invoice.referenceMonth === "2024-07");
+		const corrected = (await listAllInvoices(service)).find((invoice) => invoice.referenceMonth === "2024-07");
 		expect(corrected).toMatchObject({
 			itemsTotalCents: 600,
 			effectiveExpenseCents: 600,
@@ -178,7 +194,7 @@ describe("payment methods and category hierarchy", () => {
 			amountCents: 1000,
 		});
 		expect(
-			(await service.listInvoices()).find(
+			(await listAllInvoices(service)).find(
 				(invoice) => invoice.referenceMonth === "2024-10",
 			),
 		).toMatchObject({
@@ -201,7 +217,7 @@ describe("payment methods and category hierarchy", () => {
 			.first<{ count: number }>();
 		expect(paymentCount?.count).toBe(1);
 		expect(
-			(await service.listInvoices()).find(
+			(await listAllInvoices(service)).find(
 				(invoice) => invoice.referenceMonth === "2024-10",
 			),
 		).toMatchObject({
@@ -214,7 +230,7 @@ describe("payment methods and category hierarchy", () => {
 
 		await service.archiveTransaction({ id: purchase.id });
 		expect(
-			(await service.listInvoices()).find(
+			(await listAllInvoices(service)).find(
 				(invoice) => invoice.referenceMonth === "2024-10",
 			),
 		).toMatchObject({
@@ -231,7 +247,7 @@ describe("payment methods and category hierarchy", () => {
 			amountCents: 700,
 		});
 		expect(
-			(await service.listInvoices()).find(
+			(await listAllInvoices(service)).find(
 				(invoice) => invoice.referenceMonth === "2024-11",
 			),
 		).toMatchObject({
@@ -270,7 +286,7 @@ describe("payment methods and category hierarchy", () => {
 			referenceMonth: "2024-10",
 		});
 		expect(
-			(await service.listInvoices()).find(
+			(await listAllInvoices(service)).find(
 				(invoice) => invoice.referenceMonth === "2024-10",
 			),
 		).toMatchObject({

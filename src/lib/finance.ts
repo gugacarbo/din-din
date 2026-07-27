@@ -187,6 +187,24 @@ export function splitInstallmentAmounts(
 	);
 }
 
+const MAX_SAFE_MONEY_CENTS = BigInt(Number.MAX_SAFE_INTEGER);
+
+export function safeMoneyCents(value: bigint) {
+	if (value < -MAX_SAFE_MONEY_CENTS || value > MAX_SAFE_MONEY_CENTS)
+		throw new RangeError("Total financeiro excede o limite seguro.");
+	return Number(value);
+}
+
+export function sumMoneyCents(values: Iterable<number>) {
+	let total = 0n;
+	for (const value of values) {
+		if (!Number.isSafeInteger(value))
+			throw new RangeError("Valor financeiro fora do limite seguro.");
+		total += BigInt(value);
+	}
+	return safeMoneyCents(total);
+}
+
 function addDays(value: string, days: number) {
 	const [year, month, day] = value.split("-").map(Number);
 	const date = new Date(Date.UTC(year, month - 1, day + days));

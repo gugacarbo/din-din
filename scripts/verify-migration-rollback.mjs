@@ -1,8 +1,8 @@
 /**
- * Proves the feature migration against an isolated, disposable local D1.
- * The down SQL lives here rather than in Drizzle's forward-only journal: it
- * first refuses feature data, then restores the exact 0000 shape, and finally
- * proves that 0001 can be applied again.
+ * Proves the complete Drizzle journal against isolated, disposable local D1
+ * databases. Targeted down SQL lives here because Drizzle's journal is
+ * forward-only: guards are exercised before rollback and the complete journal
+ * is also applied from scratch so new migrations enter this gate automatically.
  */
 import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -13,17 +13,41 @@ import path from "node:path";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const migrationDir = path.join(root, "drizzle");
 const scratch = await mkdtemp(path.join(tmpdir(), "din-din-migration-"));
-const legacy = path.join(migrationDir, "0000_lying_iceman.sql");
-const feature = path.join(migrationDir, "0001_nice_payments.sql");
-const support = path.join(migrationDir, "0004_support_reports.sql");
-const supportLeases = path.join(migrationDir, "0005_support_report_leases.sql");
-const supportReservations = path.join(migrationDir, "0006_support_publication_reservations.sql");
-const aiLogging = path.join(migrationDir, "0007_ai_usage_logging.sql");
-const admin = path.join(migrationDir, "0008_admin_support_review.sql");
-const invoices = path.join(migrationDir, "0009_sturdy_dust.sql");
+const forwardScratch = await mkdtemp(path.join(tmpdir(), "din-din-journal-"));
+const journalFile = path.join(migrationDir, "meta", "_journal.json");
+const journal = JSON.parse(await readFile(journalFile, "utf8"));
+const migrations = journal.entries.map((entry, position) => {
+	if (entry.idx !== position) {
+		throw new Error(
+			`Journal inválido: migration ${entry.tag} tem idx ${entry.idx}, esperado ${position}.`,
+		);
+	}
+	return {
+		...entry,
+		file: path.join(migrationDir, `${entry.tag}.sql`),
+	};
+});
+await Promise.all(migrations.map(({ file }) => readFile(file, "utf8")));
+
+function migration(tag) {
+	const entry = migrations.find((candidate) => candidate.tag === tag);
+	if (!entry) throw new Error(`Migration obrigatória ausente do journal: ${tag}.`);
+	return entry.file;
+}
+
+const legacy = migration("0000_lying_iceman");
+const feature = migration("0001_nice_payments");
+const paymentVisuals = migration("0002_remarkable_raza");
+const expandedIcons = migration("0003_fancy_icon_update");
+const support = migration("0004_support_reports");
+const supportLeases = migration("0005_support_report_leases");
+const supportReservations = migration("0006_support_publication_reservations");
+const aiLogging = migration("0007_ai_usage_logging");
+const admin = migration("0008_admin_support_review");
+const invoices = migration("0009_sturdy_dust");
 const downFile = path.join(scratch, "down.sql");
 
-function run(args) {
+function run(args, persistTo = scratch) {
 	const result = spawnSync(
 		"pnpm",
 		[
@@ -34,7 +58,7 @@ function run(args) {
 			"din-din",
 			"--local",
 			"--persist-to",
-			scratch,
+			persistTo,
 			...args,
 		],
 		{ cwd: root, encoding: "utf8" },
@@ -159,6 +183,8 @@ try {
 	run(["--file", legacy]);
 	run(["--command", "insert into user (id,name,email,email_verified,created_at,updated_at) values ('00000000-0000-4000-8000-000000000001','Legacy','legacy@example.test',1,1,1); insert into categories (id,user_id,type,name,normalized_name,color_key,icon_key,created_at,updated_at) values ('00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001','expense','Legacy','legacy','orange','Utensils',1,1); insert into transactions (id,user_id,category_id,type,amount_cents,currency,occurred_at,created_at,updated_at) values ('00000000-0000-4000-8000-000000000003','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','expense',100,'BRL','2024-01-01',1,1);"]);
 	run(["--file", feature]);
+	run(["--file", paymentVisuals]);
+	run(["--file", expandedIcons]);
 	run(["--file", support]);
 	run(["--file", supportLeases]);
 	run(["--file", supportReservations]);
@@ -237,7 +263,27 @@ try {
 	if (!/"installment_count"\s*:\s*1/.test(invoiceMigration) || !/"removed_columns"\s*:\s*0/.test(invoiceMigration))
 		throw new Error("Invoice migration did not backfill 1/1 or remove legacy cycle columns.");
 	run(["--command", "pragma foreign_key_check;", "--json"]);
-	console.log("PASS verify:migration-rollback: legacy fixture, guarded support and feature down, invoice 1/1 backfill, private-table removal, legacy restore and reapply passed in disposable D1.");
+	for (const entry of migrations.filter((entry) => entry.idx > invoices.idx))
+		run(["--file", entry.file]);
+	run(["--command", "pragma foreign_key_check;", "--json"]);
+
+	for (const entry of migrations) run(["--file", entry.file], forwardScratch);
+	const journalCheck = run(
+		[
+			"--command",
+			"select count(*) as foreign_key_violations from pragma_foreign_key_check;",
+			"--json",
+		],
+		forwardScratch,
+	);
+	if (!/"foreign_key_violations"\s*:\s*0/.test(journalCheck)) {
+		throw new Error("O journal completo terminou com violações de chave estrangeira.");
+	}
+
+	console.log(
+		`PASS verify:migration-rollback: ${migrations.length} migrations do journal aplicadas; rollback guardado, restauração legada, reapply e backfill 1/1 validados em D1 descartável.`,
+	);
 } finally {
 	await rm(scratch, { recursive: true, force: true });
+	await rm(forwardScratch, { recursive: true, force: true });
 }

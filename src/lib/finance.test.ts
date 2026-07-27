@@ -7,8 +7,10 @@ import {
 	isCivilDate,
 	normalizeCategoryName,
 	periodFor,
+	safeMoneyCents,
 	shiftReferenceMonth,
 	splitInstallmentAmounts,
+	sumMoneyCents,
 } from "./finance.ts";
 
 describe("finance helpers", () => {
@@ -63,6 +65,18 @@ describe("finance helpers", () => {
 		expect(() => splitInstallmentAmounts(2, 3)).toThrow(
 			"Parcelamento inválido.",
 		);
+	});
+
+	it("sums money with bigint intermediates and rejects unsafe DTO totals", () => {
+		expect(sumMoneyCents([Number.MAX_SAFE_INTEGER - 10, 10])).toBe(
+			Number.MAX_SAFE_INTEGER,
+		);
+		expect(() => sumMoneyCents([Number.MAX_SAFE_INTEGER, 1])).toThrowError(
+			"Total financeiro excede o limite seguro.",
+		);
+		expect(() =>
+			safeMoneyCents(BigInt(Number.MIN_SAFE_INTEGER) - 1n),
+		).toThrowError("Total financeiro excede o limite seguro.");
 	});
 
 	it("includes several animal icons among the choices available to categories and payments", () => {

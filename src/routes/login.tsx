@@ -63,13 +63,27 @@ function Login() {
 	});
 	async function login() {
 		setLoading(true);
-		const result = await authClient.signIn.social({
-			provider: "google",
-			callbackURL: "/",
-		});
-		if (result.error) {
-			toast.error(result.error.message ?? "Não foi possível iniciar o login.");
-			setLoading(false);
+		let redirectStarted = false;
+		try {
+			const result = await authClient.signIn.social({
+				provider: "google",
+				callbackURL: "/",
+			});
+			if (result.error) {
+				toast.error(
+					result.error.message ?? "Não foi possível iniciar o login.",
+				);
+				return;
+			}
+			redirectStarted = true;
+		} catch (cause) {
+			toast.error(
+				cause instanceof Error
+					? cause.message
+					: "Não foi possível iniciar o login.",
+			);
+		} finally {
+			if (!redirectStarted) setLoading(false);
 		}
 	}
 	async function loginWithEmail({ email }: DevLoginValues) {

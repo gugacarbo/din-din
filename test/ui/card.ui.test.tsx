@@ -12,6 +12,7 @@ describe("Card", () => {
 			</Card>,
 		);
 
-		expect(getByTestId("card")).toHaveClass("gap-4");
+		expect(getByTestId("card")).toHaveClass("gap-(--card-spacing)");
+		expect(getByTestId("card")).toHaveClass("[--card-spacing:--spacing(4)]");
 	});
 });

@@ -3,9 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { IconSelect } from "#/components/finance/icon-select.tsx";
+import { setViewportWidth } from "./viewport.ts";
 
 describe("IconSelect", () => {
 	it("opens an icon drawer with semantic search and closes after choosing an icon on mobile", async () => {
+		setViewportWidth(375);
 		const user = userEvent.setup();
 		const onValueChange = vi.fn();
 		render(<IconSelect onValueChange={onValueChange} value="Dog" />);

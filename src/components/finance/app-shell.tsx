@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
 	BarChart3,
@@ -13,7 +13,8 @@ import {
 	Tags,
 	WifiOff,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
+import { MutationAvailabilityProvider } from "#/components/mutation-availability.tsx";
 import { PwaInstallButton } from "#/components/pwa-install-button.tsx";
 import { SupportDialog } from "#/components/support-dialog.tsx";
 import {
@@ -53,15 +54,6 @@ import {
 	SidebarTrigger,
 } from "#/components/ui/sidebar.tsx";
 import { adminMembershipQueryOptions } from "#/lib/admin-support-query-options.ts";
-import {
-	activityQueryOptions,
-	categoriesQueryOptions,
-	dashboardQueryOptions,
-	invoicesQueryOptions,
-	paymentMethodsQueryOptions,
-	reportQueryOptions,
-	transactionsQueryOptions,
-} from "#/lib/finance-query-options.ts";
 
 import { ThemeToggle } from "./theme-toggle.tsx";
 
@@ -88,7 +80,7 @@ function NavigationLink({
 		<SidebarMenuItem>
 			<SidebarMenuButton
 				isActive={active}
-				render={<Link to={item.to} />}
+				render={<Link preload="intent" to={item.to} />}
 				tooltip={item.label}
 			>
 				<Icon />
@@ -223,7 +215,6 @@ export function AppShell({
 	onLogout: () => void;
 	onNewTransaction?: () => void;
 }) {
-	const queryClient = useQueryClient();
 	const membership = useQuery(adminMembershipQueryOptions());
 	const userName = user?.name || user?.email || "Usuário";
 	const userInitial = userName.trim().charAt(0).toUpperCase() || "U";
@@ -231,21 +222,8 @@ export function AppShell({
 		select: (state) => state.location.pathname,
 	});
 
-	useEffect(() => {
-		if (offline) return;
-		void Promise.allSettled([
-			queryClient.prefetchQuery(dashboardQueryOptions()),
-			queryClient.prefetchInfiniteQuery(activityQueryOptions()),
-			queryClient.prefetchQuery(reportQueryOptions()),
-			queryClient.prefetchQuery(categoriesQueryOptions("active")),
-			queryClient.prefetchQuery(paymentMethodsQueryOptions()),
-			queryClient.prefetchQuery(invoicesQueryOptions()),
-			queryClient.prefetchInfiniteQuery(transactionsQueryOptions("archived")),
-		]);
-	}, [offline, queryClient]);
-
 	return (
-		<>
+		<MutationAvailabilityProvider available={!offline}>
 			{offline && (
 				<div
 					className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-center text-sm font-semibold text-amber-950"
@@ -255,7 +233,7 @@ export function AppShell({
 					Você está offline. Esta visualização é somente leitura.
 				</div>
 			)}
-			<div aria-disabled={offline || undefined} inert={offline}>
+			<div>
 				<SidebarProvider>
 					<Sidebar className="border-sidebar-border bg-sidebar/90 backdrop-blur">
 						<SidebarHeader className="px-4 py-6">
@@ -327,7 +305,11 @@ export function AppShell({
 							<div className="flex items-center gap-2">
 								<SupportDialog offline={offline} />
 								{onNewTransaction && (
-									<Button onClick={onNewTransaction} size="sm">
+									<Button
+										disabled={offline}
+										onClick={onNewTransaction}
+										size="sm"
+									>
 										<Plus />{" "}
 										<span className="hidden sm:inline">Novo lançamento</span>
 										<span className="sm:hidden">Novo</span>
@@ -341,6 +323,6 @@ export function AppShell({
 					</SidebarInset>
 				</SidebarProvider>
 			</div>
-		</>
+		</MutationAvailabilityProvider>
 	);
 }

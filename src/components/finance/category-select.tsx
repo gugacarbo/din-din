@@ -68,6 +68,7 @@ export function CategorySelect({
 						<span className="truncate">
 							{"— ".repeat(selectedCategory.level - 1)}
 							{selectedCategory.name}
+							{selectedCategory.archivedAt ? " (Arquivada)" : ""}
 						</span>
 					</span>
 				) : selectedRootOption ? (
@@ -93,6 +94,7 @@ export function CategorySelect({
 							<span className="truncate">
 								{"— ".repeat(category.level - 1)}
 								{category.name}
+								{category.archivedAt ? " (Arquivada)" : ""}
 							</span>
 						</span>
 					</SelectItem>

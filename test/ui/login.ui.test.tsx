@@ -4,9 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { lazy, Suspense, type ComponentType } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+const api = vi.hoisted(() => ({
+	signInSocial: vi.fn(),
+}));
+
 vi.mock("#/server/finance.ts", () => ({ getSessionUser: vi.fn() }));
 vi.mock("#/lib/auth-client.ts", () => ({
-	authClient: { signIn: { social: vi.fn() } },
+	authClient: { signIn: { social: api.signInSocial } },
 }));
 vi.mock("@tanstack/react-router", () => ({
 	createFileRoute: () => (options: object) => ({ options }),
@@ -63,5 +67,24 @@ describe("Login", () => {
 			"role",
 			"alert",
 		);
+	});
+
+	it("recovers the Google login action when the client rejects", async () => {
+		const user = userEvent.setup();
+		api.signInSocial.mockRejectedValueOnce(new Error("Google indisponível"));
+		renderLogin();
+
+		const button = await screen.findByRole("button", {
+			name: "Entrar com Google",
+		});
+		await user.click(button);
+
+		expect(
+			await screen.findByRole("button", { name: "Entrar com Google" }),
+		).toBeEnabled();
+		expect(api.signInSocial).toHaveBeenCalledWith({
+			provider: "google",
+			callbackURL: "/",
+		});
 	});
 });

@@ -157,6 +157,7 @@ function ResizableDrawer({
 					<div className="flex min-h-full flex-col">
 						<div
 							aria-label="Ajustar altura do drawer"
+							aria-orientation="vertical"
 							aria-valuemax={drawerMaxHeight}
 							aria-valuemin={drawerMinimumHeight(drawerMaxHeight)}
 							aria-valuenow={drawerValue}

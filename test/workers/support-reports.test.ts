@@ -34,7 +34,12 @@ function request(
 	if (screenshot) body.set("screenshot", screenshot);
 	return new Request("https://example.test/api/support", {
 		method: "POST",
-		headers: cookie ? { cookie } : undefined,
+		headers: {
+			"content-length": String(
+				1024 + JSON.stringify(value).length + (screenshot?.size ?? 0),
+			),
+			...(cookie ? { cookie } : {}),
+		},
 		body,
 	});
 }
@@ -51,6 +56,52 @@ function dependencies() {
 }
 
 describe("support report intake", () => {
+	it("rejects a request whose declared size is missing, invalid or excessive", async () => {
+		const body = new FormData();
+		body.set("payload", JSON.stringify(payload()));
+		const withoutLength = new Request("https://example.test/api/support", {
+			method: "POST",
+			body,
+		});
+		expect(
+			(await acceptSupportReport(withoutLength, dependencies())).status,
+		).toBe(400);
+
+		for (const contentLength of ["invalid", String(3 * 1024 * 1024 + 1)]) {
+			const requestWithLength = new Request(
+				"https://example.test/api/support",
+				{
+					method: "POST",
+					headers: { "content-length": contentLength },
+					body: new FormData(),
+				},
+			);
+			expect(
+				(await acceptSupportReport(requestWithLength, dependencies())).status,
+			).toBe(contentLength === "invalid" ? 400 : 413);
+		}
+	});
+
+	it("rejects an aggregate body above 3 MiB despite a smaller declared size", async () => {
+		const body = new FormData();
+		body.set("payload", `${JSON.stringify(payload())}${" ".repeat(1024 * 1024)}`);
+		body.set(
+			"screenshot",
+			new File([new Uint8Array(2 * 1024 * 1024)], "print.webp", {
+				type: "image/webp",
+			}),
+		);
+		const oversized = new Request("https://example.test/api/support", {
+			method: "POST",
+			headers: { "content-length": "1024" },
+			body,
+		});
+
+		expect((await acceptSupportReport(oversized, dependencies())).status).toBe(
+			413,
+		);
+	});
+
 	it("rejects a request without a session before creating a report", async () => {
 		const response = await acceptSupportReport(request(payload()), dependencies());
 		expect(response.status).toBe(401);

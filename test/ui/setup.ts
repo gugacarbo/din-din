@@ -1,19 +1,14 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+import { installMatchMedia, setViewportWidth } from "./viewport.ts";
 
-afterEach(() => cleanup());
+installMatchMedia();
+setViewportWidth(1024);
 
-Object.defineProperty(window, "matchMedia", {
-	writable: true,
-	value: vi.fn().mockImplementation((query: string) => ({
-		matches: query.includes("max-width"),
-		media: query,
-		onchange: null,
-		addEventListener: vi.fn(),
-		removeEventListener: vi.fn(),
-		dispatchEvent: vi.fn(),
-	})),
+afterEach(() => {
+	cleanup();
+	setViewportWidth(1024);
 });
 
 class ResizeObserver {

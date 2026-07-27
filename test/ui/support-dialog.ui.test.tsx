@@ -12,6 +12,7 @@ vi.mock("#/lib/support-diagnostics.ts", () => ({
 vi.mock("html-to-image", () => ({ toCanvas: canvas }));
 
 import { SupportDialog } from "#/components/support-dialog.tsx";
+import { setViewportWidth } from "./viewport.ts";
 
 function renderDialog() {
 	const queryClient = new QueryClient({
@@ -68,26 +69,16 @@ describe("SupportDialog", () => {
 	});
 
 	it("uses the reusable resizable drawer on mobile", async () => {
-		const originalInnerWidth = window.innerWidth;
-		Object.defineProperty(window, "innerWidth", {
-			configurable: true,
-			value: 640,
+		setViewportWidth(640);
+		renderDialog();
+		await openDialog();
+		const slider = await screen.findByRole("slider", {
+			name: "Ajustar altura do drawer",
 		});
-		try {
-			renderDialog();
-			await openDialog();
-			const slider = await screen.findByRole("slider", {
-				name: "Ajustar altura do drawer",
-			});
-			const dialog = screen.getByRole("dialog");
-			expect(dialog).toHaveAttribute("data-slot", "sheet-content");
-			expect(slider).toBeVisible();
-		} finally {
-			Object.defineProperty(window, "innerWidth", {
-				configurable: true,
-				value: originalInnerWidth,
-			});
-		}
+		const dialog = screen.getByRole("dialog");
+		expect(dialog).toHaveAttribute("data-slot", "sheet-content");
+		expect(slider).toHaveAttribute("aria-orientation", "vertical");
+		expect(slider).toBeVisible();
 	});
 
 	it("reuses the exact diagnostic payload for an ambiguous retry", async () => {

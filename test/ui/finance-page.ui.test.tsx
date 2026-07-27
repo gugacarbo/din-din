@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { createElement, type ComponentProps, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setViewportWidth } from "./viewport.ts";
 
 const api = vi.hoisted(() => ({
 	archiveCategory: vi.fn(), archiveTransaction: vi.fn(), archivePaymentMethod: vi.fn(), createCategory: vi.fn(), createPaymentMethod: vi.fn(), createTransaction: vi.fn(), routerBack: vi.fn(),
@@ -56,6 +57,7 @@ const transaction = { id: "33333333-3333-4333-8333-333333333333", type: "expense
 describe("FinancePage", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		setViewportWidth(375);
 		setOnline(true);
 		api.getDashboard.mockResolvedValue({ month: { incomeCents: 0, expenseCents: 0, balanceCents: 0 }, incomeByPaymentMethod: [], recentActivity: [] });
 		api.getSessionUser.mockResolvedValue({ id: "user-1", name: "Ana Silva", email: "ana@example.com", image: null });
@@ -63,7 +65,7 @@ describe("FinancePage", () => {
 		api.listTransactions.mockResolvedValue({ items: [transaction], nextCursor: null });
 		api.listActivity.mockResolvedValue({ items: [{ kind: "transaction", activityDate: transaction.occurredAt, transaction }], nextCursor: null });
 		api.listPaymentMethods.mockResolvedValue([]);
-		api.listInvoices.mockResolvedValue([]);
+		api.listInvoices.mockResolvedValue({ items: [], nextCursor: null });
 		api.getReport.mockResolvedValue({ period: { granularity: "month", anchorDate: "2024-02-10", startDate: "2024-02-01", endDate: "2024-03-01" }, incomeCents: 0, expenseCents: 0, unregisteredExpenseCents: 0, balanceCents: 0, expenseByCategory: [], expenseCategoryTree: [], incomeByPaymentMethod: [] });
 	});
 
@@ -111,7 +113,7 @@ describe("FinancePage", () => {
 		const user = userEvent.setup();
 		api.updateTransaction.mockResolvedValue(transaction);
 		renderFinancePage("transactions");
-		await waitFor(() => expect(api.listTransactions).toHaveBeenCalled());
+		await waitFor(() => expect(api.listActivity).toHaveBeenCalled());
 		await screen.findByText(/antes/);
 		await user.click(screen.getByRole("button", { name: "Editar lançamento" }));
 		expect(screen.getByLabelText("Tipo")).toHaveTextContent("Despesa");
@@ -145,41 +147,13 @@ describe("FinancePage", () => {
 		expect(within(dialog).getByText("antes")).toBeInTheDocument();
 	});
 
-	it("uses the account menu for Profile and keeps the mobile navigation icon-only", async () => {
+	it("keeps the mobile sidebar available through its trigger", async () => {
 		const user = userEvent.setup();
 		renderFinancePage("dashboard");
-		const nav = screen.getByRole("navigation", { name: "Navegação mobile" });
-		const links = within(nav).getAllByRole("link");
-
-		expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
-			"Dashboard",
-			"Histórico",
-			"Relatórios",
-			"Perfil",
-		]);
-		expect(links.map((link) => link.textContent)).toEqual(["", "", "", "U"]);
-		expect(links.map((link) => link.getAttribute("href"))).toEqual([
-			"/",
-			"/transactions",
+		await user.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
+		expect(await screen.findByRole("link", { name: "Relatórios" })).toHaveAttribute(
+			"href",
 			"/reports",
-			"/profile",
-		]);
-		expect(nav).toHaveClass("fixed", "bottom-0");
-		expect(nav.firstElementChild).toHaveClass("grid", "grid-cols-4");
-		const dashboardLink = within(nav).getByRole("link", {
-			name: "Dashboard",
-		});
-		expect(dashboardLink).toHaveClass("text-foreground", "hover:text-foreground");
-		expect(dashboardLink).not.toHaveClass("bg-primary/10");
-		expect(dashboardLink).not.toHaveClass("hover:bg-muted");
-		expect(dashboardLink.querySelector("svg")).toHaveClass(
-		"fill-foreground",
-		"stroke-foreground",
-	);
-		await waitFor(() =>
-			expect(
-				screen.queryByRole("button", { name: "Toggle Sidebar" }),
-			).not.toBeInTheDocument(),
 		);
 	});
 
@@ -206,11 +180,7 @@ describe("FinancePage", () => {
 		const archiveLink = await screen.findByRole("link", { name: "Arquivo" });
 
     expect(archiveLink).toHaveAttribute("href", "/transactions/archive");
-		expect(
-			within(
-				screen.getByRole("navigation", { name: "Navegação mobile" }),
-			).queryByRole("link", { name: "Arquivo" }),
-		).not.toBeInTheDocument();
+		expect(archiveLink).toBeVisible();
   });
 
 	it("returns from Archive through router history", async () => {
@@ -226,34 +196,107 @@ describe("FinancePage", () => {
 		expect(api.routerBack).toHaveBeenCalledOnce();
 	});
 
-	it("prefetches the data for every item exposed by the sidebar", async () => {
+	it("does not eagerly prefetch every sidebar destination", async () => {
 		renderFinancePage("dashboard");
 
-		await waitFor(() => {
-			expect(api.getDashboard).toHaveBeenCalled();
-			expect(api.getReport).toHaveBeenCalled();
-			expect(api.listCategories).toHaveBeenCalledWith({
-				data: { status: "active" },
-			});
-			expect(api.listPaymentMethods).toHaveBeenCalledWith({
-				data: { status: "all" },
-			});
-			expect(api.listInvoices).toHaveBeenCalled();
-			expect(api.listActivity).toHaveBeenCalledWith({ data: {} });
-			expect(api.listTransactions).toHaveBeenCalledWith({
-				data: { scope: "archived" },
-			});
-		});
+		await waitFor(() => expect(api.getDashboard).toHaveBeenCalled());
+		expect(api.getReport).not.toHaveBeenCalled();
+		expect(api.listCategories).not.toHaveBeenCalled();
+		expect(api.listPaymentMethods).not.toHaveBeenCalled();
+		expect(api.listInvoices).not.toHaveBeenCalled();
+		expect(api.listActivity).not.toHaveBeenCalled();
+		expect(api.listTransactions).not.toHaveBeenCalled();
 	});
 
 	it("keeps the cached finance view read-only while offline", async () => {
+		const user = userEvent.setup();
 		setOnline(false);
 		renderFinancePage("dashboard");
 
 		expect(
 			await screen.findByRole("status"),
 		).toHaveTextContent("Esta visualização é somente leitura.");
-		expect(document.querySelector("[inert]")).toHaveAttribute("inert", "");
+		expect(document.querySelector("[inert]")).not.toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: /novo lançamento/i }),
+		).toBeDisabled();
+		await user.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
+		expect(await screen.findByRole("link", { name: "Relatórios" })).toHaveAttribute(
+			"href",
+			"/reports",
+		);
+	});
+
+	it("keeps the desktop sidebar navigation available at 1024px", async () => {
+		setViewportWidth(1024);
+		renderFinancePage("dashboard");
+
+		expect(await screen.findByRole("list", { name: "Principal" })).toBeVisible();
+		expect(
+			screen.queryByRole("navigation", { name: "Navegação mobile" }),
+		).not.toBeInTheDocument();
+	});
+
+	it("preserves an archived category while editing its existing transaction", async () => {
+		const user = userEvent.setup();
+		const archivedCategory = {
+			...expenseCategory,
+			id: "77777777-7777-4777-8777-777777777777",
+			name: "Mercado antigo",
+			archivedAt: "2024-03-01T00:00:00.000Z",
+		};
+		const archivedReference = {
+			...transaction,
+			categoryId: archivedCategory.id,
+			category: archivedCategory,
+		};
+		api.listActivity.mockResolvedValue({
+			items: [
+				{
+					kind: "transaction",
+					activityDate: archivedReference.occurredAt,
+					transaction: archivedReference,
+				},
+			],
+			nextCursor: null,
+		});
+		api.updateTransaction.mockResolvedValue(archivedReference);
+
+		renderFinancePage("transactions");
+		await user.click(
+			await screen.findByRole("button", { name: "Editar lançamento" }),
+		);
+
+		expect(screen.getByLabelText("Categoria")).toHaveTextContent(
+			"Mercado antigo (Arquivada)",
+		);
+		await user.click(
+			screen.getByRole("button", { name: /salvar alterações/i }),
+		);
+		await waitFor(() =>
+			expect(api.updateTransaction).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						categoryId: archivedCategory.id,
+					}),
+				}),
+			),
+		);
+	});
+
+	it("keeps the last valid report while its date field is incomplete", async () => {
+		const user = userEvent.setup();
+		renderFinancePage("reports");
+		await screen.findByText("Para onde foi seu dinheiro");
+		await waitFor(() => expect(api.getReport).toHaveBeenCalled());
+		api.getReport.mockClear();
+
+		const date = screen.getByLabelText("Data de referência");
+		await user.clear(date);
+
+		expect(date).toHaveAttribute("aria-invalid", "true");
+		expect(api.getReport).not.toHaveBeenCalled();
+		expect(screen.getByText("Entradas")).toBeInTheDocument();
 	});
 
 	it("shows the category hierarchy in the category manager", async () => {
@@ -348,7 +391,7 @@ describe("FinancePage", () => {
 			declaredOverPaymentCents: 0,
 		};
 		api.listPaymentMethods.mockResolvedValue([creditCard]);
-		api.listInvoices.mockResolvedValue([invoice]);
+		api.listInvoices.mockResolvedValue({ items: [invoice], nextCursor: null });
 		api.saveInvoicePayment.mockResolvedValue({ ...invoice, status: "paid" });
 		const user = userEvent.setup();
 		renderFinancePage("payments");
@@ -399,7 +442,7 @@ describe("FinancePage", () => {
 			declaredOverPaymentCents: 0,
 		};
 		api.listPaymentMethods.mockResolvedValue([creditCard]);
-		api.listInvoices.mockResolvedValue([invoice]);
+		api.listInvoices.mockResolvedValue({ items: [invoice], nextCursor: null });
 		api.saveInvoicePayment.mockResolvedValue(invoice);
 		api.removeInvoicePayment.mockResolvedValue({ removed: true });
 		const user = userEvent.setup();

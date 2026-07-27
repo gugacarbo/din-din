@@ -1,6 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
-import { toCanvas } from "html-to-image";
 import {
 	Camera,
 	CircleAlert,
@@ -9,7 +8,7 @@ import {
 	MessageCircleQuestion,
 	Trash2,
 } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { ResizableDrawer } from "#/components/resizable-drawer.tsx";
@@ -102,6 +101,12 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 		resolver: zodResolver(formSchema),
 		defaultValues: { category: "problem", message: "" },
 	});
+	useEffect(
+		() => () => {
+			if (preview) URL.revokeObjectURL(preview);
+		},
+		[preview],
+	);
 	const submission = useMutation({
 		mutationFn: async (values: FormValues) => {
 			if (!frozenAttempt.current)
@@ -165,6 +170,7 @@ export function SupportDialog({ offline }: { offline: boolean }) {
 	}
 	async function takeScreenshot() {
 		try {
+			const { toCanvas } = await import("html-to-image");
 			document.documentElement.dataset.supportCapture = "true";
 			await new Promise((resolve) => requestAnimationFrame(resolve));
 			const canvas = await toCanvas(document.body, {

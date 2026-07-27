@@ -27,6 +27,18 @@ export class SupportError extends Error {
 	}
 }
 
+function requestContentLength(request: Request) {
+	const header = request.headers.get("content-length");
+	if (header === null || !/^\d+$/.test(header))
+		throw new SupportError(400, "Não foi possível validar o tamanho do envio.");
+	const length = Number(header);
+	if (!Number.isSafeInteger(length))
+		throw new SupportError(400, "Não foi possível validar o tamanho do envio.");
+	if (length > maxPayload)
+		throw new SupportError(413, "O envio excede o limite permitido.");
+	return length;
+}
+
 function hex(buffer: ArrayBuffer) {
 	return Array.from(new Uint8Array(buffer), (byte) =>
 		byte.toString(16).padStart(2, "0"),
@@ -107,9 +119,7 @@ export async function acceptSupportReport(
 	deps: SupportDependencies,
 ) {
 	try {
-		const length = Number(request.headers.get("content-length") || "0");
-		if (length > maxPayload)
-			throw new SupportError(413, "O envio excede o limite permitido.");
+		requestContentLength(request);
 		const form = await request.formData();
 		const raw = form.get("payload");
 		if (typeof raw !== "string")
@@ -124,6 +134,11 @@ export async function acceptSupportReport(
 		if (!parsed.success)
 			throw new SupportError(400, "Revise os dados do relato.");
 		const screenshot = form.get("screenshot");
+		const aggregateSize =
+			new TextEncoder().encode(raw).byteLength +
+			(screenshot instanceof File ? screenshot.size : 0);
+		if (aggregateSize > maxPayload)
+			throw new SupportError(413, "O envio excede o limite permitido.");
 		if (
 			screenshot !== null &&
 			(!(screenshot instanceof File) ||

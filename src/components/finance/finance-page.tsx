@@ -15,14 +15,22 @@ import {
 	Settings2,
 	Trash2,
 } from "lucide-react";
-import { type ComponentProps, useEffect, useMemo, useState } from "react";
+import {
+	type ComponentProps,
+	lazy,
+	Suspense,
+	useEffect,
+	useMemo,
+	useState,
+} from "react";
 import { Controller, useForm } from "react-hook-form";
-import { Cell, Pie, PieChart } from "recharts";
 import { toast } from "sonner";
 import { z } from "zod";
 
+import { AsyncDataState } from "#/components/async-data-state.tsx";
 import { BackButton } from "#/components/back-button.tsx";
 import { DrawerAwareForm } from "#/components/drawer-aware-form.tsx";
+import { useMutationAvailability } from "#/components/mutation-availability.tsx";
 import { ResizableDrawer } from "#/components/resizable-drawer.tsx";
 import { Alert, AlertDescription } from "#/components/ui/alert.tsx";
 import {
@@ -44,12 +52,6 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card.tsx";
-import {
-	type ChartConfig,
-	ChartContainer,
-	ChartTooltip,
-	ChartTooltipContent,
-} from "#/components/ui/chart.tsx";
 import {
 	Dialog,
 	DialogContent,
@@ -95,6 +97,7 @@ import {
 	CATEGORY_COLORS,
 	CATEGORY_ICONS,
 	invoiceCycleFor,
+	isCivilDate,
 	saoPauloToday,
 } from "#/lib/finance.ts";
 import {
@@ -142,6 +145,12 @@ import { type Kind, KindSelect } from "./kind-select.tsx";
 import { PaymentMethodSelect } from "./payment-method-select.tsx";
 import { CategoryMark } from "./presentation.tsx";
 import { TransactionDetailsDialog } from "./transaction-details-dialog.tsx";
+
+const ReportsChart = lazy(() =>
+	import("./reports-chart.tsx").then((module) => ({
+		default: module.ReportsChart,
+	})),
+);
 
 type FinancePageKind =
 	| "dashboard"
@@ -374,6 +383,7 @@ function TransactionRows({
 	onRestore?: (item: TransactionDto) => void;
 	onView?: (item: TransactionDto) => void;
 }) {
+	const { available: mutationsAvailable } = useMutationAvailability();
 	if (!items.length)
 		return (
 			<p className="py-8 text-sm text-muted-foreground">
@@ -415,7 +425,7 @@ function TransactionRows({
 							{moneyFromCents(item.amountCents)}
 						</p>
 					</Button>
-					{onEdit && (
+					{mutationsAvailable && onEdit && (
 						<Button
 							aria-label="Editar lançamento"
 							onClick={() => onEdit(item)}
@@ -425,7 +435,7 @@ function TransactionRows({
 							<Pencil />
 						</Button>
 					)}
-					{onArchive && (
+					{mutationsAvailable && onArchive && (
 						<Button
 							aria-label="Arquivar lançamento"
 							onClick={() => onArchive(item)}
@@ -435,7 +445,7 @@ function TransactionRows({
 							<Trash2 />
 						</Button>
 					)}
-					{onRestore && (
+					{mutationsAvailable && onRestore && (
 						<Button
 							aria-label="Restaurar lançamento"
 							onClick={() => onRestore(item)}
@@ -462,6 +472,7 @@ function ActivityRows({
 	onArchive?: (item: TransactionDto) => void;
 	onView?: (item: TransactionDto) => void;
 }) {
+	const { available: mutationsAvailable } = useMutationAvailability();
 	if (!items.length)
 		return (
 			<p className="py-8 text-sm text-muted-foreground">
@@ -510,7 +521,7 @@ function ActivityRows({
 									{moneyFromCents(item.amountCents)}
 								</p>
 							</Button>
-							{onEdit && (
+							{mutationsAvailable && onEdit && (
 								<Button
 									aria-label="Editar lançamento"
 									onClick={() => onEdit(item)}
@@ -520,7 +531,7 @@ function ActivityRows({
 									<Pencil />
 								</Button>
 							)}
-							{onArchive && (
+							{mutationsAvailable && onArchive && (
 								<Button
 									aria-label="Arquivar lançamento"
 									onClick={() => onArchive(item)}
@@ -700,6 +711,7 @@ function TransactionForm({
 	onSaved: () => void;
 	onCancel?: () => void;
 }) {
+	const { available: mutationsAvailable } = useMutationAvailability();
 	const form = useForm<TransactionFormInput, unknown, TransactionFormValues>({
 		defaultValues: {
 			paymentMethodId: initial?.paymentMethodId ?? "",
@@ -742,11 +754,17 @@ function TransactionForm({
 			return createTransaction({ data });
 		},
 	});
-	const choices = useMemo(
-		() =>
-			categoriesResult.data?.filter((category) => category.type === type) ?? [],
-		[categoriesResult.data, type],
-	);
+	const choices = useMemo(() => {
+		const active =
+			categoriesResult.data?.filter((category) => category.type === type) ?? [];
+		if (
+			!initial?.category.archivedAt ||
+			initial.category.type !== type ||
+			active.some((category) => category.id === initial.category.id)
+		)
+			return active;
+		return [...active, initial.category];
+	}, [categoriesResult.data, initial?.category, type]);
 	const paymentChoices = useMemo(() => {
 		const methods = paymentMethodsResult.data ?? [];
 		return methods.filter(
@@ -765,12 +783,17 @@ function TransactionForm({
 		selectedPaymentMethod.dueDay != null;
 	useEffect(() => {
 		if (
+			initial?.categoryId === form.getValues("categoryId") &&
+			initial.category.type === type
+		)
+			return;
+		if (
 			!choices.some((category) => category.id === form.getValues("categoryId"))
 		)
 			form.setValue("categoryId", choices[0]?.id ?? "", {
 				shouldValidate: form.formState.isSubmitted,
 			});
-	}, [choices, form]);
+	}, [choices, form, initial?.categoryId, initial?.category.type, type]);
 	useEffect(() => {
 		if (canInstallments || !isInstallment) return;
 		form.setValue("isInstallment", false);
@@ -817,7 +840,9 @@ function TransactionForm({
 		}
 	}
 	const submitDisabled =
-		form.formState.isSubmitting || categoriesResult.isPending;
+		!mutationsAvailable ||
+		form.formState.isSubmitting ||
+		categoriesResult.isPending;
 	const submitLabel = form.formState.isSubmitting
 		? "Salvando…"
 		: initial
@@ -1083,6 +1108,7 @@ function Transactions({
 	onEdit: (item: TransactionDto) => void;
 	onView: (item: TransactionDto) => void;
 }) {
+	const { available: mutationsAvailable } = useMutationAvailability();
 	const queryClient = useQueryClient();
 	const [archiving, setArchiving] = useState<TransactionDto | null>(null);
 	const result = useInfiniteQuery(activityQueryOptions());
@@ -1120,30 +1146,34 @@ function Transactions({
 				}}
 				open={Boolean(archiving)}
 			/>
-			{result.isPending ? (
-				<Loading />
-			) : result.error || !result.data ? (
-				<Notice>{errorMessage(result.error)}</Notice>
-			) : (
-				<FinanceCard className="p-5">
-					<ActivityRows
-						items={activities}
-						onArchive={setArchiving}
-						onEdit={onEdit}
-						onView={onView}
-					/>
-					{result.hasNextPage && (
-						<Button
-							className="mt-4"
-							disabled={result.isFetchingNextPage}
-							onClick={() => void result.fetchNextPage()}
-							variant="outline"
-						>
-							{result.isFetchingNextPage ? "Carregando…" : "Carregar mais"}
-						</Button>
-					)}
-				</FinanceCard>
-			)}
+			<AsyncDataState
+				error={result.error}
+				errorFallback={(error) => <Notice>{errorMessage(error)}</Notice>}
+				hasData={Boolean(result.data)}
+				pending={result.isPending}
+				pendingFallback={<Loading />}
+			>
+				{() => (
+					<FinanceCard className="p-5">
+						<ActivityRows
+							items={activities}
+							onArchive={mutationsAvailable ? setArchiving : undefined}
+							onEdit={mutationsAvailable ? onEdit : undefined}
+							onView={onView}
+						/>
+						{result.hasNextPage && (
+							<Button
+								className="mt-4"
+								disabled={result.isFetchingNextPage}
+								onClick={() => void result.fetchNextPage()}
+								variant="outline"
+							>
+								{result.isFetchingNextPage ? "Carregando…" : "Carregar mais"}
+							</Button>
+						)}
+					</FinanceCard>
+				)}
+			</AsyncDataState>
 		</>
 	);
 }
@@ -1159,6 +1189,7 @@ function CategoryForm({
 	onSaved: () => void;
 	onCancel?: () => void;
 }) {
+	const { available: mutationsAvailable } = useMutationAvailability();
 	const form = useForm<CategoryFormInput, unknown, CategoryFormValues>({
 		defaultValues: {
 			parentCategoryId: initial?.parentCategoryId ?? "root",
@@ -1226,7 +1257,7 @@ function CategoryForm({
 			</Button>
 			<Button
 				className={mobileDrawer ? "h-12 w-full" : undefined}
-				disabled={form.formState.isSubmitting}
+				disabled={!mutationsAvailable || form.formState.isSubmitting}
 				type="submit"
 			>
 				{submitLabel}
@@ -1380,6 +1411,7 @@ function CategoryDialog({
 }
 
 function Categories() {
+	const { available: mutationsAvailable } = useMutationAvailability();
 	const queryClient = useQueryClient();
 	const [status, setStatus] = useState<"active" | "archived">("active");
 	const [editing, setEditing] = useState<CategoryDto | null>(null);
@@ -1418,7 +1450,10 @@ function Categories() {
 			<PageTitle eyebrow="organização" title="Categorias">
 				<div className="flex gap-2">
 					<BackButton />
-					<Button onClick={() => setEditing({} as CategoryDto)}>
+					<Button
+						disabled={!mutationsAvailable}
+						onClick={() => setEditing({} as CategoryDto)}
+					>
 						<Plus /> Nova
 					</Button>
 				</div>
@@ -1475,6 +1510,7 @@ function Categories() {
 								{status === "active" && (
 									<Button
 										aria-label="Editar categoria"
+										disabled={!mutationsAvailable}
 										onClick={() => setEditing(category)}
 										size="icon"
 										variant="ghost"
@@ -1488,6 +1524,7 @@ function Categories() {
 											? "Arquivar categoria"
 											: "Restaurar categoria"
 									}
+									disabled={!mutationsAvailable}
 									onClick={() =>
 										status === "active"
 											? setArchiving(category)
@@ -1518,6 +1555,7 @@ function PaymentMethodForm({
 	onSaved: () => void;
 	onCancel: () => void;
 }) {
+	const { available: mutationsAvailable } = useMutationAvailability();
 	const form = useForm<
 		PaymentMethodFormInput,
 		unknown,
@@ -1585,7 +1623,7 @@ function PaymentMethodForm({
 			</Button>
 			<Button
 				className={mobileDrawer ? "h-12 w-full" : undefined}
-				disabled={form.formState.isSubmitting}
+				disabled={!mutationsAvailable || form.formState.isSubmitting}
 				type="submit"
 			>
 				{form.formState.isSubmitting ? "Salvando…" : "Salvar forma"}
@@ -1788,6 +1826,7 @@ function InvoicePaymentDialog({
 	onOpenChange: (open: boolean) => void;
 	onSaved: () => void;
 }) {
+	const { available: mutationsAvailable } = useMutationAvailability();
 	const isMobile = useIsMobile();
 	const [confirmRemove, setConfirmRemove] = useState(false);
 	const methods = useQuery(paymentMethodsQueryOptions());
@@ -1860,6 +1899,7 @@ function InvoicePaymentDialog({
 			{invoice?.payment && (
 				<Button
 					className={isMobile ? "h-12 w-full" : undefined}
+					disabled={!mutationsAvailable}
 					onClick={() => setConfirmRemove(true)}
 					type="button"
 					variant="destructive"
@@ -1877,7 +1917,7 @@ function InvoicePaymentDialog({
 			</Button>
 			<Button
 				className={isMobile ? "h-12 w-full" : undefined}
-				disabled={form.formState.isSubmitting}
+				disabled={!mutationsAvailable || form.formState.isSubmitting}
 				type="submit"
 			>
 				{form.formState.isSubmitting
@@ -2005,13 +2045,15 @@ function InvoicePaymentDialog({
 }
 
 function Payments() {
+	const { available: mutationsAvailable } = useMutationAvailability();
 	const queryClient = useQueryClient();
 	const [tab, setTab] = useState<"methods" | "invoices">("methods");
 	const [editing, setEditing] = useState<PaymentMethodDto | null>(null);
 	const [paymentOpen, setPaymentOpen] = useState(false);
 	const [payingInvoice, setPayingInvoice] = useState<InvoiceDto | null>(null);
 	const methods = useQuery(paymentMethodsQueryOptions());
-	const invoices = useQuery(invoicesQueryOptions());
+	const invoices = useInfiniteQuery(invoicesQueryOptions());
+	const invoiceItems = invoices.data?.pages.flatMap((page) => page.items) ?? [];
 	const archiveMutation = useMutation({
 		mutationFn: (id: string) => archivePaymentMethod({ data: { id } }),
 		onSuccess: () =>
@@ -2043,11 +2085,15 @@ function Payments() {
 			<PageTitle eyebrow="pagamentos" title="Formas e faturas">
 				<div className="flex gap-2">
 					<BackButton />
-					<Button onClick={() => setEditing({} as PaymentMethodDto)}>
+					<Button
+						disabled={!mutationsAvailable}
+						onClick={() => setEditing({} as PaymentMethodDto)}
+					>
 						<Plus /> Nova forma
 					</Button>
 					{tab === "invoices" && (
 						<Button
+							disabled={!mutationsAvailable}
 							onClick={() => {
 								setPayingInvoice(null);
 								setPaymentOpen(true);
@@ -2120,6 +2166,7 @@ function Payments() {
 									{!method.archivedAt && (
 										<Button
 											aria-label="Editar forma de pagamento"
+											disabled={!mutationsAvailable}
 											onClick={() => setEditing(method)}
 											size="icon"
 											variant="ghost"
@@ -2133,6 +2180,7 @@ function Payments() {
 												? "Restaurar forma de pagamento"
 												: "Arquivar forma de pagamento"
 										}
+										disabled={!mutationsAvailable}
 										onClick={() =>
 											void (method.archivedAt
 												? restore(method)
@@ -2151,18 +2199,19 @@ function Payments() {
 			{tab === "invoices" &&
 				(invoices.isPending ? (
 					<Loading />
-				) : invoices.error || !invoices.data ? (
+				) : invoices.error && !invoices.data ? (
 					<Notice>{errorMessage(invoices.error)}</Notice>
 				) : (
 					<div className="grid gap-4">
-						{invoices.data.length === 0 ? (
+						{invoices.error && <Notice>{errorMessage(invoices.error)}</Notice>}
+						{invoiceItems.length === 0 ? (
 							<FinanceCard className="p-5">
 								<p className="text-sm text-muted-foreground">
 									Nenhuma fatura derivada no momento.
 								</p>
 							</FinanceCard>
 						) : (
-							invoices.data.map((invoice) => (
+							invoiceItems.map((invoice) => (
 								<FinanceCard
 									className="p-5"
 									key={`${invoice.paymentMethodId}-${invoice.referenceMonth}`}
@@ -2256,6 +2305,7 @@ function Payments() {
 									</ul>
 									<div className="mt-4 flex justify-end">
 										<Button
+											disabled={!mutationsAvailable}
 											onClick={() => {
 												setPayingInvoice(invoice);
 												setPaymentOpen(true);
@@ -2269,6 +2319,15 @@ function Payments() {
 									</div>
 								</FinanceCard>
 							))
+						)}
+						{invoices.hasNextPage && (
+							<Button
+								disabled={invoices.isFetchingNextPage}
+								onClick={() => void invoices.fetchNextPage()}
+								variant="outline"
+							>
+								{invoices.isFetchingNextPage ? "Carregando…" : "Carregar mais"}
+							</Button>
 						)}
 					</div>
 				))}
@@ -2373,6 +2432,7 @@ function Profile({
 }
 
 function Archive({ onView }: { onView: (item: TransactionDto) => void }) {
+	const { available: mutationsAvailable } = useMutationAvailability();
 	const queryClient = useQueryClient();
 	const result = useInfiniteQuery(transactionsQueryOptions("archived"));
 	const restoreMutation = useMutation({
@@ -2402,7 +2462,7 @@ function Archive({ onView }: { onView: (item: TransactionDto) => void }) {
 				<FinanceCard className="p-5">
 					<TransactionRows
 						items={transactions}
-						onRestore={restore}
+						onRestore={mutationsAvailable ? restore : undefined}
 						onView={onView}
 					/>
 					{result.hasNextPage && (
@@ -2504,6 +2564,7 @@ function Reports() {
 		"month",
 	);
 	const [anchorDate, setAnchorDate] = useState(saoPauloToday());
+	const [anchorDateInput, setAnchorDateInput] = useState(anchorDate);
 	const result = useQuery(reportQueryOptions(granularity, anchorDate));
 	const report = result.data;
 	const chartColors: Record<string, string> = {
@@ -2542,136 +2603,124 @@ function Reports() {
 							]
 						: []),
 				];
-	const chartConfig = Object.fromEntries(
-		chartData.map((item) => [item.category, { label: item.category }]),
-	) satisfies ChartConfig;
 	return (
 		<>
 			<PageTitle eyebrow="relatórios" title="Para onde foi seu dinheiro" />
 			<FinanceCard className="mb-6 flex flex-row flex-wrap gap-3 p-4">
-				<Select
-					onValueChange={(value) => setGranularity(value as typeof granularity)}
-					value={granularity}
-				>
-					<SelectTrigger className="w-40">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="day">Dia</SelectItem>
-						<SelectItem value="week">Semana</SelectItem>
-						<SelectItem value="month">Mês</SelectItem>
-					</SelectContent>
-				</Select>
-				<Input
-					className="w-44"
-					onChange={(event) => setAnchorDate(event.target.value)}
-					type="date"
-					value={anchorDate}
-				/>
+				<Field className="w-40">
+					<FieldLabel htmlFor="report-granularity">Período</FieldLabel>
+					<Select
+						onValueChange={(value) =>
+							setGranularity(value as typeof granularity)
+						}
+						value={granularity}
+					>
+						<SelectTrigger id="report-granularity">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="day">Dia</SelectItem>
+							<SelectItem value="week">Semana</SelectItem>
+							<SelectItem value="month">Mês</SelectItem>
+						</SelectContent>
+					</Select>
+				</Field>
+				<Field className="w-44">
+					<FieldLabel htmlFor="report-anchor-date">
+						Data de referência
+					</FieldLabel>
+					<Input
+						aria-invalid={!isCivilDate(anchorDateInput)}
+						id="report-anchor-date"
+						onChange={(event) => {
+							const value = event.target.value;
+							setAnchorDateInput(value);
+							if (isCivilDate(value)) setAnchorDate(value);
+						}}
+						type="date"
+						value={anchorDateInput}
+					/>
+				</Field>
 			</FinanceCard>
-			{result.isPending ? (
-				<Loading />
-			) : result.error || !result.data ? (
-				<Notice>{errorMessage(result.error)}</Notice>
-			) : (
-				<>
-					<section className="grid gap-4 md:grid-cols-3">
-						<Summary
-							label="Entradas"
-							tone="income"
-							value={result.data.incomeCents}
-						/>
-						<Summary
-							label="Saídas"
-							tone="expense"
-							value={result.data.expenseCents}
-						/>
-						<Summary
-							label="Saldo"
-							tone="balance"
-							value={result.data.balanceCents}
-						/>
-					</section>
-					<FinanceCard className="mt-7 grid gap-6 p-5 md:grid-cols-[180px_1fr]">
-						<div className="relative mx-auto size-40">
-							<ChartContainer
-								aria-label="Distribuição de despesas por categoria"
-								className="size-40"
-								config={chartConfig}
-							>
-								<PieChart>
-									<ChartTooltip
-										content={
-											<ChartTooltipContent
-												formatter={(value) => moneyFromCents(Number(value))}
-												nameKey="category"
-											/>
+			<AsyncDataState
+				error={result.error}
+				errorFallback={(error) => <Notice>{errorMessage(error)}</Notice>}
+				hasData={Boolean(result.data)}
+				pending={result.isPending}
+				pendingFallback={<Loading />}
+			>
+				{() => {
+					if (!report) return null;
+					return (
+						<>
+							<section className="grid gap-4 md:grid-cols-3">
+								<Summary
+									label="Entradas"
+									tone="income"
+									value={report.incomeCents}
+								/>
+								<Summary
+									label="Saídas"
+									tone="expense"
+									value={report.expenseCents}
+								/>
+								<Summary
+									label="Saldo"
+									tone="balance"
+									value={report.balanceCents}
+								/>
+							</section>
+							<FinanceCard className="mt-7 grid gap-6 p-5 md:grid-cols-[180px_1fr]">
+								<Suspense fallback={<Skeleton className="mx-auto size-40" />}>
+									<ReportsChart
+										data={chartData}
+										expenseCents={report.expenseCents}
+									/>
+								</Suspense>
+								<div>
+									<p className="text-[0.69rem] font-bold uppercase tracking-[0.16em]">
+										{report.period.startDate} a {report.period.endDate}
+									</p>
+									<CardTitle className="mt-1 text-2xl font-semibold text-foreground">
+										Despesas por categoria
+									</CardTitle>
+									<ExpenseCategoryTree
+										nodes={
+											report.expenseCategoryTree as ExpenseCategoryTreeNode[]
 										}
 									/>
-									<Pie
-										data={chartData}
-										dataKey="amountCents"
-										innerRadius={48}
-										nameKey="category"
-										outerRadius={76}
-										strokeWidth={4}
-									>
-										{chartData.map((item) => (
-											<Cell fill={item.fill} key={item.category} />
-										))}
-									</Pie>
-								</PieChart>
-							</ChartContainer>
-							<div className="pointer-events-none absolute inset-0 grid place-items-center text-center text-xs font-bold text-card-foreground">
-								<div>
-									{moneyFromCents(result.data.expenseCents)}
-									<br />
-									em despesas
+									{report.unregisteredExpenseCents > 0 && (
+										<div className="mt-3 flex justify-between rounded-lg bg-muted px-3 py-2 text-sm">
+											<span>Gastos não cadastrados</span>
+											<strong>
+												{moneyFromCents(report.unregisteredExpenseCents)}
+											</strong>
+										</div>
+									)}
 								</div>
-							</div>
-						</div>
-						<div>
-							<p className="text-[0.69rem] font-bold uppercase tracking-[0.16em]">
-								{result.data.period.startDate} a {result.data.period.endDate}
-							</p>
-							<CardTitle className="mt-1 text-2xl font-semibold text-foreground">
-								Despesas por categoria
-							</CardTitle>
-							<ExpenseCategoryTree
-								nodes={
-									result.data.expenseCategoryTree as ExpenseCategoryTreeNode[]
-								}
-							/>
-							{result.data.unregisteredExpenseCents > 0 && (
-								<div className="mt-3 flex justify-between rounded-lg bg-muted px-3 py-2 text-sm">
-									<span>Gastos não cadastrados</span>
-									<strong>
-										{moneyFromCents(result.data.unregisteredExpenseCents)}
-									</strong>
-								</div>
-							)}
-						</div>
-					</FinanceCard>
-					<FinanceCard className="mt-7 p-5">
-						<CardTitle className="text-2xl font-semibold text-foreground">
-							Entradas por forma de pagamento
-						</CardTitle>
-						<ul className="mt-3 divide-y divide-border">
-							{result.data.incomeByPaymentMethod.map((item) => (
-								<li
-									className="flex justify-between py-2"
-									key={item.paymentMethodId ?? "none"}
-								>
-									<span className="text-foreground">{item.name}</span>
-									<strong className="text-foreground">
-										{moneyFromCents(item.amountCents)}
-									</strong>
-								</li>
-							))}
-						</ul>
-					</FinanceCard>
-				</>
-			)}
+							</FinanceCard>
+							<FinanceCard className="mt-7 p-5">
+								<CardTitle className="text-2xl font-semibold text-foreground">
+									Entradas por forma de pagamento
+								</CardTitle>
+								<ul className="mt-3 divide-y divide-border">
+									{report.incomeByPaymentMethod.map((item) => (
+										<li
+											className="flex justify-between py-2"
+											key={item.paymentMethodId ?? "none"}
+										>
+											<span className="text-foreground">{item.name}</span>
+											<strong className="text-foreground">
+												{moneyFromCents(item.amountCents)}
+											</strong>
+										</li>
+									))}
+								</ul>
+							</FinanceCard>
+						</>
+					);
+				}}
+			</AsyncDataState>
 		</>
 	);
 }
@@ -2690,7 +2739,6 @@ export function FinancePage({ kind }: { kind: FinancePageKind }) {
 	useEffect(() => {
 		if (online) return;
 		setEditing(null);
-		setViewing(null);
 	}, [online]);
 	const openNewTransaction = () => setEditing({} as TransactionDto);
 	const handleSaved = () => {

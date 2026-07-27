@@ -44,13 +44,17 @@ pnpm run release:verify
 Ele inclui uma prova negativa versionada: `pnpm run types:wrangler:negative`
 deve passar ao confirmar que uma configuração de fixture sem `DB` torna o
 artefato de tipos desatualizado, sem alterar arquivos.
+Também executa testes unitários, UI e Workers, rollback do journal de migrations,
+Knip, documentação, auditoria de dependências de produção, build, inspeção de
+segredos e `wrangler deploy --dry-run`. O hook `pre-push` chama esse comando
+canônico uma única vez.
 
 ## Como deployar
 
 Configure o `database_id` real do D1 e os secrets do Worker antes do primeiro
-deploy. Use `pnpm run deploy`: ele aplica as migrations remotas, faz build e
-publica o Worker nessa ordem. Nunca execute migration remota apontando para o
-placeholder `YOUR_DATABASE_ID`.
+deploy. Use `pnpm run deploy`: ele valida a release, aplica as migrations
+remotas, faz outro dry-run e publica o Worker nessa ordem. Nunca execute
+migration remota apontando para o placeholder `YOUR_DATABASE_ID`.
 
 ## Git & PRs
 

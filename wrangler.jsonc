@@ -1,7 +1,7 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "din-din",
-	"compatibility_date": "2025-09-02",
+	"compatibility_date": "2026-07-27",
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
@@ -84,7 +84,8 @@
 			"invocation_logs": true
 		},
 		"traces": {
-			"enabled": false
+			"enabled": true,
+			"head_sampling_rate": 0.01
 		}
 	}
 }

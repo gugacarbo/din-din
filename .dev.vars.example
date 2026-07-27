@@ -12,3 +12,8 @@ GITHUB_APP_INSTALLATION_ID=
 # PEM em uma linha, com \n literais em vez de quebras de linha.
 GITHUB_APP_PRIVATE_KEY=
 APP_SECRET=
+
+# Credenciais de tooling usadas apenas pelo drizzle-kit (driver d1-http).
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_DATABASE_ID=
+CLOUDFLARE_D1_TOKEN=

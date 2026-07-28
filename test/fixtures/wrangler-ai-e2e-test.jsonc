@@ -1,0 +1,12 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "din-din-ai-e2e",
+	"account_id": "f0ecd78520991080bcd8a0b0d7657205",
+	"main": "../e2e/worker.ts",
+	"compatibility_date": "2026-07-27",
+	"compatibility_flags": ["nodejs_compat"],
+	"ai": {
+		"binding": "AI",
+		"remote": true
+	}
+}

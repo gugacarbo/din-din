@@ -37,6 +37,23 @@ Ele também faz parte de `release:verify` para manter essa prova de regressão.
 roda contra um D1 local e efêmero do Miniflare, aplica as migrations de
 `drizzle/` e nunca acessa o D1 remoto ou credenciais OAuth reais.
 
+### E2E do agente de issues
+
+O teste abaixo chama o binding remoto do Workers AI com o mesmo modelo, prompt
+e JSON Schema usados pelo agente que gera issues. Ele não usa D1, filas ou
+GitHub, mas consome Workers AI; por isso não faz parte de `pnpm test` nem da CI
+regular.
+
+```bash
+pnpm exec wrangler login # necessário somente uma vez
+pnpm run test:ai:e2e
+```
+
+A suíte usa a sessão OAuth local do Wrangler, não `CLOUDFLARE_API_TOKEN`; ela
+remove credenciais de API do ambiente antes de iniciar o teste. A conta padrão
+é `f0ecd78520991080bcd8a0b0d7657205`, definida na fixture E2E. A suíte falha
+se a resposta real não respeitar o contrato público de uma issue.
+
 ## Banco e release
 
 As migrações versionadas ficam em `drizzle/`. Gere uma nova após alterar

@@ -14,6 +14,7 @@
     "test:unit": "vitest run --config vitest.unit.config.ts",
     "test:ui": "vitest run --config vitest.ui.config.ts",
     "test:workers": "vitest run --config vitest.workers.config.ts",
+    "test:ai:e2e": "node scripts/verify-ai-e2e-env.mjs",
     "types:wrangler": "wrangler types --include-runtime --include-env src/worker-configuration.d.ts",
     "types:wrangler:check": "wrangler types --include-runtime --include-env src/worker-configuration.d.ts --check",
     "types:wrangler:negative": "node scripts/check-wrangler-types-negative.mjs",

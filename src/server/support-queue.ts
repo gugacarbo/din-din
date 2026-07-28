@@ -1,5 +1,10 @@
 import { runAiWithLogging } from "#/server/ai-logging.ts";
 import { publishSupportIssue } from "#/server/github-support-publisher.ts";
+import {
+	parseSupportIssueWriterOutput,
+	supportIssueWriterModel,
+	supportIssueWriterOptions,
+} from "#/server/support-issue-writer.ts";
 import { publicIssueFromModel } from "#/server/support-publication-policy.ts";
 
 type TriageMessage = { kind: "triage"; reportId: string };
@@ -139,12 +144,8 @@ async function triage(env: Env, reportId: string) {
 	try {
 		output = await runAiWithLogging(
 			env,
-			"@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-			{
-				prompt: `Produce only JSON with title, summary, technicalCategory (bug|question|suggestion), observedBehavior, probableSteps (array), technicalSignals (array), labels (bug|enhancement|question). Do not copy user text, include personal data, URLs, markdown, mentions, or secrets.\nUser report: ${row.message}\nSanitized diagnostics: ${row.diagnostics}`,
-				response_format: { type: "json_object" },
-				max_tokens: 800,
-			},
+			supportIssueWriterModel,
+			supportIssueWriterOptions(row.message, row.diagnostics),
 			{
 				agentKey: "issue-writer",
 				userId: row.user_id,
@@ -157,16 +158,7 @@ async function triage(env: Env, reportId: string) {
 	}
 	let model: unknown;
 	try {
-		const response =
-			typeof output === "string"
-				? output
-				: typeof output === "object" &&
-						output !== null &&
-						"response" in output &&
-						typeof output.response === "string"
-					? output.response
-					: "";
-		model = JSON.parse(response || "");
+		model = parseSupportIssueWriterOutput(output);
 	} catch {
 		await manualReview(env, reportId, "invalid_ai_output", {
 			leaseToken: row.token,

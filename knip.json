@@ -1,6 +1,12 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/**/*.{ts,tsx}", "test/workers/worker.ts"],
+  "entry": [
+    "src/**/*.{ts,tsx}",
+    "test/workers/worker.ts",
+    "test/e2e/worker.ts",
+    "test/e2e/support-issue-writer.ai.e2e.test.ts",
+    "vitest.ai-e2e.config.ts"
+  ],
   "ignoreDependencies": [
     "@tanstack/router-plugin",
     "@tanstack/devtools-event-client",

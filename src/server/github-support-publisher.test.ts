@@ -87,6 +87,14 @@ describe("publishSupportIssue", () => {
 		expect(
 			JSON.stringify(githubRequestFailuresFromError(failure)),
 		).not.toContain("must-not-be-recorded");
+		expect(fetcher).toHaveBeenCalledWith(
+			expect.stringContaining("/access_tokens"),
+			expect.objectContaining({
+				headers: expect.objectContaining({
+					"user-agent": "din-din-support-issue-writer",
+				}),
+			}),
+		);
 	});
 	it("reconciles a timeout after POST without issuing a second POST", async () => {
 		let searches = 0;
@@ -135,5 +143,15 @@ describe("publishSupportIssue", () => {
 		expect(
 			fetcher.mock.calls.filter(([url]) => String(url).endsWith("/issues")),
 		).toHaveLength(1);
+		for (const call of fetcher.mock.calls) {
+			const [, init] = call as unknown as [RequestInfo | URL, RequestInit];
+			expect(init).toEqual(
+				expect.objectContaining({
+					headers: expect.objectContaining({
+						"user-agent": "din-din-support-issue-writer",
+					}),
+				}),
+			);
+		}
 	});
 });

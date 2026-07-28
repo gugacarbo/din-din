@@ -6,6 +6,7 @@ import {
 
 const repository = "gugacarbo/din-din";
 const api = "https://api.github.com";
+const userAgent = "din-din-support-issue-writer";
 type Fetcher = typeof fetch;
 
 export type GitHubRequestFailure = {
@@ -182,6 +183,7 @@ async function installationToken(
 				headers: {
 					accept: "application/vnd.github+json",
 					authorization: `Bearer ${await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY)}`,
+					"user-agent": userAgent,
 					"x-github-api-version": "2022-11-28",
 				},
 			},
@@ -208,6 +210,7 @@ async function github(
 		headers: {
 			accept: "application/vnd.github+json",
 			authorization: `Bearer ${token}`,
+			"user-agent": userAgent,
 			"x-github-api-version": "2022-11-28",
 			...init?.headers,
 		},

@@ -1,123 +1,138 @@
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { toast } from "sonner";
-import { z } from "zod";
 import { Button } from "#/components/ui/button.tsx";
-import { Card, CardContent } from "#/components/ui/card.tsx";
-import { Field, FieldError, FieldLabel } from "#/components/ui/field.tsx";
-import { Input } from "#/components/ui/input.tsx";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "#/components/ui/dialog.tsx";
 import {
 	clearAdminInviteToken,
 	readAdminInviteToken,
 } from "#/lib/admin-invite-client.ts";
-import { authClient } from "#/lib/auth-client.ts";
-
-const emailSchema = z.object({
-	email: z.string().trim().email("Informe o e-mail convidado."),
-});
-type EmailValues = z.infer<typeof emailSchema>;
+import { adminMembershipQueryOptions } from "#/lib/admin-support-query-options.ts";
+import { sessionQueryOptions } from "#/lib/finance-query-options.ts";
 
 export const Route = createFileRoute("/admin/convite")({
+	// The fragment must be captured by the root script before a route guard can
+	// redirect to login. HTTP requests never include fragments.
+	ssr: false,
+	beforeLoad: async ({ context }) => {
+		try {
+			await context.queryClient.ensureQueryData(sessionQueryOptions());
+		} catch {
+			throw redirect({
+				to: "/login",
+				search: { returnTo: "/admin/convite" },
+			});
+		}
+	},
 	component: InvitePage,
 });
+
+function inviteErrorMessage(code: string | undefined) {
+	switch (code) {
+		case "email_not_verified":
+			return "Confirme seu e-mail para aceitar este convite.";
+		case "email_mismatch":
+			return "Este convite já está vinculado a outro e-mail.";
+		case "invite_consumed":
+			return "Este convite já foi utilizado.";
+		case "unauthenticated":
+			return "Faça login para aceitar o convite.";
+		default:
+			return "Convite inválido ou expirado.";
+	}
+}
 
 function InvitePage() {
 	const [token, setToken] = useState(() =>
 		typeof window === "undefined" ? undefined : readAdminInviteToken(),
 	);
-	const preparingOAuth = useRef(false);
-	const form = useForm<EmailValues>({
-		defaultValues: { email: "" },
-		resolver: zodResolver(emailSchema),
-	});
-	const prepare = useMutation({
-		mutationFn: async (data: EmailValues) => {
+	const navigate = useNavigate();
+	const queryClient = useQueryClient();
+	const { data: user } = useQuery(sessionQueryOptions());
+	const accept = useMutation({
+		mutationFn: async () => {
 			if (!token)
 				throw new Error("Este convite precisa ser aberto pelo link original.");
-			const response = await fetch("/api/admin/invite/prepare", {
+			const response = await fetch("/api/admin/invite/accept", {
 				method: "POST",
 				credentials: "same-origin",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ ...data, token }),
+				body: JSON.stringify({ token }),
 			});
-			if (!response.ok) throw new Error("Convite inválido ou expirado.");
+			if (response.ok) return;
+			const body = (await response.json().catch(() => null)) as {
+				code?: string;
+			} | null;
+			throw new Error(inviteErrorMessage(body?.code));
 		},
-	});
-	const conclude = useMutation({
-		mutationFn: async () => {
-			const response = await fetch("/api/admin/invite/conclude", {
-				method: "POST",
-				credentials: "same-origin",
-			});
-			if (!response.ok) throw new Error("Não foi possível concluir o convite.");
-		},
-	});
-	useEffect(() => {
-		if (token || preparingOAuth.current) return;
-		void conclude.mutateAsync().catch(() => undefined);
-	}, [conclude, token]);
-	async function submit(values: EmailValues) {
-		try {
-			await prepare.mutateAsync(values);
-			preparingOAuth.current = true;
+		onSuccess: async () => {
 			clearAdminInviteToken();
 			setToken(undefined);
-			const result = await authClient.signIn.social({
-				provider: "google",
-				callbackURL: "/admin/convite",
+			await queryClient.invalidateQueries({
+				queryKey: adminMembershipQueryOptions().queryKey,
 			});
-			if (result.error)
-				throw new Error(
-					result.error.message ?? "Não foi possível iniciar o login.",
-				);
-		} catch (cause) {
-			toast.error(
-				cause instanceof Error
-					? cause.message
-					: "Não foi possível preparar o convite.",
-			);
-		}
+			await navigate({ to: "/admin/suport" });
+		},
+	});
+	function cancel() {
+		clearAdminInviteToken();
+		setToken(undefined);
+		void navigate({ to: "/" });
 	}
 	return (
 		<main className="mx-auto grid min-h-dvh w-full max-w-[1080px] place-items-center px-4 py-8">
-			<Card className="w-full max-w-md">
-				<CardContent className="p-6">
-					<h1 className="text-xl font-semibold text-foreground">
-						Convite de administrador
-					</h1>
-					<p className="mt-2 text-sm text-muted-foreground">
-						Confirme o e-mail convidado e entre com Google.
-					</p>
-					<form
-						className="mt-6 grid gap-4"
-						noValidate
-						onSubmit={form.handleSubmit(submit)}
-					>
-						<Field data-invalid={Boolean(form.formState.errors.email)}>
-							<FieldLabel htmlFor="invite-email">E-mail</FieldLabel>
-							<Input
-								aria-invalid={Boolean(form.formState.errors.email)}
-								{...form.register("email")}
-								id="invite-email"
-								type="email"
-							/>
-							<FieldError errors={[form.formState.errors.email]} />
-						</Field>
+			<Dialog
+				onOpenChange={(open) => {
+					if (!open && token) cancel();
+				}}
+				open={Boolean(token)}
+			>
+				<DialogContent showCloseButton={false}>
+					<DialogHeader>
+						<DialogTitle>Convite de administrador</DialogTitle>
+						<DialogDescription>
+							Você está prestes a conceder acesso administrativo a{" "}
+							<strong>{user?.email}</strong>.
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
 						<Button
-							disabled={prepare.isPending || form.formState.isSubmitting}
-							type="submit"
+							disabled={accept.isPending}
+							onClick={() =>
+								void accept.mutateAsync().catch((error: unknown) => {
+									toast.error(
+										error instanceof Error
+											? error.message
+											: "Não foi possível aceitar o convite.",
+									);
+								})
+							}
 						>
-							Continuar com Google
+							{accept.isPending ? "Aceitando…" : "Aceitar convite"}
 						</Button>
-					</form>
-					{!token && conclude.isSuccess && (
-						<p className="mt-4 text-sm">Acesso de administrador concedido.</p>
-					)}
-				</CardContent>
-			</Card>
+						<Button
+							disabled={accept.isPending}
+							onClick={cancel}
+							variant="outline"
+						>
+							Cancelar
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+			{!token && (
+				<p className="text-sm text-muted-foreground">
+					Este convite precisa ser aberto pelo link original.
+				</p>
+			)}
 		</main>
 	);
 }

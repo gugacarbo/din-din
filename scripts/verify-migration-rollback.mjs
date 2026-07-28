@@ -114,7 +114,7 @@ function assertSafeToRemoveAdmin() {
 	]);
 	if (adminTables.some((table) => new RegExp(`"${table}_has_data"\\s*:\\s*1`).test(output))) {
 		throw new Error(
-			"Admin rollback recusado: remova memberships, invites, continuations e publicações manuais antes do down local.",
+		"Admin rollback recusado: remova memberships, invites, continuations e publicações manuais antes do down local.",
 		);
 	}
 }

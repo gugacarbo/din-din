@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -26,11 +26,14 @@ const devLoginSchema = z.object({
 type DevLoginValues = z.infer<typeof devLoginSchema>;
 
 export const Route = createFileRoute("/login")({
-	beforeLoad: async ({ context }) => {
+	validateSearch: z.object({
+		returnTo: z.literal("/admin/convite").optional().catch(undefined),
+	}),
+	beforeLoad: async ({ context, search }) => {
 		if (isOfflineNavigation()) return;
 		try {
 			await context.queryClient.ensureQueryData(sessionQueryOptions());
-			throw redirect({ to: "/" });
+			throw redirect({ to: search.returnTo ?? "/" });
 		} catch (error) {
 			if (error && typeof error === "object" && "isRedirect" in error)
 				throw error;
@@ -40,6 +43,8 @@ export const Route = createFileRoute("/login")({
 });
 
 function Login() {
+	const { returnTo } = useSearch({ from: "/login" });
+	const callbackURL = returnTo ?? "/";
 	const [loading, setLoading] = useState(false);
 	const form = useForm<DevLoginValues>({
 		defaultValues: { email: "" },
@@ -67,7 +72,7 @@ function Login() {
 		try {
 			const result = await authClient.signIn.social({
 				provider: "google",
-				callbackURL: "/",
+				callbackURL,
 			});
 			if (result.error) {
 				toast.error(
@@ -89,7 +94,7 @@ function Login() {
 	async function loginWithEmail({ email }: DevLoginValues) {
 		try {
 			await devLogin.mutateAsync({ email });
-			window.location.assign("/");
+			window.location.assign(callbackURL);
 		} catch (cause) {
 			toast.error(
 				cause instanceof Error

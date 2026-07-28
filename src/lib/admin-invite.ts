@@ -30,20 +30,24 @@ export async function adminHmac(secret: string, domain: string, value: string) {
 	);
 }
 
+/**
+ * New bearer invites are self-verifying random values, so their persisted form
+ * does not need a Worker secret. Keep the domain prefix to prevent an
+ * accidental reuse of the same digest format elsewhere.
+ */
+export async function adminInviteDigest(token: string) {
+	return base64url(
+		new Uint8Array(
+			await crypto.subtle.digest(
+				"SHA-256",
+				encoder.encode(`admin-invite:v2:${token}`),
+			),
+		),
+	);
+}
+
 export function newInviteToken() {
 	return base64url(crypto.getRandomValues(new Uint8Array(32)));
-}
-
-export function continuationCookie(value: string, maxAge = 600) {
-	return `din-din-admin-invite=${encodeURIComponent(value)}; HttpOnly; Secure; SameSite=Lax; Path=/api/admin/invite; Max-Age=${maxAge}`;
-}
-
-export function readCookie(request: Request, name: string) {
-	return request.headers
-		.get("cookie")
-		?.split(";")
-		.map((part) => part.trim().split("=", 2))
-		.find(([key]) => key === name)?.[1];
 }
 
 export function sameAdminOrigin(request: Request) {

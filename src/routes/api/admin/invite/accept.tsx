@@ -2,22 +2,24 @@ import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { sameOrigin } from "#/server/admin-auth.ts";
 import {
+	acceptAdminInvite,
 	InviteError,
-	prepareAdminInvite,
 } from "#/server/admin-invite-service.ts";
 
-export const Route = createFileRoute("/api/admin/invite/prepare")({
+export const Route = createFileRoute("/api/admin/invite/accept")({
 	server: {
 		handlers: {
 			POST: async ({ request }) => {
+				const headers = {
+					"cache-control": "no-store",
+					"referrer-policy": "no-referrer",
+				};
 				if (!sameOrigin(request))
-					return new Response(null, {
-						status: 403,
-						headers: { "cache-control": "no-store" },
-					});
+					return new Response(null, { status: 403, headers });
 				try {
-					const result = await prepareAdminInvite(
+					const result = await acceptAdminInvite(
 						env.DB,
+						request,
 						await request.json(),
 						env.APP_SECRET,
 					);
@@ -30,10 +32,7 @@ export const Route = createFileRoute("/api/admin/invite/prepare")({
 						},
 						{
 							status: error instanceof InviteError ? error.status : 400,
-							headers: {
-								"cache-control": "no-store",
-								"referrer-policy": "no-referrer",
-							},
+							headers,
 						},
 					);
 				}

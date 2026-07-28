@@ -2,11 +2,12 @@ import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { lazy, Suspense, type ComponentType } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
 	signInSocial: vi.fn(),
 }));
+const search = vi.hoisted(() => vi.fn());
 
 vi.mock("#/server/finance.ts", () => ({ getSessionUser: vi.fn() }));
 vi.mock("#/lib/auth-client.ts", () => ({
@@ -19,6 +20,7 @@ vi.mock("@tanstack/react-router", () => ({
 		exportName: string,
 	) => lazy(async () => ({ default: (await importer())[exportName] })),
 	redirect: vi.fn(),
+	useSearch: () => search(),
 }));
 
 import { Route } from "#/routes/login.tsx";
@@ -39,6 +41,10 @@ function renderLogin() {
 }
 
 describe("Login", () => {
+	beforeEach(() => {
+		search.mockReturnValue({});
+		api.signInSocial.mockReset();
+	});
 	it("shows the direct-email form in development", async () => {
 		renderLogin();
 
@@ -49,6 +55,13 @@ describe("Login", () => {
 		expect(
 			screen.getByRole("button", { name: "Entrar com e-mail (dev)" }),
 		).toBeInTheDocument();
+	});
+
+	it("ignores an unsafe login return path", () => {
+		const validator = Route.options.validateSearch as {
+			parse(input: unknown): unknown;
+		};
+		expect(validator.parse({ returnTo: "https://evil.example" })).toEqual({});
 	});
 
 	it("validates the development email before submitting", async () => {
@@ -85,6 +98,19 @@ describe("Login", () => {
 		expect(api.signInSocial).toHaveBeenCalledWith({
 			provider: "google",
 			callbackURL: "/",
+		});
+	});
+
+	it("uses the invitation return path for Google login", async () => {
+		search.mockReturnValue({ returnTo: "/admin/convite" });
+		api.signInSocial.mockRejectedValueOnce(new Error("Google indisponível"));
+		const user = userEvent.setup();
+		renderLogin();
+		await user.click(await screen.findByRole("button", { name: "Entrar com Google" }));
+
+		expect(api.signInSocial).toHaveBeenCalledWith({
+			provider: "google",
+			callbackURL: "/admin/convite",
 		});
 	});
 });

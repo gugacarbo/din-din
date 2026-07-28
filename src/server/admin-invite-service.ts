@@ -1,16 +1,13 @@
 import { z } from "zod";
 import {
 	adminHmac,
-	continuationCookie,
-	newInviteToken,
+	adminInviteDigest,
 	normalizeAdminEmail,
-	readCookie,
 } from "#/lib/admin-invite.ts";
 import { createCoreAuth } from "#/lib/auth-core.ts";
 
-const prepareSchema = z.object({
+const acceptSchema = z.object({
 	token: z.string().min(32),
-	email: z.string().email(),
 });
 
 export class InviteError extends Error {
@@ -22,92 +19,61 @@ export class InviteError extends Error {
 	}
 }
 
-export async function prepareAdminInvite(
+type AdminInvite = {
+	invite_id: string;
+	email_normalized: string | null;
+	expires_at: number;
+	consumed_at: number | null;
+};
+
+export async function acceptAdminInvite(
 	d1: D1Database,
+	request: Request,
 	input: unknown,
 	appSecret: string,
 ) {
-	const parsed = prepareSchema.safeParse(input);
+	const parsed = acceptSchema.safeParse(input);
 	if (!parsed.success) throw new InviteError(400, "invalid_invite");
-	const email = normalizeAdminEmail(parsed.data.email);
-	const tokenHmac = await adminHmac(
-		appSecret,
-		"admin-invite:v1",
-		parsed.data.token,
-	);
-	const now = Date.now();
-	await d1
-		.prepare(
-			"update admin_invites set email_normalized = ? where token_hmac = ? and email_normalized is null and consumed_at is null and expires_at > ?",
-		)
-		.bind(email, tokenHmac, now)
-		.run();
-	const invite = await d1
-		.prepare(
-			"select invite_id from admin_invites where token_hmac = ? and email_normalized = ? and consumed_at is null and expires_at > ?",
-		)
-		.bind(tokenHmac, email, now)
-		.first<{ invite_id: string }>();
-	if (!invite) throw new InviteError(400, "invalid_invite");
-	const nonce = newInviteToken();
-	const continuationHmac = await adminHmac(
-		appSecret,
-		"admin-invite-continuation:v1",
-		nonce,
-	);
-	await d1
-		.prepare(
-			"insert or replace into admin_invite_continuations (continuation_hmac, invite_id, nonce, expires_at, created_at) values (?, ?, ?, ?, ?)",
-		)
-		.bind(continuationHmac, invite.invite_id, "bound", now + 10 * 60_000, now)
-		.run();
-	return {
-		headers: {
-			"set-cookie": continuationCookie(nonce),
-			"cache-control": "no-store",
-			"referrer-policy": "no-referrer",
-		},
-	};
-}
-
-export async function concludeAdminInvite(
-	d1: D1Database,
-	request: Request,
-	appSecret: string,
-) {
-	const nonce = readCookie(request, "din-din-admin-invite");
-	const clear = continuationCookie("", 0);
-	if (!nonce) throw new InviteError(400, "invalid_continuation");
-	const continuationHmac = await adminHmac(
-		appSecret,
-		"admin-invite-continuation:v1",
-		nonce,
-	);
 	const session = await createCoreAuth(d1).api.getSession({
 		headers: request.headers,
 	});
 	if (!session?.user) throw new InviteError(401, "unauthenticated");
 	if (!session.user.emailVerified)
 		throw new InviteError(403, "email_not_verified");
-	const continuation = await d1
-		.prepare(
-			"select c.invite_id, i.email_normalized from admin_invite_continuations c join admin_invites i on i.invite_id = c.invite_id where c.continuation_hmac = ? and c.expires_at > ? and i.consumed_at is null and i.expires_at > ?",
-		)
-		.bind(continuationHmac, Date.now(), Date.now())
-		.first<{ invite_id: string; email_normalized: string | null }>();
-	if (!continuation) throw new InviteError(400, "invalid_continuation");
-	if (
-		!continuation.email_normalized ||
-		normalizeAdminEmail(session.user.email) !== continuation.email_normalized
-	)
-		throw new InviteError(403, "email_mismatch");
+	const email = normalizeAdminEmail(session.user.email);
 	const now = Date.now();
+	const tokenDigest = await adminInviteDigest(parsed.data.token);
+	let invite = await d1
+		.prepare(
+			"select invite_id, email_normalized, expires_at, consumed_at from admin_invites where token_digest = ?",
+		)
+		.bind(tokenDigest)
+		.first<AdminInvite>();
+	if (!invite) {
+		const tokenHmac = await adminHmac(
+			appSecret,
+			"admin-invite:v1",
+			parsed.data.token,
+		);
+		invite = await d1
+			.prepare(
+				"select invite_id, email_normalized, expires_at, consumed_at from admin_invites where token_hmac = ?",
+			)
+			.bind(tokenHmac)
+			.first<AdminInvite>();
+	}
+	if (!invite) throw new InviteError(400, "invalid_invite");
+	if (invite.consumed_at !== null)
+		throw new InviteError(409, "invite_consumed");
+	if (invite.expires_at <= now) throw new InviteError(400, "invalid_invite");
+	if (invite.email_normalized && invite.email_normalized !== email)
+		throw new InviteError(403, "email_mismatch");
 	const result = await d1.batch([
 		d1
 			.prepare(
-				"update admin_invites set consumed_at = ?, consumed_by_user_id = ? where invite_id = ? and consumed_at is null and expires_at > ?",
+				"update admin_invites set email_normalized = coalesce(email_normalized, ?), consumed_at = ?, consumed_by_user_id = ? where invite_id = ? and consumed_at is null and expires_at > ? and (email_normalized is null or email_normalized = ?)",
 			)
-			.bind(now, session.user.id, continuation.invite_id, now),
+			.bind(email, now, session.user.id, invite.invite_id, now, email),
 		d1
 			.prepare(
 				"insert or ignore into admin_memberships (user_id, created_at, created_by_invite_id) select ?, ?, ? where exists(select 1 from admin_invites where invite_id = ? and consumed_by_user_id = ? and consumed_at = ?)",
@@ -115,22 +81,16 @@ export async function concludeAdminInvite(
 			.bind(
 				session.user.id,
 				now,
-				continuation.invite_id,
-				continuation.invite_id,
+				invite.invite_id,
+				invite.invite_id,
 				session.user.id,
 				now,
 			),
-		d1
-			.prepare(
-				"delete from admin_invite_continuations where continuation_hmac = ?",
-			)
-			.bind(continuationHmac),
 	]);
 	if (result[0].meta.changes !== 1)
 		throw new InviteError(409, "invite_consumed");
 	return {
 		headers: {
-			"set-cookie": clear,
 			"cache-control": "no-store",
 			"referrer-policy": "no-referrer",
 		},

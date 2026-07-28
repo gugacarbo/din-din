@@ -205,8 +205,11 @@ export const adminInvites = sqliteTable(
 	"admin_invites",
 	{
 		inviteId: text("invite_id").primaryKey(),
-		tokenHmac: text("token_hmac").notNull().unique(),
-		/** Bound atomically by the person who first opens the bearer invite. */
+		/** Legacy form, retained only until already-issued links expire. */
+		tokenHmac: text("token_hmac").unique(),
+		/** SHA-256 of a new random bearer token; never persist the raw token. */
+		tokenDigest: text("token_digest").unique(),
+		/** Bound atomically to the authenticated acceptor. */
 		emailNormalized: text("email_normalized"),
 		expiresAt: integer("expires_at", { mode: "number" }).notNull(),
 		consumedAt: integer("consumed_at", { mode: "number" }),
@@ -220,21 +223,6 @@ export const adminInvites = sqliteTable(
 		index("admin_invites_email_index").on(table.emailNormalized),
 	],
 );
-
-export const adminInviteContinuations = sqliteTable(
-	"admin_invite_continuations",
-	{
-		continuationHmac: text("continuation_hmac").primaryKey(),
-		inviteId: text("invite_id")
-			.notNull()
-			.references(() => adminInvites.inviteId, { onDelete: "cascade" }),
-		nonce: text("nonce").notNull(),
-		expiresAt: integer("expires_at", { mode: "number" }).notNull(),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-	},
-	(table) => [index("admin_continuations_expiry_index").on(table.expiresAt)],
-);
-
 export const supportManualPublications = sqliteTable(
 	"support_manual_publications",
 	{

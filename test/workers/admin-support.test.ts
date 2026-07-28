@@ -1,14 +1,13 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
-import { Route as InviteConcludeRoute } from "#/routes/api/admin/invite/conclude.tsx";
-import { Route as InvitePrepareRoute } from "#/routes/api/admin/invite/prepare.tsx";
+import { Route as InviteAcceptRoute } from "#/routes/api/admin/invite/accept.tsx";
 import { Route as MembershipRoute } from "#/routes/api/admin/membership.tsx";
 import { Route as SupportDetailRoute } from "#/routes/api/admin/support/$reportId.tsx";
 import { Route as SupportPublishRoute } from "#/routes/api/admin/support/$reportId/publish.tsx";
 import { Route as SupportListRoute } from "#/routes/api/admin/support/index.tsx";
 import { AdminSupportError, publishAdminSupport } from "#/server/admin-support-service.ts";
-import { adminHmac } from "#/lib/admin-invite.ts";
-import { concludeAdminInvite, prepareAdminInvite } from "#/server/admin-invite-service.ts";
+import { adminInviteDigest, adminHmac } from "#/lib/admin-invite.ts";
+import { acceptAdminInvite } from "#/server/admin-invite-service.ts";
 import { AdminAuthError, requireAdmin, sameOrigin } from "#/server/admin-auth.ts";
 import { createAuthedPair } from "./fixtures.ts";
 
@@ -40,8 +39,7 @@ const handlers = {
 	list: routeHandler(SupportListRoute, "GET"),
 	detail: routeHandler(SupportDetailRoute, "GET"),
 	publish: routeHandler(SupportPublishRoute, "POST"),
-	prepare: routeHandler(InvitePrepareRoute, "POST"),
-	conclude: routeHandler(InviteConcludeRoute, "POST"),
+	accept: routeHandler(InviteAcceptRoute, "POST"),
 };
 
 describe("admin support retention guard", () => {
@@ -63,23 +61,39 @@ describe("admin support retention guard", () => {
 });
 
 describe("admin invitation flow", () => {
-	it("prepares, carries the API-scoped cookie through OAuth callback and consumes membership once", async () => {
+	it("requires an authenticated session before accepting a valid-looking token", async () => {
+		await expect(
+			acceptAdminInvite(
+				env.DB,
+				new Request("https://example.test/api/admin/invite/accept"),
+				{ token: "t".repeat(32) },
+				env.APP_SECRET,
+			),
+		).rejects.toMatchObject({ status: 401, message: "unauthenticated" });
+	});
+
+	it("accepts a digest invite only for the authenticated user and consumes it once", async () => {
 		const { a, b } = await createAuthedPair();
 		const token = `route-${crypto.randomUUID()}`;
 		const inviteId = crypto.randomUUID();
 		await env.DB
 			.prepare(
-				"insert into admin_invites (invite_id, token_hmac, expires_at, created_at) values (?, ?, ?, ?)",
+				"insert into admin_invites (invite_id, token_digest, expires_at, created_at) values (?, ?, ?, ?)",
 			)
 			.bind(
 				inviteId,
-				await adminHmac(env.APP_SECRET, "admin-invite:v1", token),
+				await adminInviteDigest(token),
 				Date.now() + 86_400_000,
 				Date.now(),
 			)
 			.run();
-		const prepared = await prepareAdminInvite(env.DB, { token, email: a.email }, env.APP_SECRET);
-		expect(prepared.headers["set-cookie"]).toContain("Path=/api/admin/invite");
+		const request = new Request("https://example.test/api/admin/invite/accept", {
+			method: "POST",
+			headers: { cookie: a.cookieHeader, origin: "https://example.test" },
+		});
+		await expect(
+			acceptAdminInvite(env.DB, request, { token }, env.APP_SECRET),
+		).resolves.toMatchObject({ headers: { "cache-control": "no-store" } });
 		expect(
 			await env.DB
 				.prepare("select email_normalized from admin_invites where invite_id = ?")
@@ -87,14 +101,49 @@ describe("admin invitation flow", () => {
 				.first<{ email_normalized: string | null }>(),
 		).toEqual({ email_normalized: a.email.toLowerCase() });
 		await expect(
-			prepareAdminInvite(env.DB, { token, email: b.email }, env.APP_SECRET),
-		).rejects.toMatchObject({ status: 400, message: "invalid_invite" });
-		const cookie = prepared.headers["set-cookie"].split(";")[0];
-		const request = new Request("https://example.test/api/admin/invite/conclude", { method: "POST", headers: { cookie: `${a.cookieHeader}; ${cookie}`, origin: "https://example.test" } });
-		await expect(concludeAdminInvite(env.DB, request, env.APP_SECRET)).resolves.toMatchObject({ headers: { "cache-control": "no-store" } });
+			acceptAdminInvite(
+				env.DB,
+				new Request("https://example.test/api/admin/invite/accept", {
+					method: "POST",
+					headers: { cookie: b.cookieHeader, origin: "https://example.test" },
+				}),
+				{ token },
+				env.APP_SECRET,
+			),
+		).rejects.toMatchObject({ status: 409, message: "invite_consumed" });
 		const membership = await env.DB.prepare("select user_id from admin_memberships where user_id = ?").bind(a.id).first();
 		expect(membership).not.toBeNull();
-		await expect(concludeAdminInvite(env.DB, request, env.APP_SECRET)).rejects.toMatchObject({ status: 400 });
+	});
+
+	it("accepts a still-valid legacy HMAC only for its bound e-mail", async () => {
+		const { a, b } = await createAuthedPair();
+		const token = `legacy-${crypto.randomUUID()}`;
+		await env.DB
+			.prepare("insert into admin_invites (invite_id, token_hmac, email_normalized, expires_at, created_at) values (?, ?, ?, ?, ?)")
+			.bind(
+				crypto.randomUUID(),
+				await adminHmac(env.APP_SECRET, "admin-invite:v1", token),
+				a.email.toLowerCase(),
+				Date.now() + 86_400_000,
+				Date.now(),
+			)
+			.run();
+		await expect(
+			acceptAdminInvite(
+				env.DB,
+				new Request("https://example.test/api/admin/invite/accept", { headers: { cookie: b.cookieHeader } }),
+				{ token },
+				env.APP_SECRET,
+			),
+		).rejects.toMatchObject({ status: 403, message: "email_mismatch" });
+		await expect(
+			acceptAdminInvite(
+				env.DB,
+				new Request("https://example.test/api/admin/invite/accept", { headers: { cookie: a.cookieHeader } }),
+				{ token },
+				env.APP_SECRET,
+			),
+		).resolves.toBeDefined();
 	});
 });
 
@@ -207,16 +256,11 @@ describe("admin HTTP route handlers", () => {
 	it("rejects missing Origin before each real administrative POST handler", async () => {
 		const { a } = await createAuthedPair();
 		for (const response of await Promise.all([
-			handlers.prepare({
-				request: adminRequest("/api/admin/invite/prepare", undefined, {
+			handlers.accept({
+				request: adminRequest("/api/admin/invite/accept", undefined, {
 					method: "POST",
 					headers: { "content-type": "application/json" },
 					body: JSON.stringify({}),
-				}),
-			}),
-			handlers.conclude({
-				request: adminRequest("/api/admin/invite/conclude", a.cookieHeader, {
-					method: "POST",
 				}),
 			}),
 			handlers.publish({
@@ -273,40 +317,30 @@ describe("admin HTTP route handlers", () => {
 		).toEqual({ status: "manual_review", issue_number: null, issue_url: null });
 	});
 
-	it("prepares and concludes an invite through route handlers with the OAuth session cookie", async () => {
+	it("accepts an invite through the route handler with the session e-mail", async () => {
 		const { a } = await createAuthedPair();
 		const token = "t".repeat(32);
 		const inviteId = crypto.randomUUID();
 		await env.DB
-			.prepare("insert into admin_invites (invite_id, token_hmac, expires_at, created_at) values (?, ?, ?, ?)")
+			.prepare("insert into admin_invites (invite_id, token_digest, expires_at, created_at) values (?, ?, ?, ?)")
 			.bind(
 				inviteId,
-				await adminHmac(env.APP_SECRET, "admin-invite:v1", token),
+				await adminInviteDigest(token),
 				Date.now() + 86_400_000,
 				Date.now(),
 			)
 			.run();
-		const prepare = await handlers.prepare({
-			request: adminRequest("/api/admin/invite/prepare", undefined, {
+		const accept = await handlers.accept({
+			request: adminRequest("/api/admin/invite/accept", a.cookieHeader, {
 				method: "POST",
 				headers: {
 					"content-type": "application/json",
 					origin: "https://test.invalid",
 				},
-				body: JSON.stringify({ token, email: a.email }),
+				body: JSON.stringify({ token }),
 			}),
 		});
-		expect(prepare.status).toBe(200);
-		const continuationCookie = prepare.headers.get("set-cookie")?.split(";")[0];
-		expect(continuationCookie).toContain("din-din-admin-invite=");
-		const conclude = await handlers.conclude({
-			request: adminRequest("/api/admin/invite/conclude", `${a.cookieHeader}; ${continuationCookie}`, {
-				method: "POST",
-				headers: { origin: "https://test.invalid" },
-			}),
-		});
-		expect(conclude.status).toBe(200);
-		expect(conclude.headers.get("set-cookie")).toContain("Max-Age=0");
+		expect(accept.status).toBe(200);
 		expect(
 			await env.DB
 				.prepare("select user_id from admin_memberships where user_id = ?")

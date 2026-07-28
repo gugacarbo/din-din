@@ -24,8 +24,7 @@ import { Route as TransactionsArchiveRouteImport } from './routes/transactions_/
 import { Route as AdminSuportReportIdRouteImport } from './routes/admin/suport/$reportId'
 import { Route as ApiAdminMembershipRouteImport } from './routes/api/admin/membership'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as ApiAdminInviteConcludeRouteImport } from './routes/api/admin/invite/conclude'
-import { Route as ApiAdminInvitePrepareRouteImport } from './routes/api/admin/invite/prepare'
+import { Route as ApiAdminInviteAcceptRouteImport } from './routes/api/admin/invite/accept'
 import { Route as ApiAdminSupportIndexRouteImport } from './routes/api/admin/support/index'
 import { Route as ApiAdminSupportReportIdRouteImport } from './routes/api/admin/support/$reportId'
 import { Route as ApiAdminSupportReportIdPublishRouteImport } from './routes/api/admin/support/$reportId/publish'
@@ -105,14 +104,9 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAdminInviteConcludeRoute = ApiAdminInviteConcludeRouteImport.update({
-  id: '/api/admin/invite/conclude',
-  path: '/api/admin/invite/conclude',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAdminInvitePrepareRoute = ApiAdminInvitePrepareRouteImport.update({
-  id: '/api/admin/invite/prepare',
-  path: '/api/admin/invite/prepare',
+const ApiAdminInviteAcceptRoute = ApiAdminInviteAcceptRouteImport.update({
+  id: '/api/admin/invite/accept',
+  path: '/api/admin/invite/accept',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAdminSupportIndexRoute = ApiAdminSupportIndexRouteImport.update({
@@ -148,8 +142,7 @@ export interface FileRoutesByFullPath {
   '/admin/suport/$reportId': typeof AdminSuportReportIdRoute
   '/api/admin/membership': typeof ApiAdminMembershipRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/admin/invite/conclude': typeof ApiAdminInviteConcludeRoute
-  '/api/admin/invite/prepare': typeof ApiAdminInvitePrepareRoute
+  '/api/admin/invite/accept': typeof ApiAdminInviteAcceptRoute
   '/api/admin/support/$reportId': typeof ApiAdminSupportReportIdRouteWithChildren
   '/api/admin/support/': typeof ApiAdminSupportIndexRoute
   '/api/admin/support/$reportId/publish': typeof ApiAdminSupportReportIdPublishRoute
@@ -170,8 +163,7 @@ export interface FileRoutesByTo {
   '/admin/suport/$reportId': typeof AdminSuportReportIdRoute
   '/api/admin/membership': typeof ApiAdminMembershipRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/admin/invite/conclude': typeof ApiAdminInviteConcludeRoute
-  '/api/admin/invite/prepare': typeof ApiAdminInvitePrepareRoute
+  '/api/admin/invite/accept': typeof ApiAdminInviteAcceptRoute
   '/api/admin/support/$reportId': typeof ApiAdminSupportReportIdRouteWithChildren
   '/api/admin/support': typeof ApiAdminSupportIndexRoute
   '/api/admin/support/$reportId/publish': typeof ApiAdminSupportReportIdPublishRoute
@@ -193,8 +185,7 @@ export interface FileRoutesById {
   '/admin/suport/$reportId': typeof AdminSuportReportIdRoute
   '/api/admin/membership': typeof ApiAdminMembershipRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/admin/invite/conclude': typeof ApiAdminInviteConcludeRoute
-  '/api/admin/invite/prepare': typeof ApiAdminInvitePrepareRoute
+  '/api/admin/invite/accept': typeof ApiAdminInviteAcceptRoute
   '/api/admin/support/$reportId': typeof ApiAdminSupportReportIdRouteWithChildren
   '/api/admin/support/': typeof ApiAdminSupportIndexRoute
   '/api/admin/support/$reportId/publish': typeof ApiAdminSupportReportIdPublishRoute
@@ -217,8 +208,7 @@ export interface FileRouteTypes {
     | '/admin/suport/$reportId'
     | '/api/admin/membership'
     | '/api/auth/$'
-    | '/api/admin/invite/conclude'
-    | '/api/admin/invite/prepare'
+    | '/api/admin/invite/accept'
     | '/api/admin/support/$reportId'
     | '/api/admin/support/'
     | '/api/admin/support/$reportId/publish'
@@ -239,8 +229,7 @@ export interface FileRouteTypes {
     | '/admin/suport/$reportId'
     | '/api/admin/membership'
     | '/api/auth/$'
-    | '/api/admin/invite/conclude'
-    | '/api/admin/invite/prepare'
+    | '/api/admin/invite/accept'
     | '/api/admin/support/$reportId'
     | '/api/admin/support'
     | '/api/admin/support/$reportId/publish'
@@ -261,8 +250,7 @@ export interface FileRouteTypes {
     | '/admin/suport/$reportId'
     | '/api/admin/membership'
     | '/api/auth/$'
-    | '/api/admin/invite/conclude'
-    | '/api/admin/invite/prepare'
+    | '/api/admin/invite/accept'
     | '/api/admin/support/$reportId'
     | '/api/admin/support/'
     | '/api/admin/support/$reportId/publish'
@@ -283,8 +271,7 @@ export interface RootRouteChildren {
   TransactionsArchiveRoute: typeof TransactionsArchiveRoute
   ApiAdminMembershipRoute: typeof ApiAdminMembershipRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiAdminInviteConcludeRoute: typeof ApiAdminInviteConcludeRoute
-  ApiAdminInvitePrepareRoute: typeof ApiAdminInvitePrepareRoute
+  ApiAdminInviteAcceptRoute: typeof ApiAdminInviteAcceptRoute
   ApiAdminSupportReportIdRoute: typeof ApiAdminSupportReportIdRouteWithChildren
   ApiAdminSupportIndexRoute: typeof ApiAdminSupportIndexRoute
 }
@@ -396,18 +383,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/admin/invite/conclude': {
-      id: '/api/admin/invite/conclude'
-      path: '/api/admin/invite/conclude'
-      fullPath: '/api/admin/invite/conclude'
-      preLoaderRoute: typeof ApiAdminInviteConcludeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/admin/invite/prepare': {
-      id: '/api/admin/invite/prepare'
-      path: '/api/admin/invite/prepare'
-      fullPath: '/api/admin/invite/prepare'
-      preLoaderRoute: typeof ApiAdminInvitePrepareRouteImport
+    '/api/admin/invite/accept': {
+      id: '/api/admin/invite/accept'
+      path: '/api/admin/invite/accept'
+      fullPath: '/api/admin/invite/accept'
+      preLoaderRoute: typeof ApiAdminInviteAcceptRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/admin/support/': {
@@ -475,8 +455,7 @@ const rootRouteChildren: RootRouteChildren = {
   TransactionsArchiveRoute: TransactionsArchiveRoute,
   ApiAdminMembershipRoute: ApiAdminMembershipRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-  ApiAdminInviteConcludeRoute: ApiAdminInviteConcludeRoute,
-  ApiAdminInvitePrepareRoute: ApiAdminInvitePrepareRoute,
+  ApiAdminInviteAcceptRoute: ApiAdminInviteAcceptRoute,
   ApiAdminSupportReportIdRoute: ApiAdminSupportReportIdRouteWithChildren,
   ApiAdminSupportIndexRoute: ApiAdminSupportIndexRoute,
 }

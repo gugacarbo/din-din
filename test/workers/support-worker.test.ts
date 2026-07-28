@@ -107,8 +107,16 @@ describe("production support worker", () => {
 
 	it("releases a lease and retries only a transient pre-publication failure", async () => {
 		const reportId = await report();
+		const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
 		const runtimeEnv = runtime({
-			AI: { run: vi.fn().mockRejectedValue(new Error("temporary AI failure")) },
+			AI: {
+				run: vi.fn().mockRejectedValue(
+					Object.assign(new Error("temporary AI failure"), {
+						code: "AI_UPSTREAM",
+						status: 503,
+					}),
+				),
+			},
 		});
 		const transient = message({ kind: "triage", reportId });
 		await worker.queue?.(
@@ -124,6 +132,54 @@ describe("production support worker", () => {
 			.bind(reportId)
 			.first<{ status: string; lease_token: string | null }>();
 		expect(row).toEqual({ status: "queued", lease_token: null });
+		const events = errorLog.mock.calls.map(([entry]) =>
+			JSON.parse(String(entry)),
+		);
+		const failed = events.find(
+			(event) => event.event === "ai_invocation_failed",
+		);
+		const retry = events.find(
+			(event) => event.event === "support_ai_retry_scheduled",
+		);
+		expect(failed).toMatchObject({
+			reportId,
+			error: {
+				type: "Error",
+				message: "temporary AI failure",
+				code: "AI_UPSTREAM",
+				status: 503,
+			},
+		});
+		expect(retry?.invocationId).toBe(failed?.invocationId);
+	});
+
+	it("logs invalid model output shape without logging its content", async () => {
+		const reportId = await report();
+		const privateOutput = "not-json private response";
+		const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+		const runtimeEnv = runtime({
+			AI: { run: vi.fn().mockResolvedValue({ response: privateOutput }) },
+		});
+		const invalid = message({ kind: "triage", reportId });
+
+		await worker.queue?.(
+			batch("din-din-support-reports", [invalid]),
+			runtimeEnv,
+			{} as ExecutionContext,
+		);
+
+		const entry = errorLog.mock.calls
+			.map(([value]) => String(value))
+			.find((value) => value.includes("support_ai_output_invalid"));
+		expect(entry).toBeDefined();
+		expect(JSON.parse(entry ?? "{}")).toMatchObject({
+			event: "support_ai_output_invalid",
+			reportId,
+			outputType: "object",
+			responseType: "string",
+			responseLength: privateOutput.length,
+		});
+		expect(entry).not.toContain(privateOutput);
 	});
 
 	it("does not acknowledge a terminal transient retry before Queue can dead-letter it", async () => {

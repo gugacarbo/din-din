@@ -1,4 +1,8 @@
-import { runAiWithLogging } from "#/server/ai-logging.ts";
+import {
+	runAiWithLogging,
+	safeAiErrorDetails,
+	safeAiOutputDetails,
+} from "#/server/ai-logging.ts";
 import { publishSupportIssue } from "#/server/github-support-publisher.ts";
 import {
 	parseSupportIssueWriterOutput,
@@ -83,7 +87,11 @@ async function claim(env: Env, reportId: string) {
 		"select p.message, p.diagnostics, p.user_id from support_reports r join support_report_payloads p on p.report_id = r.report_id where r.report_id = ? and r.lease_token = ?",
 	)
 		.bind(reportId, token)
-		.first<{ message: string; diagnostics: string; user_id: string }>();
+		.first<{
+			message: string;
+			diagnostics: string;
+			user_id: string;
+		}>();
 	return row ? { ...row, token } : null;
 }
 
@@ -129,7 +137,7 @@ async function recordExhaustedTriage(env: Env, reportId: string) {
 	]);
 }
 
-async function triage(env: Env, reportId: string) {
+async function triage(env: Env, reportId: string, deliveryAttempt: number) {
 	const row = await claim(env, reportId);
 	if (!row) return "ack" as const;
 	if ("publicationToken" in row) {
@@ -140,6 +148,7 @@ async function triage(env: Env, reportId: string) {
 		});
 		return "ack" as const;
 	}
+	const invocationId = crypto.randomUUID();
 	let output: unknown;
 	try {
 		output = await runAiWithLogging(
@@ -147,19 +156,38 @@ async function triage(env: Env, reportId: string) {
 			supportIssueWriterModel,
 			supportIssueWriterOptions(row.message, row.diagnostics),
 			{
+				invocationId,
 				agentKey: "issue-writer",
 				userId: row.user_id,
 				reportId,
+				metadata: { deliveryAttempt },
 			},
 		);
-	} catch {
+	} catch (error) {
+		console.error(
+			JSON.stringify({
+				event: "support_ai_retry_scheduled",
+				invocationId,
+				reportId,
+				error: safeAiErrorDetails(error),
+			}),
+		);
 		await releaseForRetry(env, reportId, row.token);
 		return "retry" as const;
 	}
 	let model: unknown;
 	try {
 		model = parseSupportIssueWriterOutput(output);
-	} catch {
+	} catch (error) {
+		console.error(
+			JSON.stringify({
+				event: "support_ai_output_invalid",
+				invocationId,
+				reportId,
+				error: safeAiErrorDetails(error),
+				...safeAiOutputDetails(output),
+			}),
+		);
 		await manualReview(env, reportId, "invalid_ai_output", {
 			leaseToken: row.token,
 		});
@@ -170,6 +198,14 @@ async function triage(env: Env, reportId: string) {
 		row.diagnostics,
 	]);
 	if (!publication.ok) {
+		console.warn(
+			JSON.stringify({
+				event: "support_ai_output_rejected",
+				invocationId,
+				reportId,
+				reason: publication.reason,
+			}),
+		);
 		await manualReview(env, reportId, publication.reason, {
 			leaseToken: row.token,
 		});
@@ -177,6 +213,13 @@ async function triage(env: Env, reportId: string) {
 	}
 	const publicationToken = await reservePublication(env, reportId, row.token);
 	if (!publicationToken) return "ack" as const;
+	console.info(
+		JSON.stringify({
+			event: "support_issue_publication_started",
+			invocationId,
+			reportId,
+		}),
+	);
 	try {
 		const issue = await publishSupportIssue(env, reportId, publication.value);
 		await env.DB.prepare(
@@ -184,8 +227,24 @@ async function triage(env: Env, reportId: string) {
 		)
 			.bind(issue.number, issue.url, Date.now(), reportId, publicationToken)
 			.run();
+		console.info(
+			JSON.stringify({
+				event: "support_issue_published",
+				invocationId,
+				reportId,
+				issueNumber: issue.number,
+			}),
+		);
 		return "ack" as const;
-	} catch {
+	} catch (error) {
+		console.error(
+			JSON.stringify({
+				event: "support_issue_publication_failed",
+				invocationId,
+				reportId,
+				error: safeAiErrorDetails(error),
+			}),
+		);
 		// A GitHub POST result can be ambiguous. Never retry it blindly.
 		await manualReview(env, reportId, "github_ambiguous", {
 			publicationToken,
@@ -219,7 +278,7 @@ export async function consumeSupportQueue(
 			message.ack();
 			continue;
 		}
-		const result = await triage(env, body.reportId);
+		const result = await triage(env, body.reportId, message.attempts);
 		if (result === "retry")
 			// The Queue runtime moves this triage envelope to its configured DLQ
 			// after max_retries; acknowledging here would permanently lose it.

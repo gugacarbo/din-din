@@ -9,6 +9,8 @@
  * metadados de uso.
  */
 
+import { redactText } from "#/lib/support.ts";
+
 type AiRunOptions = Record<string, unknown>;
 
 /** Forma esperada do retorno de env.AI.run para modelos de texto. */
@@ -39,6 +41,8 @@ export type AiInvocationLog = {
 };
 
 export type AiInvocationContext = {
+	/** ID gerado pelo chamador para correlacionar AI, validação e publicação. */
+	invocationId?: string;
 	/** Identifica qual agente/processo disparou a invocação (ex.: "issue-writer"). */
 	agentKey: string;
 	/** ID do usuário que originou a invocação, se aplicável. */
@@ -48,6 +52,93 @@ export type AiInvocationContext = {
 	/** Metadados adicionais livres (objeto serializado para JSON). */
 	metadata?: Record<string, unknown>;
 };
+
+type SafeErrorDetails = {
+	type: string;
+	message: string;
+	code?: string | number;
+	status?: number;
+	requestId?: string;
+	retryable?: boolean;
+	stack?: string;
+	cause?: { type: string; message: string };
+	providerErrors?: Array<{ code?: string | number; message: string }>;
+};
+
+function safeText(value: unknown, fallback: string) {
+	const text = redactText(typeof value === "string" ? value : String(value));
+	return text || fallback;
+}
+
+/** Extracts useful provider diagnostics while redacting and bounding text. */
+export function safeAiErrorDetails(error: unknown): SafeErrorDetails {
+	if (typeof error !== "object" || error === null) {
+		return { type: typeof error, message: safeText(error, "unknown_error") };
+	}
+	const record = error as Record<string, unknown>;
+	const details: SafeErrorDetails = {
+		type: safeText(record.name ?? error.constructor?.name ?? "Error", "Error"),
+		message: safeText(record.message ?? "unknown_error", "unknown_error"),
+	};
+	if (typeof record.code === "string" || typeof record.code === "number")
+		details.code =
+			typeof record.code === "string"
+				? safeText(record.code, "unknown")
+				: record.code;
+	if (typeof record.status === "number" && Number.isFinite(record.status))
+		details.status = record.status;
+	if (typeof record.requestId === "string")
+		details.requestId = safeText(record.requestId, "unknown");
+	if (typeof record.retryable === "boolean")
+		details.retryable = record.retryable;
+	if (typeof record.stack === "string")
+		details.stack = safeText(record.stack, "unavailable");
+	if (typeof record.cause === "object" && record.cause !== null) {
+		const cause = record.cause as Record<string, unknown>;
+		details.cause = {
+			type: safeText(
+				cause.name ?? record.cause.constructor?.name ?? "Error",
+				"Error",
+			),
+			message: safeText(cause.message ?? "unknown_error", "unknown_error"),
+		};
+	}
+	if (Array.isArray(record.errors)) {
+		details.providerErrors = record.errors.slice(0, 5).flatMap((item) => {
+			if (typeof item !== "object" || item === null) return [];
+			const providerError = item as Record<string, unknown>;
+			const entry: { code?: string | number; message: string } = {
+				message: safeText(
+					providerError.message ?? "unknown_error",
+					"unknown_error",
+				),
+			};
+			if (
+				typeof providerError.code === "string" ||
+				typeof providerError.code === "number"
+			)
+				entry.code =
+					typeof providerError.code === "string"
+						? safeText(providerError.code, "unknown")
+						: providerError.code;
+			return [entry];
+		});
+	}
+	return details;
+}
+
+/** Describes the response envelope without retaining model-generated content. */
+export function safeAiOutputDetails(output: unknown) {
+	const response =
+		typeof output === "object" && output !== null && "response" in output
+			? output.response
+			: output;
+	return {
+		outputType: Array.isArray(output) ? "array" : typeof output,
+		responseType: Array.isArray(response) ? "array" : typeof response,
+		responseLength: typeof response === "string" ? response.length : null,
+	};
+}
 
 /**
  * Invoca `env.AI.run` e registra métricas de uso no D1.
@@ -64,12 +155,21 @@ export async function runAiWithLogging<T = unknown>(
 	options: AiRunOptions,
 	context: AiInvocationContext,
 ): Promise<T> {
-	const id = crypto.randomUUID();
+	const id = context.invocationId ?? crypto.randomUUID();
 	const userId = context.userId ?? null;
 	const reportId = context.reportId ?? null;
 	const metadata = context.metadata ? JSON.stringify(context.metadata) : null;
 	const startedAt = Date.now();
 	let output: T;
+	console.info(
+		JSON.stringify({
+			event: "ai_invocation_started",
+			invocationId: id,
+			model,
+			agentKey: context.agentKey,
+			reportId,
+		}),
+	);
 
 	try {
 		const result = await env.AI.run(model, options as never);
@@ -94,9 +194,23 @@ export async function runAiWithLogging<T = unknown>(
 			metadata,
 			createdAt: startedAt,
 		});
+		console.info(
+			JSON.stringify({
+				event: "ai_invocation_succeeded",
+				invocationId: id,
+				model,
+				agentKey: context.agentKey,
+				reportId,
+				durationMs: Date.now() - startedAt,
+				inputTokens: extractTokens(result, "prompt_tokens"),
+				outputTokens: extractTokens(result, "completion_tokens"),
+				totalTokens: extractTokens(result, "total_tokens"),
+				...safeAiOutputDetails(result),
+			}),
+		);
 		return output;
 	} catch (error) {
-		const errorMessage = error instanceof Error ? error.message : String(error);
+		const errorDetails = safeAiErrorDetails(error);
 		await persistLog(env, {
 			id,
 			model,
@@ -109,10 +223,21 @@ export async function runAiWithLogging<T = unknown>(
 			ttftMs: null,
 			durationMs: Date.now() - startedAt,
 			success: false,
-			errorMessage,
+			errorMessage: errorDetails.message,
 			metadata,
 			createdAt: startedAt,
 		});
+		console.error(
+			JSON.stringify({
+				event: "ai_invocation_failed",
+				invocationId: id,
+				model,
+				agentKey: context.agentKey,
+				reportId,
+				durationMs: Date.now() - startedAt,
+				error: errorDetails,
+			}),
+		);
 		throw error;
 	}
 }

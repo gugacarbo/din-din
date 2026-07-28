@@ -14,6 +14,20 @@ export type AdminSupportReviewTask = {
 	updated_at: number;
 };
 
+export type AdminSupportAttemptLog = {
+	id: string;
+	model: string;
+	agent_key: string;
+	input_tokens: number | null;
+	output_tokens: number | null;
+	total_tokens: number | null;
+	ttft_ms: number | null;
+	duration_ms: number;
+	success: boolean;
+	error_message: string | null;
+	created_at: number;
+};
+
 export type AdminSupportReport = {
 	report_id: string;
 	category: string;
@@ -23,11 +37,13 @@ export type AdminSupportReport = {
 	issue_number: number | null;
 	issue_url: string | null;
 	created_at: number;
+	updated_at: number;
 	review_tasks: AdminSupportReviewTask[];
 };
 
 export type AdminSupportDetail = AdminSupportReport & {
 	message: string | null;
+	attempt_logs: AdminSupportAttemptLog[];
 	canManualPublish: boolean;
 	unavailableReason: string | null;
 };

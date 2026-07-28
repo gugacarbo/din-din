@@ -35,6 +35,24 @@ export type AdminSupportReviewTask = {
 	updated_at: number;
 };
 
+export type AdminSupportAttemptLog = {
+	id: string;
+	model: string;
+	agent_key: string;
+	input_tokens: number | null;
+	output_tokens: number | null;
+	total_tokens: number | null;
+	ttft_ms: number | null;
+	duration_ms: number;
+	success: boolean;
+	error_message: string | null;
+	created_at: number;
+};
+
+type AdminSupportAttemptLogRow = Omit<AdminSupportAttemptLog, "success"> & {
+	success: number;
+};
+
 export type AdminSupportReport = {
 	report_id: string;
 	category: string;
@@ -44,6 +62,7 @@ export type AdminSupportReport = {
 	issue_number: number | null;
 	issue_url: string | null;
 	created_at: number;
+	updated_at: number;
 	review_tasks: AdminSupportReviewTask[];
 };
 
@@ -100,7 +119,7 @@ export async function listAdminSupport(
 	const safeLimit = Math.min(Math.max(limit, 1), 50);
 	const rows = await d1
 		.prepare(
-			`select r.report_id, r.category, r.status, r.attempts, r.safe_reason, r.issue_number, r.issue_url, r.created_at, ${reviewTasksSql} from support_reports r where (? is null or r.created_at < ?) order by r.created_at desc limit ?`,
+			`select r.report_id, r.category, r.status, r.attempts, r.safe_reason, r.issue_number, r.issue_url, r.created_at, r.updated_at, ${reviewTasksSql} from support_reports r where (? is null or r.created_at < ?) order by r.created_at desc limit ?`,
 		)
 		.bind(cursor ?? null, cursor ? Number(cursor) : null, safeLimit + 1)
 		.all<AdminSupportReportRow>();
@@ -120,22 +139,49 @@ export async function adminSupportDetail(
 	await requireAdmin(d1, headers);
 	const report = await d1
 		.prepare(
-			`select r.report_id, r.category, r.status, r.attempts, r.safe_reason, r.issue_number, r.issue_url, r.created_at, ${reviewTasksSql} from support_reports r where r.report_id = ?`,
+			`select r.report_id, r.category, r.status, r.attempts, r.safe_reason, r.issue_number, r.issue_url, r.created_at, r.updated_at, ${reviewTasksSql} from support_reports r where r.report_id = ?`,
 		)
 		.bind(reportId)
 		.first<AdminSupportReportRow>();
 	if (!report) throw new AdminSupportError(404, "report_not_found");
-	const payload = await activePayload(d1, reportId);
-	const privatePayload = await activePrivateMessage(d1, reportId);
+	const [payload, privatePayload, attemptLogs] = await Promise.all([
+		activePayload(d1, reportId),
+		activePrivateMessage(d1, reportId),
+		d1
+			.prepare(
+				"select id, model, agent_key, input_tokens, output_tokens, total_tokens, ttft_ms, duration_ms, success, error_message, created_at from ai_invocations where report_id = ? and agent_key = 'issue-writer' order by created_at asc",
+			)
+			.bind(reportId)
+			.all<AdminSupportAttemptLogRow>(),
+	]);
 	return {
 		...supportReportFromRow(report),
 		message: privatePayload?.message ?? null,
+		attempt_logs: attemptLogs.results.map((attempt) => ({
+			...attempt,
+			success: attempt.success === 1,
+		})),
 		canManualPublish: report.status === "manual_review" && Boolean(payload),
 		unavailableReason:
 			report.status === "manual_review" && !payload
 				? "private_payload_expired"
 				: null,
 	};
+}
+
+export async function deleteAdminSupport(
+	d1: D1Database,
+	headers: Headers,
+	reportId: string,
+) {
+	await requireAdmin(d1, headers);
+	const deleted = await d1
+		.prepare("delete from support_reports where report_id = ?")
+		.bind(reportId)
+		.run();
+	if (deleted.meta.changes < 1)
+		throw new AdminSupportError(404, "report_not_found");
+	return { deleted: true };
 }
 
 export async function publishAdminSupport(

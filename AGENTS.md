@@ -79,6 +79,8 @@ migration remota apontando para o placeholder `YOUR_DATABASE_ID`.
   expectativas móveis antigas de `finance-page.ui.test.tsx` ainda esperam a
   API visual anterior; essas falhas não são introduzidas por formatação, lint
   ou typecheck.
+- Em deletes no D1, `meta.changes` inclui linhas removidas por `ON DELETE
+  CASCADE`; valide sucesso com `>= 1`, não com igualdade a uma linha.
 
 ## Mapa de contexto
 

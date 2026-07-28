@@ -5,7 +5,10 @@ import { Route as MembershipRoute } from "#/routes/api/admin/membership.tsx";
 import { Route as SupportDetailRoute } from "#/routes/api/admin/support/$reportId.tsx";
 import { Route as SupportPublishRoute } from "#/routes/api/admin/support/$reportId/publish.tsx";
 import { Route as SupportListRoute } from "#/routes/api/admin/support/index.tsx";
-import { AdminSupportError, publishAdminSupport } from "#/server/admin-support-service.ts";
+import {
+	AdminSupportError,
+	publishAdminSupport,
+} from "#/server/admin-support-service.ts";
 import { adminInviteDigest, adminHmac } from "#/lib/admin-invite.ts";
 import { acceptAdminInvite } from "#/server/admin-invite-service.ts";
 import { AdminAuthError, requireAdmin, sameOrigin } from "#/server/admin-auth.ts";
@@ -16,7 +19,7 @@ type RouteHandler = (context: {
 	params?: Record<string, string>;
 }) => Promise<Response>;
 
-function routeHandler(route: unknown, method: "GET" | "POST") {
+function routeHandler(route: unknown, method: "DELETE" | "GET" | "POST") {
 	const handler = (route as {
 		options: { server: { handlers: Partial<Record<typeof method, RouteHandler>> } };
 	}).options.server.handlers[method];
@@ -38,6 +41,7 @@ const handlers = {
 	membership: routeHandler(MembershipRoute, "GET"),
 	list: routeHandler(SupportListRoute, "GET"),
 	detail: routeHandler(SupportDetailRoute, "GET"),
+	delete: routeHandler(SupportDetailRoute, "DELETE"),
 	publish: routeHandler(SupportPublishRoute, "POST"),
 	accept: routeHandler(InviteAcceptRoute, "POST"),
 };
@@ -182,6 +186,11 @@ describe("admin HTTP route handlers", () => {
 			env.DB
 				.prepare("insert into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) values (?, ?, 'manual_review', 'needs_human', 'pending', ?, ?)")
 				.bind(reviewEventId, reportId, now, now),
+			env.DB
+				.prepare(
+					"insert into ai_invocations (id, model, agent_key, user_id, report_id, input_tokens, output_tokens, total_tokens, ttft_ms, duration_ms, success, created_at) values (?, '@cf/meta/test-model', 'issue-writer', ?, ?, 20, 10, 30, 250, 300, 1, ?)",
+				)
+				.bind(crypto.randomUUID(), a.id, reportId, now),
 		]);
 
 		expect(
@@ -213,6 +222,7 @@ describe("admin HTTP route handlers", () => {
 					attempts: 3,
 					issue_number: 31,
 					issue_url: "https://github.com/gugacarbo/din-din/issues/31",
+					updated_at: now,
 					review_tasks: [
 						expect.objectContaining({
 							event_id: reviewEventId,
@@ -247,6 +257,16 @@ describe("admin HTTP route handlers", () => {
 			issue_number: 31,
 			issue_url: "https://github.com/gugacarbo/din-din/issues/31",
 			message: "Mensagem privada de teste",
+			updated_at: now,
+			attempt_logs: [
+				expect.objectContaining({
+					model: "@cf/meta/test-model",
+					agent_key: "issue-writer",
+					total_tokens: 30,
+					duration_ms: 300,
+					success: true,
+				}),
+			],
 			review_tasks: [
 				expect.objectContaining({ event_id: reviewEventId }),
 			],
@@ -271,8 +291,74 @@ describe("admin HTTP route handlers", () => {
 				}),
 				params: { reportId: crypto.randomUUID() },
 			}),
+			handlers.delete({
+				request: adminRequest(
+					`/api/admin/support/${crypto.randomUUID()}`,
+					a.cookieHeader,
+					{ method: "DELETE" },
+				),
+				params: { reportId: crypto.randomUUID() },
+			}),
 		])) {
 			expect(response.status).toBe(403);
+		}
+	});
+
+	it("allows an administrator to permanently delete a support report", async () => {
+		const { a } = await createAuthedPair();
+		const reportId = crypto.randomUUID();
+		const now = Date.now();
+		await env.DB.batch([
+			env.DB
+				.prepare(
+					"insert into admin_memberships (user_id, created_at) values (?, ?)",
+				)
+				.bind(a.id, now),
+			env.DB
+				.prepare(
+					"insert into support_reports (report_id, category, status, attempts, created_at, updated_at) values (?, 'problem', 'manual_review', 1, ?, ?)",
+				)
+				.bind(reportId, now, now),
+			env.DB
+				.prepare(
+					"insert into support_report_payloads (report_id, user_id, client_request_id, fingerprint, message, diagnostics, metadata, received_at, expires_at) values (?, ?, ?, 'fingerprint', 'private', '{}', '{}', ?, ?)",
+				)
+				.bind(
+					reportId,
+					a.id,
+					crypto.randomUUID(),
+					now,
+					now + 60_000,
+				),
+			env.DB
+				.prepare(
+					"insert into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) values (?, ?, 'manual_review', 'needs_human', 'pending', ?, ?)",
+				)
+				.bind(`review:${reportId}`, reportId, now, now),
+		]);
+
+		const response = await handlers.delete({
+			request: adminRequest(
+				`/api/admin/support/${reportId}`,
+				a.cookieHeader,
+				{ method: "DELETE", headers: { origin: "https://test.invalid" } },
+			),
+			params: { reportId },
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ deleted: true });
+		for (const table of [
+			"support_reports",
+			"support_report_payloads",
+			"support_review_tasks",
+		]) {
+			const row = await env.DB.prepare(
+				`select count(*) as count from ${table} where report_id = ?`,
+			)
+				.bind(reportId)
+				.first<{ count: number }>();
+			expect(row?.count).toBe(0);
 		}
 	});
 

@@ -150,6 +150,8 @@ export const supportReportPayloads = sqliteTable(
 		aiResponse: text("ai_response"),
 		/** Erro de interpretação da resposta, sem incluir o prompt. */
 		aiResponseError: text("ai_response_error"),
+		/** JSON com requests externas que falharam, sem headers, tokens ou body. */
+		requestFailures: text("request_failures"),
 		screenshotKey: text("screenshot_key"),
 		receivedAt: integer("received_at", { mode: "number" }).notNull(),
 		expiresAt: integer("expires_at", { mode: "number" }).notNull(),

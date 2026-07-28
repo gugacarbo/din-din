@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+	githubRequestFailuresFromError,
 	pemBytes,
 	publishSupportIssue,
 } from "#/server/github-support-publisher.ts";
@@ -44,6 +45,49 @@ describe("publishSupportIssue", () => {
 		).toThrow("github_private_key_encrypted");
 		expect(() => pemBytes("not-a-pem")).toThrow("github_private_key_format");
 	});
+	it("preserves a sanitized installation-token HTTP failure", async () => {
+		const fetcher = vi.fn(async () =>
+			Response.json(
+				{ message: "Bad credentials", token: "must-not-be-recorded" },
+				{
+					status: 401,
+					headers: { "x-github-request-id": "GH-REQUEST-123" },
+				},
+			),
+		);
+		let failure: unknown;
+		try {
+			await publishSupportIssue(
+				{
+					GITHUB_APP_ID: "1",
+					GITHUB_APP_INSTALLATION_ID: "2",
+					GITHUB_APP_PRIVATE_KEY: await privateKey(),
+				},
+				"report-1",
+				issue,
+				fetcher as typeof fetch,
+			);
+		} catch (error) {
+			failure = error;
+		}
+
+		expect(failure).toMatchObject({
+			message: "github_installation_token_failed",
+		});
+		expect(githubRequestFailuresFromError(failure)).toEqual([
+			{
+				stage: "installation_token",
+				method: "POST",
+				endpoint: "/app/installations/[installation-id]/access_tokens",
+				status: 401,
+				requestId: "GH-REQUEST-123",
+				message: "Bad credentials",
+			},
+		]);
+		expect(
+			JSON.stringify(githubRequestFailuresFromError(failure)),
+		).not.toContain("must-not-be-recorded");
+	});
 	it("reconciles a timeout after POST without issuing a second POST", async () => {
 		let searches = 0;
 		const fetcher = vi.fn(async (input: RequestInfo | URL) => {
@@ -78,9 +122,15 @@ describe("publishSupportIssue", () => {
 				issue,
 				fetcher as typeof fetch,
 			),
-		).resolves.toEqual({
+		).resolves.toMatchObject({
 			number: 42,
 			url: "https://github.com/gugacarbo/din-din/issues/42",
+			requestFailures: [
+				expect.objectContaining({
+					stage: "issue_creation",
+					status: null,
+				}),
+			],
 		});
 		expect(
 			fetcher.mock.calls.filter(([url]) => String(url).endsWith("/issues")),

@@ -185,9 +185,24 @@ describe("admin HTTP route handlers", () => {
 				.bind(reportId, a.id, crypto.randomUUID(), now, now + 60_000),
 			env.DB
 				.prepare(
-					"update support_report_payloads set ai_response = ?, ai_response_error = ? where report_id = ?",
+					"update support_report_payloads set ai_response = ?, ai_response_error = ?, request_failures = ? where report_id = ?",
 				)
-				.bind("{invalid response", "Expected property name", reportId),
+				.bind(
+					"{invalid response",
+					"Expected property name",
+					JSON.stringify([
+						{
+							stage: "installation_token",
+							method: "POST",
+							endpoint:
+								"/app/installations/[installation-id]/access_tokens",
+							status: 401,
+							requestId: "GH-ADMIN-123",
+							message: "Bad credentials",
+						},
+					]),
+					reportId,
+				),
 			env.DB
 				.prepare("insert into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) values (?, ?, 'manual_review', 'needs_human', 'pending', ?, ?)")
 				.bind(reviewEventId, reportId, now, now),
@@ -274,6 +289,13 @@ describe("admin HTTP route handlers", () => {
 			],
 			agent_response: "{invalid response",
 			agent_response_error: "Expected property name",
+			request_failures: [
+				expect.objectContaining({
+					stage: "installation_token",
+					status: 401,
+					requestId: "GH-ADMIN-123",
+				}),
+			],
 			review_tasks: [
 				expect.objectContaining({ event_id: reviewEventId }),
 			],

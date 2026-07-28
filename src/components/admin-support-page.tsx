@@ -109,6 +109,13 @@ const reviewStatusLabels: Record<string, string> = {
 	observed: "Recebida",
 };
 
+const requestStageLabels: Record<string, string> = {
+	installation_token: "Autenticação do GitHub App",
+	reconciliation_before_post: "Busca anterior à publicação",
+	issue_creation: "Criação da issue",
+	reconciliation_after_post: "Confirmação posterior à publicação",
+};
+
 const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
 	dateStyle: "medium",
 	timeStyle: "short",
@@ -198,6 +205,45 @@ function SupportProcessingLog({ report }: { report: AdminSupportDetail }) {
 								{report.agent_response}
 							</pre>
 						)}
+					</div>
+				)}
+
+				{report.request_failures.length > 0 && (
+					<div className="border-t border-border">
+						<p className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+							Requests externas com falha
+						</p>
+						<ol
+							aria-label="Requests externas com falha"
+							className="divide-y divide-border"
+						>
+							{report.request_failures.map((failure) => (
+								<li
+									className="grid gap-2 px-4 py-3 text-xs"
+									key={`${failure.stage}:${failure.method}:${failure.endpoint}:${failure.status}:${failure.requestId}`}
+								>
+									<div className="flex flex-wrap items-baseline justify-between gap-2">
+										<p className="font-medium text-foreground">
+											{labelFor(requestStageLabels, failure.stage)}
+										</p>
+										<span className="text-destructive">
+											{failure.status === null
+												? "Sem resposta HTTP"
+												: `HTTP ${failure.status}`}
+										</span>
+									</div>
+									<code className="break-all font-mono text-[11px] text-foreground/70">
+										{failure.method} {failure.endpoint}
+									</code>
+									<p className="text-muted-foreground">{failure.message}</p>
+									{failure.requestId && (
+										<p className="font-mono text-[11px] text-muted-foreground">
+											GitHub request ID: {failure.requestId}
+										</p>
+									)}
+								</li>
+							))}
+						</ol>
 					</div>
 				)}
 

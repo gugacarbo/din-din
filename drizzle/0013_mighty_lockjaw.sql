@@ -1,0 +1,1 @@
+ALTER TABLE `support_report_payloads` ADD `request_failures` text;

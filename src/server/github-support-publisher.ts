@@ -1,3 +1,4 @@
+import { redactText } from "#/lib/support.ts";
 import {
 	issueMarkdown,
 	type PublicIssue,
@@ -6,6 +7,74 @@ import {
 const repository = "gugacarbo/din-din";
 const api = "https://api.github.com";
 type Fetcher = typeof fetch;
+
+export type GitHubRequestFailure = {
+	stage:
+		| "installation_token"
+		| "reconciliation_before_post"
+		| "issue_creation"
+		| "reconciliation_after_post";
+	method: "GET" | "POST";
+	endpoint: string;
+	status: number | null;
+	requestId: string | null;
+	message: string;
+};
+
+class GitHubPublicationError extends Error {
+	constructor(
+		message: string,
+		readonly requestFailures: GitHubRequestFailure[],
+	) {
+		super(message);
+		this.name = "GitHubPublicationError";
+	}
+}
+
+export function githubRequestFailuresFromError(
+	error: unknown,
+): GitHubRequestFailure[] {
+	return error instanceof GitHubPublicationError ? error.requestFailures : [];
+}
+
+function safeFailureMessage(value: unknown, fallback: string) {
+	if (typeof value !== "string") return fallback;
+	return redactText(value).slice(0, 1_000) || fallback;
+}
+
+async function responseFailure(
+	response: Response,
+	context: Pick<GitHubRequestFailure, "stage" | "method" | "endpoint">,
+): Promise<GitHubRequestFailure> {
+	let message = `GitHub respondeu HTTP ${response.status}.`;
+	try {
+		const body = (await response.clone().json()) as { message?: unknown };
+		message = safeFailureMessage(body.message, message);
+	} catch {
+		// The status and GitHub request ID still identify non-JSON failures.
+	}
+	return {
+		...context,
+		status: response.status,
+		requestId: response.headers.get("x-github-request-id"),
+		message,
+	};
+}
+
+function networkFailure(
+	error: unknown,
+	context: Pick<GitHubRequestFailure, "stage" | "method" | "endpoint">,
+): GitHubRequestFailure {
+	return {
+		...context,
+		status: null,
+		requestId: null,
+		message: safeFailureMessage(
+			error instanceof Error ? error.message : String(error),
+			"Falha de rede sem resposta do GitHub.",
+		),
+	};
+}
 function base64url(value: Uint8Array | string) {
 	const text =
 		typeof value === "string" ? value : String.fromCharCode(...value);
@@ -99,18 +168,33 @@ async function installationToken(
 	>,
 	fetcher: Fetcher,
 ) {
-	const response = await fetcher(
-		`${api}/app/installations/${env.GITHUB_APP_INSTALLATION_ID}/access_tokens`,
-		{
-			method: "POST",
-			headers: {
-				accept: "application/vnd.github+json",
-				authorization: `Bearer ${await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY)}`,
-				"x-github-api-version": "2022-11-28",
+	const context = {
+		stage: "installation_token" as const,
+		method: "POST" as const,
+		endpoint: "/app/installations/[installation-id]/access_tokens",
+	};
+	let response: Response;
+	try {
+		response = await fetcher(
+			`${api}/app/installations/${env.GITHUB_APP_INSTALLATION_ID}/access_tokens`,
+			{
+				method: "POST",
+				headers: {
+					accept: "application/vnd.github+json",
+					authorization: `Bearer ${await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY)}`,
+					"x-github-api-version": "2022-11-28",
+				},
 			},
-		},
-	);
-	if (!response.ok) throw new Error("github_installation_token_failed");
+		);
+	} catch (error) {
+		throw new GitHubPublicationError("github_installation_token_failed", [
+			networkFailure(error, context),
+		]);
+	}
+	if (!response.ok)
+		throw new GitHubPublicationError("github_installation_token_failed", [
+			await responseFailure(response, context),
+		]);
 	return ((await response.json()) as { token: string }).token;
 }
 async function github(
@@ -129,13 +213,33 @@ async function github(
 		},
 	});
 }
-async function existingIssue(fetcher: Fetcher, token: string, marker: string) {
-	const response = await github(
-		fetcher,
-		token,
-		`/search/issues?q=${encodeURIComponent(`repo:${repository} in:body ${marker}`)}`,
-	);
-	if (!response.ok) throw new Error("github_reconciliation_unavailable");
+async function existingIssue(
+	fetcher: Fetcher,
+	token: string,
+	marker: string,
+	stage: "reconciliation_before_post" | "reconciliation_after_post",
+) {
+	const context = {
+		stage,
+		method: "GET" as const,
+		endpoint: "/search/issues",
+	};
+	let response: Response;
+	try {
+		response = await github(
+			fetcher,
+			token,
+			`/search/issues?q=${encodeURIComponent(`repo:${repository} in:body ${marker}`)}`,
+		);
+	} catch (error) {
+		throw new GitHubPublicationError("github_reconciliation_unavailable", [
+			networkFailure(error, context),
+		]);
+	}
+	if (!response.ok)
+		throw new GitHubPublicationError("github_reconciliation_unavailable", [
+			await responseFailure(response, context),
+		]);
 	const result = (await response.json()) as {
 		items: Array<{ number: number; html_url: string }>;
 	};
@@ -155,8 +259,14 @@ export async function publishSupportIssue(
 ) {
 	const token = await installationToken(env, fetcher);
 	const marker = `support-report:${reportId}`;
-	const existing = await existingIssue(fetcher, token, marker);
+	const existing = await existingIssue(
+		fetcher,
+		token,
+		marker,
+		"reconciliation_before_post",
+	);
 	if (existing) return existing;
+	let requestFailures: GitHubRequestFailure[] = [];
 	try {
 		const response = await github(
 			fetcher,
@@ -172,16 +282,43 @@ export async function publishSupportIssue(
 				}),
 			},
 		);
-		if (!response.ok) throw new Error("github_issue_create_failed");
+		if (!response.ok)
+			throw new GitHubPublicationError("github_issue_create_failed", [
+				await responseFailure(response, {
+					stage: "issue_creation",
+					method: "POST",
+					endpoint: `/repos/${repository}/issues`,
+				}),
+			]);
 		const created = (await response.json()) as {
 			number: number;
 			html_url: string;
 		};
 		return { number: created.number, url: created.html_url };
-	} catch {
+	} catch (error) {
+		requestFailures = githubRequestFailuresFromError(error);
+		if (requestFailures.length === 0)
+			requestFailures = [
+				networkFailure(error, {
+					stage: "issue_creation",
+					method: "POST",
+					endpoint: `/repos/${repository}/issues`,
+				}),
+			];
 		// A timed-out POST may have succeeded. Reconcile once and never POST again.
-		const reconciled = await existingIssue(fetcher, token, marker);
-		if (reconciled) return reconciled;
-		throw new Error("github_post_ambiguous");
+		try {
+			const reconciled = await existingIssue(
+				fetcher,
+				token,
+				marker,
+				"reconciliation_after_post",
+			);
+			if (reconciled) return { ...reconciled, requestFailures };
+		} catch (reconciliationError) {
+			requestFailures.push(
+				...githubRequestFailuresFromError(reconciliationError),
+			);
+		}
+		throw new GitHubPublicationError("github_post_ambiguous", requestFailures);
 	}
 }

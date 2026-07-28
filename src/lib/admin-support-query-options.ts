@@ -45,6 +45,14 @@ export type AdminSupportDetail = AdminSupportReport & {
 	message: string | null;
 	agent_response: string | null;
 	agent_response_error: string | null;
+	request_failures: Array<{
+		stage: string;
+		method: "GET" | "POST";
+		endpoint: string;
+		status: number | null;
+		requestId: string | null;
+		message: string;
+	}>;
 	attempt_logs: AdminSupportAttemptLog[];
 	canManualPublish: boolean;
 	unavailableReason: string | null;

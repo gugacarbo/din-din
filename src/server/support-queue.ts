@@ -3,7 +3,11 @@ import {
 	safeAiErrorDetails,
 	safeAiOutputDetails,
 } from "#/server/ai-logging.ts";
-import { publishSupportIssue } from "#/server/github-support-publisher.ts";
+import {
+	type GitHubRequestFailure,
+	githubRequestFailuresFromError,
+	publishSupportIssue,
+} from "#/server/github-support-publisher.ts";
 import {
 	parseSupportIssueWriterOutput,
 	serialiseSupportIssueWriterResponse,
@@ -41,6 +45,29 @@ async function recordPrivateAiResponse(
 		console.error(
 			JSON.stringify({
 				event: "support_ai_private_response_log_failed",
+				reportId,
+				error: safeAiErrorDetails(error),
+			}),
+		);
+	}
+}
+
+async function recordPrivateRequestFailures(
+	env: Env,
+	reportId: string,
+	failures: GitHubRequestFailure[],
+) {
+	if (failures.length === 0) return;
+	try {
+		await env.DB.prepare(
+			"update support_report_payloads set request_failures = ? where report_id = ? and expires_at > ?",
+		)
+			.bind(JSON.stringify(failures.slice(0, 10)), reportId, Date.now())
+			.run();
+	} catch (error) {
+		console.error(
+			JSON.stringify({
+				event: "support_request_failure_log_failed",
 				reportId,
 				error: safeAiErrorDetails(error),
 			}),
@@ -254,6 +281,8 @@ async function triage(env: Env, reportId: string, deliveryAttempt: number) {
 	);
 	try {
 		const issue = await publishSupportIssue(env, reportId, publication.value);
+		if ("requestFailures" in issue)
+			await recordPrivateRequestFailures(env, reportId, issue.requestFailures);
 		await env.DB.prepare(
 			"update support_reports set status = 'published', issue_number = ?, issue_url = ?, safe_reason = null, lease_token = null, lease_expires_at = null, publication_token = null, publication_reserved_at = null, updated_at = ? where report_id = ? and publication_token = ?",
 		)
@@ -269,6 +298,11 @@ async function triage(env: Env, reportId: string, deliveryAttempt: number) {
 		);
 		return "ack" as const;
 	} catch (error) {
+		await recordPrivateRequestFailures(
+			env,
+			reportId,
+			githubRequestFailuresFromError(error),
+		);
 		console.error(
 			JSON.stringify({
 				event: "support_issue_publication_failed",

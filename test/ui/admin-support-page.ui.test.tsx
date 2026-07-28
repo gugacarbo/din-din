@@ -65,6 +65,16 @@ vi.mock("#/server/admin-support.ts", () => ({
 		message: "O saldo não atualiza depois de salvar.",
 		agent_response: '{"title":"Resposta incompleta"',
 		agent_response_error: "Expected ',' or '}' after property value",
+		request_failures: [
+			{
+				stage: "installation_token",
+				method: "POST",
+				endpoint: "/app/installations/[installation-id]/access_tokens",
+				status: 401,
+				requestId: "GH-REQUEST-123",
+				message: "Bad credentials",
+			},
+		],
 		canManualPublish: false,
 		unavailableReason: null,
 	}),
@@ -177,6 +187,14 @@ describe("AdminSupportPage", () => {
 		expect(dialog).toHaveTextContent(
 			"Erro de interpretação: Expected ',' or '}' after property value",
 		);
+		expect(dialog).toHaveTextContent("Requests externas com falha");
+		expect(dialog).toHaveTextContent("Autenticação do GitHub App");
+		expect(dialog).toHaveTextContent("HTTP 401");
+		expect(dialog).toHaveTextContent(
+			"POST /app/installations/[installation-id]/access_tokens",
+		);
+		expect(dialog).toHaveTextContent("Bad credentials");
+		expect(dialog).toHaveTextContent("GitHub request ID: GH-REQUEST-123");
 		expect(dialog).toHaveTextContent("42 tokens");
 		expect(dialog).toHaveTextContent(
 			"@cf/meta/llama-3.3-70b-instruct-fp8-fast",

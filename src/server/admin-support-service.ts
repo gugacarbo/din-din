@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { adminHmac } from "#/lib/admin-invite.ts";
 import { requireAdmin } from "#/server/admin-auth.ts";
-import { publishSupportIssue } from "#/server/github-support-publisher.ts";
+import {
+	type GitHubRequestFailure,
+	githubRequestFailuresFromError,
+	publishSupportIssue,
+} from "#/server/github-support-publisher.ts";
 import {
 	type PublicIssue,
 	publicIssueFromModel,
@@ -103,14 +107,39 @@ async function activePayload(d1: D1Database, reportId: string) {
 async function activePrivateMessage(d1: D1Database, reportId: string) {
 	return d1
 		.prepare(
-			"select message, ai_response, ai_response_error from support_report_payloads where report_id = ? and expires_at > ?",
+			"select message, ai_response, ai_response_error, request_failures from support_report_payloads where report_id = ? and expires_at > ?",
 		)
 		.bind(reportId, Date.now())
 		.first<{
 			message: string;
 			ai_response: string | null;
 			ai_response_error: string | null;
+			request_failures: string | null;
 		}>();
+}
+
+function requestFailuresFromJson(value: string | null | undefined) {
+	if (!value) return [];
+	try {
+		const parsed = JSON.parse(value);
+		return Array.isArray(parsed) ? (parsed as GitHubRequestFailure[]) : [];
+	} catch {
+		return [];
+	}
+}
+
+async function storeRequestFailures(
+	d1: D1Database,
+	reportId: string,
+	failures: GitHubRequestFailure[],
+) {
+	if (failures.length === 0) return;
+	await d1
+		.prepare(
+			"update support_report_payloads set request_failures = ? where report_id = ? and expires_at > ?",
+		)
+		.bind(JSON.stringify(failures.slice(0, 10)), reportId, Date.now())
+		.run();
 }
 
 export async function listAdminSupport(
@@ -163,6 +192,7 @@ export async function adminSupportDetail(
 		message: privatePayload?.message ?? null,
 		agent_response: privatePayload?.ai_response ?? null,
 		agent_response_error: privatePayload?.ai_response_error ?? null,
+		request_failures: requestFailuresFromJson(privatePayload?.request_failures),
 		attempt_logs: attemptLogs.results.map((attempt) => ({
 			...attempt,
 			success: attempt.success === 1,
@@ -236,6 +266,8 @@ export async function publishAdminSupport(
 			reportId,
 			checked.value,
 		);
+		if ("requestFailures" in issue)
+			await storeRequestFailures(d1, reportId, issue.requestFailures);
 		await d1
 			.prepare(
 				"update support_reports set status = 'published', issue_number = ?, issue_url = ?, safe_reason = null, updated_at = ? where report_id = ? and status = 'manual_review'",
@@ -249,7 +281,12 @@ export async function publishAdminSupport(
 			.bind(Date.now(), reportId)
 			.run();
 		return issue;
-	} catch {
+	} catch (error) {
+		await storeRequestFailures(
+			d1,
+			reportId,
+			githubRequestFailuresFromError(error),
+		);
 		throw new AdminSupportError(409, "github_ambiguous");
 	}
 }

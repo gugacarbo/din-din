@@ -192,6 +192,54 @@ describe("production support worker", () => {
 		});
 	});
 
+	it("stores failed GitHub request details without credentials or request body", async () => {
+		const reportId = await report();
+		const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+			if (String(input).includes("access_tokens"))
+				return Response.json(
+					{ message: "Bad credentials", token: "private-token" },
+					{
+						status: 401,
+						headers: { "x-github-request-id": "GH-WORKER-123" },
+					},
+				);
+			throw new Error("unexpected request");
+		});
+		vi.stubGlobal("fetch", fetcher);
+		const runtimeEnv = runtime({
+			AI: {
+				run: vi.fn().mockResolvedValue({ response: JSON.stringify(safeModel) }),
+			},
+			GITHUB_APP_ID: "1",
+			GITHUB_APP_INSTALLATION_ID: "2",
+			GITHUB_APP_PRIVATE_KEY: await privateKey(),
+		});
+
+		await worker.queue?.(
+			batch("din-din-support-reports", [message({ kind: "triage", reportId })]),
+			runtimeEnv,
+			{} as ExecutionContext,
+		);
+
+		const payload = await env.DB.prepare(
+			"select request_failures from support_report_payloads where report_id = ?",
+		)
+			.bind(reportId)
+			.first<{ request_failures: string }>();
+		expect(JSON.parse(payload?.request_failures ?? "[]")).toEqual([
+			{
+				stage: "installation_token",
+				method: "POST",
+				endpoint: "/app/installations/[installation-id]/access_tokens",
+				status: 401,
+				requestId: "GH-WORKER-123",
+				message: "Bad credentials",
+			},
+		]);
+		expect(payload?.request_failures).not.toContain("private-token");
+		expect(payload?.request_failures).not.toContain("private report");
+	});
+
 	it("does not acknowledge a terminal transient retry before Queue can dead-letter it", async () => {
 		const reportId = await report();
 		const runtimeEnv = runtime({

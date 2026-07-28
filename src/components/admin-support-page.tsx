@@ -45,6 +45,12 @@ import {
 	DialogTitle,
 } from "#/components/ui/dialog.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import {
+	Tabs,
+	TabsContent,
+	TabsList,
+	TabsTrigger,
+} from "#/components/ui/tabs.tsx";
 import { useOnlineStatus } from "#/hooks/use-online-status.ts";
 import {
 	type AdminSupportDetail,
@@ -331,31 +337,50 @@ function SupportMessageDialog({
 						</p>
 					) : (
 						<div className="grid gap-5">
-							<div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
-								<span>{labelFor(categoryLabels, detail.data.category)}</span>
-								<span>{labelFor(statusLabels, detail.data.status)}</span>
-								<time dateTime={new Date(detail.data.created_at).toISOString()}>
-									{dateFormatter.format(detail.data.created_at)}
-								</time>
-							</div>
+							<Tabs defaultValue="message">
+								<TabsList aria-label="Detalhes da mensagem" variant="line">
+									<TabsTrigger value="message">Mensagem</TabsTrigger>
+									<TabsTrigger value="agent-log">Log do agente</TabsTrigger>
+								</TabsList>
 
-							<div>
-								<p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-									Mensagem
-								</p>
-								{detail.data.message ? (
-									<p className="whitespace-pre-wrap border-l-2 border-primary bg-muted/40 px-4 py-3 text-sm leading-6 text-foreground">
-										{detail.data.message}
-									</p>
-								) : (
-									<p className="bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-										O conteúdo desta mensagem expirou e não está mais
-										disponível.
-									</p>
-								)}
-							</div>
+								<TabsContent className="pt-3" value="message">
+									<div className="grid gap-5">
+										<div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
+											<span>
+												{labelFor(categoryLabels, detail.data.category)}
+											</span>
+											<span>{labelFor(statusLabels, detail.data.status)}</span>
+											<time
+												dateTime={new Date(
+													detail.data.created_at,
+												).toISOString()}
+											>
+												{dateFormatter.format(detail.data.created_at)}
+											</time>
+										</div>
 
-							<SupportProcessingLog report={detail.data} />
+										<div>
+											<p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+												Mensagem
+											</p>
+											{detail.data.message ? (
+												<p className="whitespace-pre-wrap border-l-2 border-primary bg-muted/40 px-4 py-3 text-sm leading-6 text-foreground">
+													{detail.data.message}
+												</p>
+											) : (
+												<p className="bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+													O conteúdo desta mensagem expirou e não está mais
+													disponível.
+												</p>
+											)}
+										</div>
+									</div>
+								</TabsContent>
+
+								<TabsContent className="pt-3" value="agent-log">
+									<SupportProcessingLog report={detail.data} />
+								</TabsContent>
+							</Tabs>
 
 							<div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
 								<span className="text-sm text-muted-foreground">

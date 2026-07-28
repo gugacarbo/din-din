@@ -143,7 +143,7 @@ describe("AdminSupportPage", () => {
 		);
 	});
 
-	it("shows the safe processing log for the issue creation attempt", async () => {
+	it("shows the issue creation log in the agent log tab", async () => {
 		const user = userEvent.setup();
 		renderPage();
 
@@ -153,6 +153,19 @@ describe("AdminSupportPage", () => {
 		await user.click(buttons[0]);
 
 		const dialog = await screen.findByRole("dialog");
+		expect(
+			screen.getByRole("tab", { name: "Mensagem", selected: true }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("tab", { name: "Log do agente", selected: false }),
+		).toBeInTheDocument();
+		expect(dialog).not.toHaveTextContent("Log de criação da issue");
+
+		await user.click(screen.getByRole("tab", { name: "Log do agente" }));
+
+		expect(
+			screen.getByRole("tab", { name: "Log do agente", selected: true }),
+		).toBeInTheDocument();
 		expect(dialog).toHaveTextContent("Log de criação da issue");
 		expect(dialog).toHaveTextContent("Issue criada com sucesso");
 		expect(dialog).toHaveTextContent("1 tentativa automática");

@@ -51,6 +51,11 @@ const safeModel = {
 	labels: ["bug"],
 };
 
+const safeToolCall = {
+	response: "",
+	tool_calls: [{ name: "publish_support_issue", arguments: safeModel }],
+};
+
 afterEach(() => {
 	vi.unstubAllGlobals();
 });
@@ -188,7 +193,7 @@ describe("production support worker", () => {
 				.first(),
 		).toMatchObject({
 			ai_response: privateOutput,
-			ai_response_error: expect.stringContaining("JSON"),
+			ai_response_error: "invalid_ai_tool_call",
 		});
 	});
 
@@ -208,7 +213,7 @@ describe("production support worker", () => {
 		vi.stubGlobal("fetch", fetcher);
 		const runtimeEnv = runtime({
 			AI: {
-				run: vi.fn().mockResolvedValue({ response: JSON.stringify(safeModel) }),
+				run: vi.fn().mockResolvedValue(safeToolCall),
 			},
 			GITHUB_APP_ID: "1",
 			GITHUB_APP_INSTALLATION_ID: "2",
@@ -257,16 +262,16 @@ describe("production support worker", () => {
 
 	it("keeps one GitHub publication while an AI call outlives its lease", async () => {
 		const reportId = await report();
-		let releaseFirstAi: (value: { response: string }) => void = () => undefined;
+		let releaseFirstAi: (value: typeof safeToolCall) => void = () => undefined;
 		const ai = {
 			run: vi
 				.fn()
 				.mockReturnValueOnce(
-					new Promise<{ response: string }>((resolve) => {
+					new Promise<typeof safeToolCall>((resolve) => {
 						releaseFirstAi = resolve;
 					}),
 				)
-				.mockResolvedValueOnce({ response: JSON.stringify(safeModel) }),
+				.mockResolvedValueOnce(safeToolCall),
 		};
 		const fetcher = vi.fn(async (input: RequestInfo | URL) => {
 			const url = String(input);
@@ -302,7 +307,7 @@ describe("production support worker", () => {
 		await vi.waitFor(() =>
 			expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/issues"))).toHaveLength(1),
 		);
-		releaseFirstAi({ response: JSON.stringify(safeModel) });
+		releaseFirstAi(safeToolCall);
 		await firstRun;
 		expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/issues"))).toHaveLength(1);
 	});
@@ -319,8 +324,11 @@ describe("production support worker", () => {
 			});
 		});
 		vi.stubGlobal("fetch", fetcher);
+		const ai = vi.fn().mockResolvedValueOnce(safeToolCall).mockResolvedValueOnce({
+			response: "Publication succeeded.",
+		});
 		const runtimeEnv = runtime({
-			AI: { run: vi.fn().mockResolvedValue({ response: JSON.stringify(safeModel) }) },
+			AI: { run: ai },
 			GITHUB_APP_ID: "1",
 			GITHUB_APP_INSTALLATION_ID: "2",
 			GITHUB_APP_PRIVATE_KEY: await privateKey(),
@@ -354,6 +362,11 @@ describe("production support worker", () => {
 			}),
 		);
 		await firstRun;
+		expect(ai).toHaveBeenCalledTimes(2);
+		expect(ai.mock.calls[1][1].messages.at(-1)).toEqual({
+			role: "tool",
+			content: JSON.stringify({ success: true, issueNumber: 18 }),
+		});
 	});
 
 	it("turns a redelivery after a pre-POST reservation into manual review", async () => {

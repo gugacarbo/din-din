@@ -40,7 +40,7 @@ roda contra um D1 local e efêmero do Miniflare, aplica as migrations de
 ### E2E do agente de issues
 
 O teste abaixo chama o binding remoto do Workers AI com o mesmo modelo, prompt
-e JSON Schema usados pelo agente que gera issues. Ele não usa D1, filas ou
+e definição de tool usados pelo agente que gera issues. Ele não usa D1, filas ou
 GitHub, mas consome Workers AI; por isso não faz parte de `pnpm test` nem da CI
 regular.
 

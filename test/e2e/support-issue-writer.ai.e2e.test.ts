@@ -2,7 +2,8 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 import {
-	parseSupportIssueWriterOutput,
+	parseSupportIssueWriterToolCall,
+	supportIssueWriterFeedbackOptions,
 	supportIssueWriterModel,
 	supportIssueWriterOptions,
 } from "#/server/support-issue-writer.ts";
@@ -17,18 +18,27 @@ const diagnostics = JSON.stringify({
 });
 
 describe("support issue writer against remote Workers AI", () => {
-	it("returns a schema-valid and safe public issue from the real AI binding", async () => {
+	it("calls the publication tool and receives its result", async () => {
 		const output = await env.AI.run(
 			supportIssueWriterModel,
 			supportIssueWriterOptions(report, diagnostics),
 		);
 
-		console.log(JSON.stringify(output, null, null, 2))
+		const toolCall = parseSupportIssueWriterToolCall(output);
 
 		expect(
-			publicIssueFromModel(parseSupportIssueWriterOutput(output), [report, diagnostics]),
+			publicIssueFromModel(toolCall.arguments, [report, diagnostics]),
 		).toMatchObject({
 			ok: true,
 		});
+
+		const feedback = await env.AI.run(
+			supportIssueWriterModel,
+			supportIssueWriterFeedbackOptions(report, diagnostics, toolCall, {
+				success: true,
+				issueNumber: 42,
+			}),
+		);
+		expect(feedback).toBeDefined();
 	}, 60_000);
 });

@@ -254,7 +254,10 @@ describe("support report intake", () => {
 				SUPPORT_REPORTS_DLQ: { send: vi.fn().mockResolvedValue({}) },
 			}) as Env,
 		);
-		const prompt = ai.mock.calls[0][1].prompt as string;
+		const messages = ai.mock.calls[0][1].messages as Array<{
+			content: string;
+		}>;
+		const prompt = messages.map(({ content }) => content).join("\n");
 		for (const secret of [
 			"super-secret-cookie-value",
 			"dXNlcjpwYXNz",

@@ -42,28 +42,74 @@ const supportIssueWriterSchema = {
 	},
 } as const;
 
+export const supportIssueWriterToolName = "publish_support_issue";
+
+const supportIssueWriterTool = {
+	name: supportIssueWriterToolName,
+	description:
+		"Publish one generalized, privacy-safe technical support issue. The tool returns whether publication succeeded.",
+	parameters: supportIssueWriterSchema,
+} as const;
+
+export type SupportIssueWriterToolCall = {
+	name: typeof supportIssueWriterToolName;
+	arguments: unknown;
+};
+
+export type SupportIssueWriterToolResult =
+	| { success: true; issueNumber: number }
+	| { success: false; status: "manual_review" };
+
 /**
- * Builds the exact Workers AI request used by the support issue writer.
- * JSON Schema constrains the adapter response itself; `json_object` only
- * guarantees syntactically valid JSON and can still omit required fields.
+ * Builds the first Workers AI request used by the support issue writer.
+ * The issue is returned as a tool call so the publication result can be sent
+ * back to the model in the same conversation.
  */
 export function supportIssueWriterOptions(
 	message: string,
 	diagnostics: string,
 ) {
 	return {
-		prompt: `Produce only a JSON object that matches the provided JSON Schema. The output will be public, so write a new, generalized technical description: never reuse a sequence of four or more words from the user report, and do not include personal data, URLs, markdown, mentions, or secrets.\nUser report: ${message}\nSanitized diagnostics: ${diagnostics}`,
-		response_format: {
-			type: "json_schema" as const,
-			json_schema: supportIssueWriterSchema,
-		},
+		messages: [
+			{
+				role: "system",
+				content:
+					"Create a public support issue by calling publish_support_issue exactly once. Never return the issue as text or JSON outside the tool call. Write a new, generalized technical description: never reuse a sequence of four or more words from the user report, and do not include personal data, URLs, markdown, mentions, or secrets. After a tool result is provided, acknowledge whether publication succeeded without calling the tool again.",
+			},
+			{
+				role: "user",
+				content: `User report: ${message}\nSanitized diagnostics: ${diagnostics}`,
+			},
+		],
+		tools: [supportIssueWriterTool],
 		max_tokens: 800,
+	};
+}
+
+/** Builds the follow-up request that tells the model how its tool call ended. */
+export function supportIssueWriterFeedbackOptions(
+	message: string,
+	diagnostics: string,
+	toolCall: SupportIssueWriterToolCall,
+	result: SupportIssueWriterToolResult,
+) {
+	const initial = supportIssueWriterOptions(message, diagnostics);
+	return {
+		...initial,
+		messages: [
+			...initial.messages,
+			{ role: "assistant", content: JSON.stringify(toolCall) },
+			{ role: "tool", content: JSON.stringify(result) },
+		],
+		max_tokens: 120,
 	};
 }
 
 const maxPrivateResponseLength = 32_000;
 
 function responseFromOutput(output: unknown) {
+	if (typeof output === "object" && output !== null && "tool_calls" in output)
+		return { tool_calls: output.tool_calls };
 	return typeof output === "object" && output !== null && "response" in output
 		? output.response
 		: output;
@@ -84,10 +130,48 @@ export function serialiseSupportIssueWriterResponse(output: unknown): string {
 	}
 }
 
-/** Normalizes text-mode and structured-mode Workers AI responses. */
-export function parseSupportIssueWriterOutput(output: unknown): unknown {
-	const response = responseFromOutput(output);
-	if (typeof response === "string") return JSON.parse(response);
-	if (typeof response === "object" && response !== null) return response;
-	throw new Error("invalid_ai_output");
+function parseArguments(value: unknown): unknown {
+	return typeof value === "string" ? JSON.parse(value) : value;
+}
+
+/** Requires exactly one call to the issue publication tool. */
+export function parseSupportIssueWriterToolCall(
+	output: unknown,
+): SupportIssueWriterToolCall {
+	if (
+		typeof output !== "object" ||
+		output === null ||
+		!("tool_calls" in output)
+	)
+		throw new Error("invalid_ai_tool_call");
+	const calls = output.tool_calls;
+	if (!Array.isArray(calls) || calls.length !== 1)
+		throw new Error("invalid_ai_tool_call");
+	const call = calls[0];
+	if (typeof call !== "object" || call === null)
+		throw new Error("invalid_ai_tool_call");
+
+	if (
+		"name" in call &&
+		call.name === supportIssueWriterToolName &&
+		"arguments" in call
+	)
+		return {
+			name: supportIssueWriterToolName,
+			arguments: parseArguments(call.arguments),
+		};
+
+	if (
+		"function" in call &&
+		typeof call.function === "object" &&
+		call.function
+	) {
+		const fn = call.function as Record<string, unknown>;
+		if (fn.name === supportIssueWriterToolName && "arguments" in fn)
+			return {
+				name: supportIssueWriterToolName,
+				arguments: parseArguments(fn.arguments),
+			};
+	}
+	throw new Error("invalid_ai_tool_call");
 }

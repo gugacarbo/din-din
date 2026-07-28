@@ -9,8 +9,11 @@ import {
 	publishSupportIssue,
 } from "#/server/github-support-publisher.ts";
 import {
-	parseSupportIssueWriterOutput,
+	parseSupportIssueWriterToolCall,
+	type SupportIssueWriterToolCall,
+	type SupportIssueWriterToolResult,
 	serialiseSupportIssueWriterResponse,
+	supportIssueWriterFeedbackOptions,
 	supportIssueWriterModel,
 	supportIssueWriterOptions,
 } from "#/server/support-issue-writer.ts";
@@ -72,6 +75,44 @@ async function recordPrivateRequestFailures(
 				error: safeAiErrorDetails(error),
 			}),
 		);
+	}
+}
+
+async function sendIssueWriterToolResult(
+	env: Env,
+	reportId: string,
+	row: { message: string; diagnostics: string; user_id: string },
+	toolCall: SupportIssueWriterToolCall,
+	result: SupportIssueWriterToolResult,
+	deliveryAttempt: number,
+) {
+	try {
+		return await runAiWithLogging(
+			env,
+			supportIssueWriterModel,
+			supportIssueWriterFeedbackOptions(
+				row.message,
+				row.diagnostics,
+				toolCall,
+				result,
+			),
+			{
+				agentKey: "issue-writer",
+				userId: row.user_id,
+				reportId,
+				metadata: { deliveryAttempt, phase: "tool_result" },
+			},
+		);
+	} catch (error) {
+		console.error(
+			JSON.stringify({
+				event: "support_ai_tool_result_delivery_failed",
+				reportId,
+				success: result.success,
+				error: safeAiErrorDetails(error),
+			}),
+		);
+		return undefined;
 	}
 }
 
@@ -231,9 +272,9 @@ async function triage(env: Env, reportId: string, deliveryAttempt: number) {
 		await releaseForRetry(env, reportId, row.token);
 		return "retry" as const;
 	}
-	let model: unknown;
+	let toolCall: SupportIssueWriterToolCall;
 	try {
-		model = parseSupportIssueWriterOutput(output);
+		toolCall = parseSupportIssueWriterToolCall(output);
 	} catch (error) {
 		const errorDetails = safeAiErrorDetails(error);
 		await recordPrivateAiResponse(env, reportId, output, errorDetails.message);
@@ -252,7 +293,7 @@ async function triage(env: Env, reportId: string, deliveryAttempt: number) {
 		return "ack" as const;
 	}
 	await recordPrivateAiResponse(env, reportId, output, null);
-	const publication = publicIssueFromModel(model, [
+	const publication = publicIssueFromModel(toolCall.arguments, [
 		row.message,
 		row.diagnostics,
 	]);
@@ -296,6 +337,24 @@ async function triage(env: Env, reportId: string, deliveryAttempt: number) {
 				issueNumber: issue.number,
 			}),
 		);
+		const feedback = await sendIssueWriterToolResult(
+			env,
+			reportId,
+			row,
+			toolCall,
+			{ success: true, issueNumber: issue.number },
+			deliveryAttempt,
+		);
+		await recordPrivateAiResponse(
+			env,
+			reportId,
+			{
+				initialOutput: output,
+				toolResult: { success: true, issueNumber: issue.number },
+				feedbackOutput: feedback,
+			},
+			null,
+		);
 		return "ack" as const;
 	} catch (error) {
 		await recordPrivateRequestFailures(
@@ -315,6 +374,24 @@ async function triage(env: Env, reportId: string, deliveryAttempt: number) {
 		await manualReview(env, reportId, "github_ambiguous", {
 			publicationToken,
 		});
+		const feedback = await sendIssueWriterToolResult(
+			env,
+			reportId,
+			row,
+			toolCall,
+			{ success: false, status: "manual_review" },
+			deliveryAttempt,
+		);
+		await recordPrivateAiResponse(
+			env,
+			reportId,
+			{
+				initialOutput: output,
+				toolResult: { success: false, status: "manual_review" },
+				feedbackOutput: feedback,
+			},
+			null,
+		);
 		return "ack" as const;
 	}
 }

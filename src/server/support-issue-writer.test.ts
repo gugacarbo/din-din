@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import {
-	parseSupportIssueWriterOutput,
+	parseSupportIssueWriterToolCall,
 	serialiseSupportIssueWriterResponse,
+	supportIssueWriterFeedbackOptions,
 	supportIssueWriterModel,
 	supportIssueWriterOptions,
+	supportIssueWriterToolName,
 } from "#/server/support-issue-writer.ts";
 
 describe("supportIssueWriterOptions", () => {
-	it("uses the production model and constrains its response with JSON Schema", () => {
+	it("uses the production model and requires the publication tool", () => {
 		const options = supportIssueWriterOptions(
 			"A confirmação de uma despesa não conclui.",
 			'{"surface":"transaction-form"}',
@@ -17,31 +19,69 @@ describe("supportIssueWriterOptions", () => {
 		expect(supportIssueWriterModel).toBe(
 			"@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 		);
-		expect(options.response_format).toMatchObject({
-			type: "json_schema",
-			json_schema: {
-				type: "object",
-				additionalProperties: false,
-				required: expect.arrayContaining([
-					"title",
-					"summary",
-					"technicalCategory",
-					"observedBehavior",
-					"probableSteps",
-					"technicalSignals",
-					"labels",
-				]),
-			},
-		});
+		expect(options).not.toHaveProperty("response_format");
+		expect(options.tools).toEqual([
+			expect.objectContaining({
+				name: supportIssueWriterToolName,
+				parameters: expect.objectContaining({
+					type: "object",
+					additionalProperties: false,
+					required: expect.arrayContaining([
+						"title",
+						"summary",
+						"technicalCategory",
+						"observedBehavior",
+						"probableSteps",
+						"technicalSignals",
+						"labels",
+					]),
+				}),
+			}),
+		]);
 	});
 
-	it("accepts both text and structured Workers AI JSON responses", () => {
+	it("parses native and OpenAI-compatible publication tool calls", () => {
 		const issue = { title: "Falha genérica" };
 
-		expect(parseSupportIssueWriterOutput({ response: issue })).toEqual(issue);
 		expect(
-			parseSupportIssueWriterOutput({ response: JSON.stringify(issue) }),
-		).toEqual(issue);
+			parseSupportIssueWriterToolCall({
+				tool_calls: [{ name: supportIssueWriterToolName, arguments: issue }],
+			}),
+		).toEqual({ name: supportIssueWriterToolName, arguments: issue });
+		expect(
+			parseSupportIssueWriterToolCall({
+				tool_calls: [
+					{
+						function: {
+							name: supportIssueWriterToolName,
+							arguments: JSON.stringify(issue),
+						},
+					},
+				],
+			}),
+		).toEqual({ name: supportIssueWriterToolName, arguments: issue });
+		expect(() =>
+			parseSupportIssueWriterToolCall({ response: JSON.stringify(issue) }),
+		).toThrow("invalid_ai_tool_call");
+	});
+
+	it("returns the publication result to the model as a tool message", () => {
+		const call = {
+			name: supportIssueWriterToolName,
+			arguments: { title: "Falha genérica" },
+		} as const;
+		const options = supportIssueWriterFeedbackOptions("Relato", "{}", call, {
+			success: true,
+			issueNumber: 42,
+		});
+
+		expect(options.messages.slice(-2)).toEqual([
+			{ role: "assistant", content: JSON.stringify(call) },
+			{
+				role: "tool",
+				content: JSON.stringify({ success: true, issueNumber: 42 }),
+			},
+		]);
 	});
 
 	it("serializes the private response without its Workers AI envelope", () => {
@@ -51,5 +91,13 @@ describe("supportIssueWriterOptions", () => {
 		expect(
 			serialiseSupportIssueWriterResponse({ response: { title: "Issue" } }),
 		).toBe('{"title":"Issue"}');
+		expect(
+			serialiseSupportIssueWriterResponse({
+				response: "",
+				tool_calls: [
+					{ name: supportIssueWriterToolName, arguments: { title: "Issue" } },
+				],
+			}),
+		).toContain('"tool_calls"');
 	});
 });

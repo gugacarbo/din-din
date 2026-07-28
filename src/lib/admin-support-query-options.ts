@@ -43,6 +43,8 @@ export type AdminSupportReport = {
 
 export type AdminSupportDetail = AdminSupportReport & {
 	message: string | null;
+	agent_response: string | null;
+	agent_response_error: string | null;
 	attempt_logs: AdminSupportAttemptLog[];
 	canManualPublish: boolean;
 	unavailableReason: string | null;

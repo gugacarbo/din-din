@@ -183,6 +183,24 @@ function SupportProcessingLog({ report }: { report: AdminSupportDetail }) {
 					</div>
 				</div>
 
+				{(report.agent_response || report.agent_response_error) && (
+					<div className="border-t border-border px-4 py-3">
+						<p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+							Resposta privada do agente
+						</p>
+						{report.agent_response_error && (
+							<p className="mt-2 border-l-2 border-destructive pl-3 text-xs/relaxed text-destructive">
+								Erro de interpretação: {report.agent_response_error}
+							</p>
+						)}
+						{report.agent_response && (
+							<pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words bg-muted/40 p-3 font-mono text-[11px] leading-relaxed text-foreground">
+								{report.agent_response}
+							</pre>
+						)}
+					</div>
+				)}
+
 				<div className="border-t border-border">
 					<p className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
 						Tentativas da IA

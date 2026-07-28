@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
 	parseSupportIssueWriterOutput,
+	serialiseSupportIssueWriterResponse,
 	supportIssueWriterModel,
 	supportIssueWriterOptions,
 } from "#/server/support-issue-writer.ts";
@@ -41,5 +42,14 @@ describe("supportIssueWriterOptions", () => {
 		expect(
 			parseSupportIssueWriterOutput({ response: JSON.stringify(issue) }),
 		).toEqual(issue);
+	});
+
+	it("serializes the private response without its Workers AI envelope", () => {
+		expect(
+			serialiseSupportIssueWriterResponse({ response: "not-json response" }),
+		).toBe("not-json response");
+		expect(
+			serialiseSupportIssueWriterResponse({ response: { title: "Issue" } }),
+		).toBe('{"title":"Issue"}');
 	});
 });

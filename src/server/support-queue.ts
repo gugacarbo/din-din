@@ -6,6 +6,7 @@ import {
 import { publishSupportIssue } from "#/server/github-support-publisher.ts";
 import {
 	parseSupportIssueWriterOutput,
+	serialiseSupportIssueWriterResponse,
 	supportIssueWriterModel,
 	supportIssueWriterOptions,
 } from "#/server/support-issue-writer.ts";
@@ -18,6 +19,34 @@ type ReviewMessage = {
 	eventId: string;
 };
 const leaseMs = 5 * 60 * 1_000;
+
+async function recordPrivateAiResponse(
+	env: Env,
+	reportId: string,
+	output: unknown,
+	parseError: string | null,
+) {
+	try {
+		await env.DB.prepare(
+			"update support_report_payloads set ai_response = ?, ai_response_error = ? where report_id = ? and expires_at > ?",
+		)
+			.bind(
+				serialiseSupportIssueWriterResponse(output),
+				parseError,
+				reportId,
+				Date.now(),
+			)
+			.run();
+	} catch (error) {
+		console.error(
+			JSON.stringify({
+				event: "support_ai_private_response_log_failed",
+				reportId,
+				error: safeAiErrorDetails(error),
+			}),
+		);
+	}
+}
 
 async function manualReview(
 	env: Env,
@@ -179,12 +208,14 @@ async function triage(env: Env, reportId: string, deliveryAttempt: number) {
 	try {
 		model = parseSupportIssueWriterOutput(output);
 	} catch (error) {
+		const errorDetails = safeAiErrorDetails(error);
+		await recordPrivateAiResponse(env, reportId, output, errorDetails.message);
 		console.error(
 			JSON.stringify({
 				event: "support_ai_output_invalid",
 				invocationId,
 				reportId,
-				error: safeAiErrorDetails(error),
+				error: errorDetails,
 				...safeAiOutputDetails(output),
 			}),
 		);
@@ -193,6 +224,7 @@ async function triage(env: Env, reportId: string, deliveryAttempt: number) {
 		});
 		return "ack" as const;
 	}
+	await recordPrivateAiResponse(env, reportId, output, null);
 	const publication = publicIssueFromModel(model, [
 		row.message,
 		row.diagnostics,

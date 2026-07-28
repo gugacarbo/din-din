@@ -61,12 +61,32 @@ export function supportIssueWriterOptions(
 	};
 }
 
+const maxPrivateResponseLength = 32_000;
+
+function responseFromOutput(output: unknown) {
+	return typeof output === "object" && output !== null && "response" in output
+		? output.response
+		: output;
+}
+
+/** Serializes model output for the admin-only, retention-bound support payload. */
+export function serialiseSupportIssueWriterResponse(output: unknown): string {
+	const response = responseFromOutput(output);
+	if (typeof response === "string")
+		return response.slice(0, maxPrivateResponseLength);
+	try {
+		return (JSON.stringify(response) ?? String(response)).slice(
+			0,
+			maxPrivateResponseLength,
+		);
+	} catch {
+		return "[unserializable_ai_response]";
+	}
+}
+
 /** Normalizes text-mode and structured-mode Workers AI responses. */
 export function parseSupportIssueWriterOutput(output: unknown): unknown {
-	const response =
-		typeof output === "object" && output !== null && "response" in output
-			? output.response
-			: output;
+	const response = responseFromOutput(output);
 	if (typeof response === "string") return JSON.parse(response);
 	if (typeof response === "object" && response !== null) return response;
 	throw new Error("invalid_ai_output");

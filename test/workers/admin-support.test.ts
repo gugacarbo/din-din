@@ -184,6 +184,11 @@ describe("admin HTTP route handlers", () => {
 				.prepare("insert into support_report_payloads (report_id, user_id, client_request_id, fingerprint, message, diagnostics, metadata, received_at, expires_at) values (?, ?, ?, 'fingerprint', 'Mensagem privada de teste', '{}', '{}', ?, ?)")
 				.bind(reportId, a.id, crypto.randomUUID(), now, now + 60_000),
 			env.DB
+				.prepare(
+					"update support_report_payloads set ai_response = ?, ai_response_error = ? where report_id = ?",
+				)
+				.bind("{invalid response", "Expected property name", reportId),
+			env.DB
 				.prepare("insert into support_review_tasks (event_id, report_id, kind, reason, status, created_at, updated_at) values (?, ?, 'manual_review', 'needs_human', 'pending', ?, ?)")
 				.bind(reviewEventId, reportId, now, now),
 			env.DB
@@ -267,6 +272,8 @@ describe("admin HTTP route handlers", () => {
 					success: true,
 				}),
 			],
+			agent_response: "{invalid response",
+			agent_response_error: "Expected property name",
 			review_tasks: [
 				expect.objectContaining({ event_id: reviewEventId }),
 			],

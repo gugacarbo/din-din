@@ -63,6 +63,8 @@ vi.mock("#/server/admin-support.ts", () => ({
 			},
 		],
 		message: "O saldo não atualiza depois de salvar.",
+		agent_response: '{"title":"Resposta incompleta"',
+		agent_response_error: "Expected ',' or '}' after property value",
 		canManualPublish: false,
 		unavailableReason: null,
 	}),
@@ -170,6 +172,11 @@ describe("AdminSupportPage", () => {
 		expect(dialog).toHaveTextContent("Issue criada com sucesso");
 		expect(dialog).toHaveTextContent("1 tentativa automática");
 		expect(dialog).toHaveTextContent("Tentativa 1 · Concluída");
+		expect(dialog).toHaveTextContent("Resposta privada do agente");
+		expect(dialog).toHaveTextContent('{"title":"Resposta incompleta"');
+		expect(dialog).toHaveTextContent(
+			"Erro de interpretação: Expected ',' or '}' after property value",
+		);
 		expect(dialog).toHaveTextContent("42 tokens");
 		expect(dialog).toHaveTextContent(
 			"@cf/meta/llama-3.3-70b-instruct-fp8-fast",

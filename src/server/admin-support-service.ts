@@ -103,10 +103,14 @@ async function activePayload(d1: D1Database, reportId: string) {
 async function activePrivateMessage(d1: D1Database, reportId: string) {
 	return d1
 		.prepare(
-			"select message from support_report_payloads where report_id = ? and expires_at > ?",
+			"select message, ai_response, ai_response_error from support_report_payloads where report_id = ? and expires_at > ?",
 		)
 		.bind(reportId, Date.now())
-		.first<{ message: string }>();
+		.first<{
+			message: string;
+			ai_response: string | null;
+			ai_response_error: string | null;
+		}>();
 }
 
 export async function listAdminSupport(
@@ -157,6 +161,8 @@ export async function adminSupportDetail(
 	return {
 		...supportReportFromRow(report),
 		message: privatePayload?.message ?? null,
+		agent_response: privatePayload?.ai_response ?? null,
+		agent_response_error: privatePayload?.ai_response_error ?? null,
 		attempt_logs: attemptLogs.results.map((attempt) => ({
 			...attempt,
 			success: attempt.success === 1,

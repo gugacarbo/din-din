@@ -146,6 +146,10 @@ export const supportReportPayloads = sqliteTable(
 		message: text("message").notNull(),
 		diagnostics: text("diagnostics").notNull(),
 		metadata: text("metadata").notNull(),
+		/** Resposta privada da AI; segue a mesma retenção e autorização do relato. */
+		aiResponse: text("ai_response"),
+		/** Erro de interpretação da resposta, sem incluir o prompt. */
+		aiResponseError: text("ai_response_error"),
 		screenshotKey: text("screenshot_key"),
 		receivedAt: integer("received_at", { mode: "number" }).notNull(),
 		expiresAt: integer("expires_at", { mode: "number" }).notNull(),

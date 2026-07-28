@@ -180,6 +180,16 @@ describe("production support worker", () => {
 			responseLength: privateOutput.length,
 		});
 		expect(entry).not.toContain(privateOutput);
+		expect(
+			await env.DB.prepare(
+				"select ai_response, ai_response_error from support_report_payloads where report_id = ?",
+			)
+				.bind(reportId)
+				.first(),
+		).toMatchObject({
+			ai_response: privateOutput,
+			ai_response_error: expect.stringContaining("JSON"),
+		});
 	});
 
 	it("does not acknowledge a terminal transient retry before Queue can dead-letter it", async () => {

@@ -37,5 +37,24 @@
     "builds-on": [],
     "superseded-by": null,
     "implemented-by": []
+  },
+  {
+    "id": "SPEC-0012",
+    "path": "docs/specs/0012-filtrar-o-dashboard-por-intervalo-e-mes-de-referencia.md",
+    "layer": "specs",
+    "title": "Filtrar o dashboard por intervalo e mês de referência",
+    "status": "accepted",
+    "builds-on": [
+      "SPEC-0011"
+    ],
+    "superseded-by": null,
+    "implemented-by": [
+      "src/components/finance/dashboard-period-filter.tsx",
+      "src/components/finance/finance-page.tsx",
+      "src/lib/finance-query-options.ts",
+      "src/lib/finance.ts",
+      "src/server/finance-service.ts",
+      "src/server/finance.ts"
+    ]
   }
 ]

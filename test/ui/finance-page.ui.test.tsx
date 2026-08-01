@@ -29,6 +29,10 @@ vi.mock("recharts", () => ({
 }));
 
 import { FinancePage } from "#/components/finance/finance-page.tsx";
+import {
+	currentSaoPauloMonth,
+	inclusivePeriodToTechnical,
+} from "#/lib/finance.ts";
 
 function renderFinancePage(kind: ComponentProps<typeof FinancePage>["kind"]) {
 	const queryClient = new QueryClient({
@@ -72,7 +76,7 @@ describe("FinancePage", () => {
 	it("requires an explicit type before allowing a new transaction", async () => {
 		const user = userEvent.setup();
 		renderFinancePage("dashboard");
-		await screen.findByText("Seu mês em movimento");
+		await screen.findByText("Suas finanças em movimento");
 		await user.click(screen.getByRole("button", { name: /novo lançamento/i }));
 		await waitFor(() => expect(api.listCategories).toHaveBeenCalled());
 		const type = screen.getByLabelText("Tipo");
@@ -83,10 +87,212 @@ describe("FinancePage", () => {
 		expect(type).toHaveAttribute("aria-invalid", "true");
 	});
 
+	it("refreshes dashboard summaries and recent transactions after creating one", async () => {
+		const createdTransaction = {
+			...transaction,
+			id: "88888888-8888-4888-8888-888888888888",
+			amountCents: 4567,
+			description: "compra do teste",
+		};
+		api.createTransaction.mockResolvedValue(createdTransaction);
+		api.getDashboard
+			.mockResolvedValueOnce({
+				month: { incomeCents: 0, expenseCents: 0, balanceCents: 0 },
+				incomeByPaymentMethod: [],
+				recentActivity: [],
+			})
+			.mockResolvedValueOnce({
+				month: {
+					incomeCents: 0,
+					expenseCents: createdTransaction.amountCents,
+					balanceCents: -createdTransaction.amountCents,
+				},
+				incomeByPaymentMethod: [],
+				recentActivity: [
+					{
+						kind: "transaction",
+						activityDate: createdTransaction.occurredAt,
+						transaction: createdTransaction,
+					},
+				],
+			});
+
+		const user = userEvent.setup();
+		renderFinancePage("dashboard");
+		await screen.findByText("Suas finanças em movimento");
+		expect(screen.getByText("Nenhuma atividade por aqui.")).toBeInTheDocument();
+
+		await user.click(screen.getByRole("button", { name: /novo lançamento/i }));
+		await user.click(screen.getByLabelText("Tipo"));
+		await user.click(await screen.findByRole("option", { name: "Despesa" }));
+		await user.click(screen.getByLabelText("Categoria"));
+		await user.click(await screen.findByRole("option", { name: "Mercado" }));
+		await user.clear(screen.getByLabelText("Valor (R$)"));
+		await user.type(screen.getByLabelText("Valor (R$)"), "4567");
+		await user.type(
+			screen.getByLabelText("Descrição opcional"),
+			"compra do teste",
+		);
+		await user.click(
+			screen.getByRole("button", { name: "Adicionar lançamento" }),
+		);
+
+		await waitFor(() =>
+			expect(api.createTransaction).toHaveBeenCalledWith({
+				data: expect.objectContaining({
+					type: "expense",
+					categoryId: expenseCategory.id,
+					amountCents: 4567,
+					description: "compra do teste",
+				}),
+			}),
+		);
+		await waitFor(() => expect(api.getDashboard).toHaveBeenCalledTimes(2));
+
+		const expenseSummary = screen.getByText("Saídas").closest("[data-slot=card]");
+		const balanceSummary = screen.getByText("Saldo").closest("[data-slot=card]");
+		const recentCard = screen
+			.getByText("Últimos lançamentos")
+			.closest("[data-slot=card]");
+		if (!expenseSummary || !balanceSummary || !recentCard)
+			throw new Error("Cards do dashboard ausentes.");
+		expect(within(expenseSummary).getByText("R$ 45,67")).toBeInTheDocument();
+		expect(within(balanceSummary).getByText("-R$ 45,67")).toBeInTheDocument();
+		expect(within(recentCard).getByText("Mercado")).toBeInTheDocument();
+		expect(within(recentCard).getByText(/compra do teste/)).toBeInTheDocument();
+		expect(
+			within(recentCard).queryByText("Nenhuma atividade por aqui."),
+		).not.toBeInTheDocument();
+	});
+
+	it("starts with the current São Paulo month and an exclusive query end", async () => {
+		renderFinancePage("dashboard");
+
+		await waitFor(() => expect(api.getDashboard).toHaveBeenCalledOnce());
+		await screen.findByText("Período do dashboard");
+		const initialMonth = currentSaoPauloMonth();
+		expect(api.getDashboard).toHaveBeenCalledWith({
+			data: inclusivePeriodToTechnical(initialMonth),
+		});
+		expect(screen.getByLabelText("Data inicial")).toHaveValue(
+			initialMonth.startDate,
+		);
+		expect(screen.getByLabelText("Data final")).toHaveValue(
+			initialMonth.endDate,
+		);
+	});
+
+	it("applies an inclusive one-day interval with the next day as technical end", async () => {
+		const user = userEvent.setup();
+		renderFinancePage("dashboard");
+		await waitFor(() => expect(api.getDashboard).toHaveBeenCalledOnce());
+		await screen.findByText("Período do dashboard");
+
+		const startDate = screen.getByLabelText("Data inicial");
+		const endDate = screen.getByLabelText("Data final");
+		await user.clear(startDate);
+		await user.type(startDate, "2024-02-29");
+		await user.clear(endDate);
+		await user.type(endDate, "2024-02-29");
+		await user.click(screen.getByRole("button", { name: "Aplicar intervalo" }));
+
+		await waitFor(() =>
+			expect(api.getDashboard).toHaveBeenLastCalledWith({
+				data: { startDate: "2024-02-29", endDate: "2024-03-01" },
+			}),
+		);
+	});
+
+	it("uses a reference date as a shortcut to the complete month", async () => {
+		const user = userEvent.setup();
+		renderFinancePage("dashboard");
+		await waitFor(() => expect(api.getDashboard).toHaveBeenCalledOnce());
+		await screen.findByText("Período do dashboard");
+
+		const referenceDate = screen.getByLabelText("Data de referência");
+		await user.clear(referenceDate);
+		await user.type(referenceDate, "2024-02-10");
+		await user.click(
+			screen.getByRole("button", { name: "Selecionar mês completo" }),
+		);
+
+		expect(screen.getByLabelText("Data inicial")).toHaveValue("2024-02-01");
+		expect(screen.getByLabelText("Data final")).toHaveValue("2024-02-29");
+		await waitFor(() =>
+			expect(api.getDashboard).toHaveBeenLastCalledWith({
+				data: { startDate: "2024-02-01", endDate: "2024-03-01" },
+			}),
+		);
+	});
+
+	it("keeps the last dashboard result when the interval is incomplete or invalid", async () => {
+		api.getDashboard.mockResolvedValue({
+			month: { incomeCents: 1234, expenseCents: 0, balanceCents: 1234 },
+			incomeByPaymentMethod: [],
+			recentActivity: [],
+		});
+		const user = userEvent.setup();
+		renderFinancePage("dashboard");
+		await screen.findAllByText("R$ 12,34");
+		expect(api.getDashboard).toHaveBeenCalledOnce();
+
+		await user.clear(screen.getByLabelText("Data final"));
+		await user.click(screen.getByRole("button", { name: "Aplicar intervalo" }));
+		expect(
+			await screen.findByText("Informe uma data final válida."),
+		).toHaveAttribute("role", "alert");
+		expect(api.getDashboard).toHaveBeenCalledOnce();
+		expect(screen.getAllByText("R$ 12,34")).not.toHaveLength(0);
+
+		await user.type(screen.getByLabelText("Data final"), "2024-02-01");
+		await user.clear(screen.getByLabelText("Data inicial"));
+		await user.type(screen.getByLabelText("Data inicial"), "2024-03-01");
+		await user.click(screen.getByRole("button", { name: "Aplicar intervalo" }));
+		expect(
+			await screen.findByText(
+				"A data final deve ser igual ou posterior à inicial.",
+			),
+		).toHaveAttribute("role", "alert");
+		expect(api.getDashboard).toHaveBeenCalledOnce();
+
+		await user.clear(screen.getByLabelText("Data inicial"));
+		await user.type(screen.getByLabelText("Data inicial"), "9999-12-31");
+		await user.clear(screen.getByLabelText("Data final"));
+		await user.type(screen.getByLabelText("Data final"), "9999-12-31");
+		await user.click(screen.getByRole("button", { name: "Aplicar intervalo" }));
+		expect(
+			await screen.findByText(
+				"Escolha uma data final anterior a 31/12/9999.",
+			),
+		).toHaveAttribute("role", "alert");
+		expect(api.getDashboard).toHaveBeenCalledOnce();
+	});
+
+	it("keeps every period control reachable in order by keyboard on mobile", async () => {
+		const user = userEvent.setup();
+		renderFinancePage("dashboard");
+		await screen.findByText("Período do dashboard");
+
+		screen.getByLabelText("Data inicial").focus();
+		expect(screen.getByLabelText("Data inicial")).toHaveFocus();
+		await user.tab();
+		expect(screen.getByLabelText("Data final")).toHaveFocus();
+		await user.tab();
+		expect(
+			screen.getByRole("button", { name: "Aplicar intervalo" }),
+		).toHaveFocus();
+		await user.tab();
+		expect(screen.getByLabelText("Data de referência")).toHaveFocus();
+		await user.tab();
+		expect(
+			screen.getByRole("button", { name: "Selecionar mês completo" }),
+		).toHaveFocus();
+	});
+
 	it("uses a mobile drawer and a double-height description textarea", async () => {
 		const user = userEvent.setup();
 		renderFinancePage("dashboard");
-		await screen.findByText("Seu mês em movimento");
+		await screen.findByText("Suas finanças em movimento");
 		await user.click(screen.getByRole("button", { name: /novo lançamento/i }));
 
 		const drawer = await screen.findByRole("dialog");
@@ -483,7 +689,7 @@ describe("FinancePage", () => {
 		api.listPaymentMethods.mockResolvedValue([creditCard]);
 		const user = userEvent.setup();
 		renderFinancePage("dashboard");
-		await screen.findByText("Seu mês em movimento");
+		await screen.findByText("Suas finanças em movimento");
 		await user.click(screen.getByRole("button", { name: /novo lançamento/i }));
 		await user.click(screen.getByLabelText("Tipo"));
 		await user.click(await screen.findByRole("option", { name: "Despesa" }));

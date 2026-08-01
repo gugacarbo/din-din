@@ -108,9 +108,9 @@ export const listActivity = createServerFn({ method: "GET" })
 	.validator(financeSchemas.listActivity)
 	.handler(async ({ data }) => (await service()).listActivity(data));
 
-export const getDashboard = createServerFn({ method: "GET" }).handler(
-	async () => (await service()).getDashboard(),
-);
+export const getDashboard = createServerFn({ method: "GET" })
+	.validator(financeSchemas.dashboard)
+	.handler(async ({ data }) => (await service()).getDashboard(data));
 
 export const getReport = createServerFn({ method: "GET" })
 	.validator(financeSchemas.report)

@@ -205,10 +205,51 @@ export function sumMoneyCents(values: Iterable<number>) {
 	return safeMoneyCents(total);
 }
 
-function addDays(value: string, days: number) {
+export function addCivilDays(value: string, days: number) {
+	if (!isCivilDate(value)) throw new Error("Data civil inválida.");
 	const [year, month, day] = value.split("-").map(Number);
 	const date = new Date(Date.UTC(year, month - 1, day + days));
 	return date.toISOString().slice(0, 10);
+}
+
+export type InclusiveCivilPeriod = {
+	startDate: string;
+	endDate: string;
+};
+
+export type TechnicalCivilPeriod = {
+	startDate: string;
+	endDate: string;
+};
+
+export function inclusivePeriodToTechnical(
+	period: InclusiveCivilPeriod,
+): TechnicalCivilPeriod | null {
+	if (
+		!isCivilDate(period.startDate) ||
+		!isCivilDate(period.endDate) ||
+		period.startDate > period.endDate
+	)
+		return null;
+	const endDate = addCivilDays(period.endDate, 1);
+	if (!isCivilDate(endDate)) return null;
+	return {
+		startDate: period.startDate,
+		endDate,
+	};
+}
+
+export function civilMonthFor(referenceDate: string): InclusiveCivilPeriod {
+	if (!isCivilDate(referenceDate)) throw new Error("Data civil inválida.");
+	const [year, month] = referenceDate.split("-").map(Number);
+	return {
+		startDate: `${year}-${String(month).padStart(2, "0")}-01`,
+		endDate: monthDate(year, month, 31),
+	};
+}
+
+export function currentSaoPauloMonth(date = new Date()) {
+	return civilMonthFor(saoPauloToday(date));
 }
 
 export function periodFor(
@@ -217,7 +258,7 @@ export function periodFor(
 ) {
 	if (!isCivilDate(anchorDate)) throw new Error("Data civil inválida.");
 	if (granularity === "day")
-		return { startDate: anchorDate, endDate: addDays(anchorDate, 1) };
+		return { startDate: anchorDate, endDate: addCivilDays(anchorDate, 1) };
 	if (granularity === "month") {
 		const [year, month] = anchorDate.split("-").map(Number);
 		return {
@@ -230,8 +271,8 @@ export function periodFor(
 	const [year, month, day] = anchorDate.split("-").map(Number);
 	const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
 	const offsetFromMonday = weekday === 0 ? 6 : weekday - 1;
-	const startDate = addDays(anchorDate, -offsetFromMonday);
-	return { startDate, endDate: addDays(startDate, 7) };
+	const startDate = addCivilDays(anchorDate, -offsetFromMonday);
+	return { startDate, endDate: addCivilDays(startDate, 7) };
 }
 
 export function saoPauloToday(date = new Date()) {

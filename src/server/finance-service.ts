@@ -55,6 +55,16 @@ const civilDate = z.string().refine(isCivilDate, "Informe uma data válida.");
 const referenceMonth = z
 	.string()
 	.regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Informe um mês de referência válido.");
+const dashboardPeriod = z
+	.object({
+		startDate: civilDate,
+		endDate: civilDate,
+	})
+	.strict()
+	.refine((value) => value.startDate < value.endDate, {
+		message: "A data final deve ser posterior à data inicial.",
+		path: ["endDate"],
+	});
 const nullablePaymentMethod = z.string().uuid().nullable();
 const categoryInput = z.object({
 	type: categoryType,
@@ -247,6 +257,7 @@ export const financeSchemas = {
 	listActivity: z.object({
 		cursor: z.string().optional(),
 	}),
+	dashboard: dashboardPeriod,
 	report: z.object({
 		granularity: z.enum(["day", "week", "month"]),
 		anchorDate: civilDate,
@@ -1048,6 +1059,31 @@ export function createFinanceService({
 					b.referenceMonth.localeCompare(a.referenceMonth) ||
 					a.paymentMethod.name.localeCompare(b.paymentMethod.name),
 			);
+	}
+	async function scheduledTransactionIdsInPeriod(
+		id: string,
+		startDate: string,
+		endDate: string,
+	) {
+		const rows = await db
+			.selectDistinct({ transactionId: transactionInstallments.transactionId })
+			.from(transactionInstallments)
+			.innerJoin(
+				transactions,
+				and(
+					eq(transactionInstallments.transactionId, transactions.id),
+					eq(transactionInstallments.userId, transactions.userId),
+				),
+			)
+			.where(
+				and(
+					eq(transactionInstallments.userId, id),
+					isNull(transactions.archivedAt),
+					gte(transactions.occurredAt, startDate),
+					lt(transactions.occurredAt, endDate),
+				),
+			);
+		return new Set(rows.map((row) => row.transactionId));
 	}
 	async function invoicePageKeys(
 		id: string,
@@ -1906,11 +1942,16 @@ export function createFinanceService({
 				throw new FinanceError("NOT_FOUND", "Pagamento não encontrado.");
 			return { id: deleted[0].id };
 		},
-		async getDashboard() {
+		async getDashboard(
+			data: z.infer<typeof financeSchemas.dashboard> = periodFor(
+				"month",
+				saoPauloToday(),
+			),
+		) {
 			const id = await userId();
 			await bootstrap(db, d1, id);
-			const { startDate, endDate } = periodFor("month", saoPauloToday());
-			const [rows, invoices] = await Promise.all([
+			const { startDate, endDate } = data;
+			const [rows, invoices, scheduledTransactionIds] = await Promise.all([
 				db
 					.select({ transaction: transactions, paymentMethod: paymentMethods })
 					.from(transactions)
@@ -1930,12 +1971,8 @@ export function createFinanceService({
 						),
 					),
 				buildInvoices(id, invoiceRange(startDate, endDate)),
+				scheduledTransactionIdsInPeriod(id, startDate, endDate),
 			]);
-			const scheduledTransactionIds = new Set(
-				invoices.flatMap((invoice) =>
-					invoice.items.map((item) => item.transactionId),
-				),
-			);
 			const incomeCents = sumMoneyCents(
 				rows
 					.filter((row) => row.transaction.type === "income")
@@ -1984,6 +2021,7 @@ export function createFinanceService({
 			}
 			const recentActivity = await activityPage(id, undefined, 5);
 			return {
+				period: { startDate, endDate },
 				month: {
 					incomeCents,
 					expenseCents,
@@ -1998,7 +2036,7 @@ export function createFinanceService({
 		async getReport(data: z.infer<typeof financeSchemas.report>) {
 			const id = await userId();
 			const period = periodFor(data.granularity, data.anchorDate);
-			const [rows, invoices] = await Promise.all([
+			const [rows, invoices, scheduledTransactionIds] = await Promise.all([
 				db
 					.select({
 						transaction: transactions,
@@ -2030,12 +2068,8 @@ export function createFinanceService({
 						),
 					),
 				buildInvoices(id, invoiceRange(period.startDate, period.endDate)),
+				scheduledTransactionIdsInPeriod(id, period.startDate, period.endDate),
 			]);
-			const scheduledTransactionIds = new Set(
-				invoices.flatMap((invoice) =>
-					invoice.items.map((item) => item.transactionId),
-				),
-			);
 			const incomeCents = sumMoneyCents(
 				rows
 					.filter((row) => row.transaction.type === "income")

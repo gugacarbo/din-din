@@ -105,6 +105,7 @@ import {
 	categoriesQueryOptions,
 	dashboardQueryOptions,
 	financeQueryKey,
+	initialDashboardPeriod,
 	invoicesQueryOptions,
 	paymentMethodsQueryOptions,
 	reportQueryOptions,
@@ -140,6 +141,7 @@ import {
 import { AppShell } from "./app-shell.tsx";
 import { CategorySelect } from "./category-select.tsx";
 import { ColorSelect } from "./color-select.tsx";
+import { DashboardPeriodFilter } from "./dashboard-period-filter.tsx";
 import { IconSelect } from "./icon-select.tsx";
 import { type Kind, KindSelect } from "./kind-select.tsx";
 import { PaymentMethodSelect } from "./payment-method-select.tsx";
@@ -573,15 +575,26 @@ function ActivityRows({
 }
 
 function Dashboard({ onView }: { onView: (item: TransactionDto) => void }) {
-	const result = useQuery(dashboardQueryOptions());
+	const [period, setPeriod] = useState(initialDashboardPeriod);
+	const result = useQuery(dashboardQueryOptions(period));
 	if (result.isPending) return <Loading />;
 	if (result.error || !result.data)
 		return <Notice>{errorMessage(result.error)}</Notice>;
 	const { month, recentActivity, incomeByPaymentMethod } = result.data;
 	return (
 		<>
-			<PageTitle compact eyebrow="visão geral" title="Seu mês em movimento" />
-			<section className="grid grid-cols-3 gap-2 md:gap-4">
+			<PageTitle
+				compact
+				eyebrow="visão geral"
+				title="Suas finanças em movimento"
+			/>
+			<DashboardPeriodFilter onPeriodChange={setPeriod} />
+			{result.isFetching ? (
+				<p aria-live="polite" className="sr-only" role="status">
+					Atualizando o período do dashboard.
+				</p>
+			) : null}
+			<section className="mt-5 grid grid-cols-3 gap-2 md:mt-7 md:gap-4">
 				<Summary
 					compact
 					label="Entradas"

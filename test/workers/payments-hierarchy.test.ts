@@ -133,6 +133,8 @@ describe("payment methods and category hierarchy", () => {
 			unregisteredExpenseCents: 167,
 			declaredOverPaymentCents: 0,
 		});
+		const june = await service.getReport({ granularity: "month", anchorDate: "2024-06-20" });
+		expect(june).toMatchObject({ expenseCents: 0, unregisteredExpenseCents: 0 });
 		const july = await service.getReport({ granularity: "month", anchorDate: "2024-07-10" });
 		expect(july).toMatchObject({ expenseCents: 500, unregisteredExpenseCents: 167 });
 		const activity = await service.listActivity({});

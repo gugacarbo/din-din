@@ -9,3 +9,4 @@ formato da tabela é apontada pelo comando, nunca lida em silêncio.
 | NNNN | título | data | situação |
 |---|---|---|---|
 | 0011 | Conciliação de faturas e compras parceladas no cartão | 2026-07-23 | em uso |
+| 0012 | Filtrar o dashboard por intervalo e mês de referência | 2026-08-01 | em uso |

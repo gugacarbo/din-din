@@ -59,16 +59,101 @@ describe("finance periods through the test-only HTTP Worker", () => {
 		await aData.service.archiveTransaction({ id: archived.id });
 		await create(bData.service, { type: "expense", categoryId: bData.expense.id, amountCents: 80000, occurredAt: "2024-02-15", description: "b-internal" });
 
-		const response = await fetchAs(a, "/__test/finance/dashboard");
+		const response = await fetchAs(
+			a,
+			"/__test/finance/dashboard?startDate=2024-02-10&endDate=2024-03-01",
+		);
 		expect(response.status).toBe(200);
 		const result = (await response.json()) as Dashboard;
-		expect(result.month).toEqual({ incomeCents: 10000, expenseCents: 10000, balanceCents: 0 });
+		expect(result).toMatchObject({
+			period: { startDate: "2024-02-10", endDate: "2024-03-01" },
+			month: { incomeCents: 0, expenseCents: 10000, balanceCents: -10000 },
+			incomeByPaymentMethod: [],
+		});
 		expect(result.recentActivity).toHaveLength(5);
 		const recentTransactions = result.recentActivity
 			.filter((item) => item.kind === "transaction")
 			.map((item) => item.transaction);
 		expect(recentTransactions.map((item) => item.description)).toContain("a-boundary");
 		expect(recentTransactions.every((item) => item.description?.startsWith("a-") && item.description !== "a-archived")).toBe(true);
+	});
+
+	it("recognizes controlled card purchases only when their installments are due", async () => {
+		const { a } = await createAuthedPair();
+		const data = await seed(a, "2024-02-10", "controlled-card");
+		const card = await data.service.createPaymentMethod({
+			name: "Future invoice card",
+			kind: "credit_card",
+			colorKey: "indigo",
+			iconKey: "CreditCard",
+			invoiceControl: true,
+			closingDay: 20,
+			dueDay: 28,
+		});
+		await create(data.service, {
+			type: "expense",
+			categoryId: data.expense.id,
+			amountCents: 1000,
+			occurredAt: "2024-02-10",
+			description: "future installments",
+			paymentMethodId: card.id,
+			installmentCount: 2,
+			firstInvoiceReferenceMonth: "2024-03",
+		});
+		await create(data.service, {
+			type: "expense",
+			categoryId: data.expense.id,
+			amountCents: 400,
+			occurredAt: "2024-02-11",
+			description: "regular expense",
+		});
+
+		const dashboard = await data.service.getDashboard({
+			startDate: "2024-02-01",
+			endDate: "2024-03-01",
+		});
+		const report = await data.service.getReport({
+			granularity: "month",
+			anchorDate: "2024-02-10",
+		});
+
+		expect(dashboard.month.expenseCents).toBe(400);
+		expect(report).toMatchObject({
+			expenseCents: 400,
+			unregisteredExpenseCents: 0,
+		});
+
+		const dueDayResponse = await fetchAs(
+			a,
+			"/__test/finance/dashboard?startDate=2024-03-28&endDate=2024-03-29",
+		);
+		expect(dueDayResponse.status).toBe(200);
+		expect(await dueDayResponse.json()).toMatchObject({
+			period: { startDate: "2024-03-28", endDate: "2024-03-29" },
+			month: { incomeCents: 0, expenseCents: 500, balanceCents: -500 },
+		});
+
+		const exclusiveEndResponse = await fetchAs(
+			a,
+			"/__test/finance/dashboard?startDate=2024-03-27&endDate=2024-03-28",
+		);
+		expect(exclusiveEndResponse.status).toBe(200);
+		expect(await exclusiveEndResponse.json()).toMatchObject({
+			month: { incomeCents: 0, expenseCents: 0, balanceCents: 0 },
+		});
+	});
+
+	it.each([
+		"/__test/finance/dashboard",
+		"/__test/finance/dashboard?startDate=2024-02-01",
+		"/__test/finance/dashboard?startDate=2024-02-30&endDate=2024-03-01",
+		"/__test/finance/dashboard?startDate=2024-03-01&endDate=2024-03-01",
+		"/__test/finance/dashboard?startDate=2024-03-02&endDate=2024-03-01",
+	])("rejects an invalid dashboard period without changing data: %s", async (path) => {
+		const { a } = await createAuthedPair();
+		const before = await env.DB.prepare("select count(*) as count from transactions").first<{ count: number }>();
+		expect((await fetchAs(a, path)).status).toBe(400);
+		expect(await env.DB.prepare("select count(*) as count from transactions").first<{ count: number }>().then((row) => row?.count)).toBe(before?.count);
 	});
 
 	for (const scenario of [
@@ -101,12 +186,12 @@ describe("finance periods through the test-only HTTP Worker", () => {
 		const aData = await seed(a, "2024-02-10", "identity-a");
 		await create(aData.service, { type: "income", categoryId: aData.income.id, amountCents: 10000, occurredAt: "2024-02-10", description: "a-only" });
 		const before = await env.DB.prepare("select count(*) as count from transactions").first<{ count: number }>();
-		expect((await fetchAs(a, `/__test/finance/dashboard?userId=${b.id}`)).status).toBe(400);
+		expect((await fetchAs(a, `/__test/finance/dashboard?startDate=2024-02-01&endDate=2024-03-01&userId=${b.id}`)).status).toBe(400);
 		expect((await fetchAs(a, `/__test/finance/report?granularity=month&anchorDate=2024-02-10&userId=${b.id}`)).status).toBe(400);
 		expect((await fetchAs(a, "/__test/finance/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: b.id }) })).status).toBe(405);
 		expect(await env.DB.prepare("select count(*) as count from transactions").first<{ count: number }>().then((row) => row?.count)).toBe(before?.count);
-		expect((await fetchAs(a, "/__test/finance/dashboard")).status).toBe(200);
+		expect((await fetchAs(a, "/__test/finance/dashboard?startDate=2024-02-01&endDate=2024-03-01")).status).toBe(200);
 		expect((await fetchAs(a, "/__test/finance/report?granularity=month&anchorDate=2024-02-10")).status).toBe(200);
-		expect((await SELF.fetch("https://test.invalid/__test/finance/dashboard")).status).toBe(401);
+		expect((await SELF.fetch("https://test.invalid/__test/finance/dashboard?startDate=2024-02-01&endDate=2024-03-01")).status).toBe(401);
 	});
 });

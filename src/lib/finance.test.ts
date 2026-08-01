@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	addCivilDays,
 	CATEGORY_ICONS,
+	civilMonthFor,
+	currentSaoPauloMonth,
+	inclusivePeriodToTechnical,
 	invoiceCycleFor,
 	invoiceCycleForReferenceMonth,
 	isCivilDate,
@@ -41,6 +45,58 @@ describe("finance helpers", () => {
 		expect(periodFor("month", "2024-12-10")).toEqual({
 			startDate: "2024-12-01",
 			endDate: "2025-01-01",
+		});
+	});
+
+	it("converts inclusive dashboard periods to an exclusive technical end", () => {
+		expect(
+			inclusivePeriodToTechnical({
+				startDate: "2024-02-29",
+				endDate: "2024-02-29",
+			}),
+		).toEqual({ startDate: "2024-02-29", endDate: "2024-03-01" });
+		expect(
+			inclusivePeriodToTechnical({
+				startDate: "2024-12-20",
+				endDate: "2024-12-31",
+			}),
+		).toEqual({ startDate: "2024-12-20", endDate: "2025-01-01" });
+		expect(
+			inclusivePeriodToTechnical({
+				startDate: "2024-03-01",
+				endDate: "2024-02-29",
+			}),
+		).toBeNull();
+		expect(
+			inclusivePeriodToTechnical({
+				startDate: "2024-02-30",
+				endDate: "2024-03-01",
+			}),
+		).toBeNull();
+		expect(
+			inclusivePeriodToTechnical({
+				startDate: "9999-12-31",
+				endDate: "9999-12-31",
+			}),
+		).toBeNull();
+	});
+
+	it("selects complete civil months across leap years and year boundaries", () => {
+		expect(civilMonthFor("2024-02-10")).toEqual({
+			startDate: "2024-02-01",
+			endDate: "2024-02-29",
+		});
+		expect(civilMonthFor("2024-12-31")).toEqual({
+			startDate: "2024-12-01",
+			endDate: "2024-12-31",
+		});
+		expect(addCivilDays("2024-12-31", 1)).toBe("2025-01-01");
+	});
+
+	it("uses São Paulo civil time for the initial dashboard month", () => {
+		expect(currentSaoPauloMonth(new Date("2026-03-01T01:30:00.000Z"))).toEqual({
+			startDate: "2026-02-01",
+			endDate: "2026-02-28",
 		});
 	});
 

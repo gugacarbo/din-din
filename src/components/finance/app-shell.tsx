@@ -317,7 +317,7 @@ export function AppShell({
 								)}
 							</div>
 						</header>
-						<main className="mx-auto w-full max-w-[1080px] px-4 py-6 md:max-w-none md:px-8">
+						<main className="mx-auto w-full max-w-[1080px] px-4 py-6 md:max-w-none">
 							{children}
 						</main>
 					</SidebarInset>

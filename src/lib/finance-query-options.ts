@@ -1,6 +1,15 @@
-import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
+import {
+	infiniteQueryOptions,
+	keepPreviousData,
+	queryOptions,
+} from "@tanstack/react-query";
 
-import { saoPauloToday } from "#/lib/finance.ts";
+import {
+	currentSaoPauloMonth,
+	inclusivePeriodToTechnical,
+	saoPauloToday,
+	type TechnicalCivilPeriod,
+} from "#/lib/finance.ts";
 import {
 	getDashboard,
 	getReport,
@@ -21,10 +30,24 @@ export const sessionQueryOptions = () =>
 		queryFn: getSessionUser,
 	});
 
-export const dashboardQueryOptions = () =>
+export function initialDashboardPeriod(): TechnicalCivilPeriod {
+	const period = inclusivePeriodToTechnical(currentSaoPauloMonth());
+	if (!period) throw new Error("Período inicial do dashboard inválido.");
+	return period;
+}
+
+export const dashboardQueryOptions = (
+	period: TechnicalCivilPeriod = initialDashboardPeriod(),
+) =>
 	queryOptions({
-		queryKey: [...financeQueryKey, "dashboard"],
-		queryFn: getDashboard,
+		queryKey: [
+			...financeQueryKey,
+			"dashboard",
+			period.startDate,
+			period.endDate,
+		],
+		queryFn: () => getDashboard({ data: period }),
+		placeholderData: keepPreviousData,
 		staleTime: sidebarPrefetchStaleTime,
 	});
 

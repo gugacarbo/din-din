@@ -25,7 +25,8 @@ export default {
 		if (request.method !== "GET")
 			return new Response("Method not allowed", { status: 405 });
 		if (
-			(url.pathname === dashboardPath && [...url.searchParams].length > 0) ||
+			(url.pathname === dashboardPath &&
+				!hasOnly(url.searchParams, ["startDate", "endDate"])) ||
 			(url.pathname === reportPath &&
 				!hasOnly(url.searchParams, ["granularity", "anchorDate"]))
 		)
@@ -36,7 +37,15 @@ export default {
 				d1: env.DB,
 				headers: request.headers,
 			});
-			if (url.pathname === dashboardPath) return json(await service.getDashboard());
+			if (url.pathname === dashboardPath) {
+				const parsed = financeSchemas.dashboard.safeParse({
+					startDate: url.searchParams.get("startDate"),
+					endDate: url.searchParams.get("endDate"),
+				});
+				if (!parsed.success)
+					return new Response("Invalid dashboard period", { status: 400 });
+				return json(await service.getDashboard(parsed.data));
+			}
 			const parsed = financeSchemas.report.safeParse({
 				granularity: url.searchParams.get("granularity"),
 				anchorDate: url.searchParams.get("anchorDate"),

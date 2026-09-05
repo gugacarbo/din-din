@@ -19,22 +19,39 @@ export type ReportChartItem = {
 
 export function ReportsChart({
 	data,
-	expenseCents,
+	totalCents,
+	kind,
+	grouping,
 }: {
 	data: ReportChartItem[];
-	expenseCents: number;
+	totalCents: number;
+	kind: "income" | "expense";
+	grouping: string;
 }) {
 	const config = Object.fromEntries(
 		data.map((item) => [item.category, { label: item.category }]),
 	);
 	const formatMoney = (value: number) => money.format(value / 100);
+	const noun = kind === "income" ? "receitas" : "despesas";
+	const singular = kind === "income" ? "receita" : "despesa";
+	if (!data.length)
+		return (
+			<div
+				aria-label={`Distribuição de ${noun} por ${grouping}`}
+				className="grid min-h-40 place-items-center text-center text-sm text-muted-foreground"
+				role="status"
+			>
+				Nenhuma {singular} no período.
+			</div>
+		);
 
 	return (
 		<div className="relative mx-auto size-40">
 			<ChartContainer
-				aria-label="Distribuição de despesas por categoria"
+				aria-label={`Distribuição de ${noun} por ${grouping}`}
 				className="size-40"
 				config={config}
+				role="img"
 			>
 				<PieChart>
 					<ChartTooltip
@@ -61,9 +78,9 @@ export function ReportsChart({
 			</ChartContainer>
 			<div className="pointer-events-none absolute inset-0 grid place-items-center text-center text-xs font-bold text-card-foreground">
 				<div>
-					{formatMoney(expenseCents)}
+					{formatMoney(totalCents)}
 					<br />
-					em despesas
+					em {noun}
 				</div>
 			</div>
 		</div>

@@ -17,6 +17,7 @@ import { z } from "zod";
 import { createDb } from "#/db";
 import {
 	categories,
+	creditCardInvoiceCycles,
 	creditCardInvoicePayments,
 	paymentMethodBootstrap,
 	paymentMethods,
@@ -122,6 +123,7 @@ type InvoiceCursor = { referenceMonth: string; paymentMethodId: string };
 type InvoiceKey = InvoiceCursor;
 type CategoryRow = typeof categories.$inferSelect;
 type PaymentRow = typeof paymentMethods.$inferSelect;
+type InvoiceCycleRow = typeof creditCardInvoiceCycles.$inferSelect;
 
 export type CategoryDto = {
 	id: string;
@@ -838,6 +840,44 @@ export function createFinanceService({
 			referenceMonth: shiftReferenceMonth(firstReferenceMonth, index),
 		}));
 	}
+	function invoiceCycleStatements(
+		id: string,
+		method: PaymentRow | null,
+		schedule: ReturnType<typeof installmentSchedule>,
+		timestamp: number,
+	) {
+		if (!schedule.length || !method?.closingDay || !method.dueDay) return [];
+		return [
+			...new Set(schedule.map((installment) => installment.referenceMonth)),
+		].map((referenceMonth) => {
+			const cycle = invoiceCycleForReferenceMonth(
+				referenceMonth,
+				method.closingDay!,
+				method.dueDay!,
+			);
+			return d1
+				.prepare(
+					"insert into credit_card_invoice_cycles (id,user_id,payment_method_id,reference_month,cycle_closing_date,cycle_due_date,created_at,updated_at) values (?,?,?,?,?,?,?,?) on conflict(user_id,payment_method_id,reference_month) do nothing",
+				)
+				.bind(
+					crypto.randomUUID(),
+					id,
+					method.id,
+					referenceMonth,
+					cycle.closingDate,
+					cycle.dueDate,
+					timestamp,
+					timestamp,
+				);
+		});
+	}
+	function pruneInvoiceCyclesStatement(id: string) {
+		return d1
+			.prepare(
+				"delete from credit_card_invoice_cycles where user_id=? and not exists (select 1 from transaction_installments where transaction_installments.user_id=credit_card_invoice_cycles.user_id and transaction_installments.payment_method_id=credit_card_invoice_cycles.payment_method_id and transaction_installments.reference_month=credit_card_invoice_cycles.reference_month) and not exists (select 1 from credit_card_invoice_payments where credit_card_invoice_payments.user_id=credit_card_invoice_cycles.user_id and credit_card_invoice_payments.payment_method_id=credit_card_invoice_cycles.payment_method_id and credit_card_invoice_payments.reference_month=credit_card_invoice_cycles.reference_month)",
+			)
+			.bind(id);
+	}
 	type InvoiceReadOptions = {
 		keys?: InvoiceKey[];
 		startReferenceMonth?: string;
@@ -897,6 +937,29 @@ export function createFinanceService({
 							)
 						: undefined,
 				);
+		const cycleRange = options.keys
+			? or(
+					...options.keys.map((key) =>
+						and(
+							eq(creditCardInvoiceCycles.paymentMethodId, key.paymentMethodId),
+							eq(creditCardInvoiceCycles.referenceMonth, key.referenceMonth),
+						),
+					),
+				)
+			: and(
+					options.startReferenceMonth
+						? gte(
+								creditCardInvoiceCycles.referenceMonth,
+								options.startReferenceMonth,
+							)
+						: undefined,
+					options.endReferenceMonth
+						? lt(
+								creditCardInvoiceCycles.referenceMonth,
+								options.endReferenceMonth,
+							)
+						: undefined,
+				);
 		const installmentRows = await db
 			.select({
 				installment: transactionInstallments,
@@ -948,15 +1011,26 @@ export function createFinanceService({
 				),
 			)
 			.where(and(eq(creditCardInvoicePayments.userId, id), paymentRange));
+		const cycleRows = await db
+			.select()
+			.from(creditCardInvoiceCycles)
+			.where(and(eq(creditCardInvoiceCycles.userId, id), cycleRange));
 		type InvoiceDraft = {
 			paymentMethod: PaymentRow;
 			referenceMonth: string;
+			cycle: InvoiceCycleRow | null;
 			payment: typeof creditCardInvoicePayments.$inferSelect | null;
 			items: InvoiceDto["items"];
 		};
 		const grouped = new Map<string, InvoiceDraft>();
 		const keyFor = (paymentMethodId: string, month: string) =>
 			`${paymentMethodId}|${month}`;
+		const cycleByKey = new Map(
+			cycleRows.map((cycle) => [
+				keyFor(cycle.paymentMethodId, cycle.referenceMonth),
+				cycle,
+			]),
+		);
 		const categoryById = await categoryMap(db, id);
 		for (const row of installmentRows) {
 			const key = keyFor(
@@ -966,6 +1040,7 @@ export function createFinanceService({
 			const draft = grouped.get(key) ?? {
 				paymentMethod: row.paymentMethod,
 				referenceMonth: row.installment.referenceMonth,
+				cycle: cycleByKey.get(key) ?? null,
 				payment: null,
 				items: [],
 			};
@@ -988,6 +1063,7 @@ export function createFinanceService({
 			const draft = grouped.get(key) ?? {
 				paymentMethod: row.paymentMethod,
 				referenceMonth: row.payment.referenceMonth,
+				cycle: cycleByKey.get(key) ?? null,
 				payment: null,
 				items: [],
 			};
@@ -1000,6 +1076,7 @@ export function createFinanceService({
 				const payment = draft.payment ? invoicePaymentDto(draft.payment) : null;
 				const cycle =
 					payment ??
+					draft.cycle ??
 					(draft.paymentMethod.closingDay && draft.paymentMethod.dueDay
 						? invoiceCycleForReferenceMonth(
 								draft.referenceMonth,
@@ -1137,6 +1214,7 @@ export function createFinanceService({
 		id: string,
 		cursor: Cursor | undefined,
 		limit: number,
+		expandToDay = true,
 	) {
 		const transactionAfter = cursor
 			? or(
@@ -1166,71 +1244,155 @@ export function createFinanceService({
 					),
 				)
 			: undefined;
-		const [transactionRows, paymentRows] = await Promise.all([
-			db
-				.select({
-					id: transactions.id,
-					activityDate: transactions.occurredAt,
-					createdAt: transactions.createdAt,
-				})
-				.from(transactions)
-				.where(
-					and(
-						eq(transactions.userId, id),
-						isNull(transactions.archivedAt),
-						transactionAfter,
-					),
+		const readCandidates = async (fetchLimit: number) => {
+			const [transactionRows, paymentRows] = await Promise.all([
+				db
+					.select({
+						id: transactions.id,
+						activityDate: transactions.occurredAt,
+						createdAt: transactions.createdAt,
+					})
+					.from(transactions)
+					.where(
+						and(
+							eq(transactions.userId, id),
+							isNull(transactions.archivedAt),
+							transactionAfter,
+						),
+					)
+					.orderBy(
+						desc(transactions.occurredAt),
+						desc(transactions.createdAt),
+						desc(transactions.id),
+					)
+					.limit(fetchLimit + 1),
+				db
+					.select({
+						payment: creditCardInvoicePayments,
+						paymentMethod: paymentMethods,
+					})
+					.from(creditCardInvoicePayments)
+					.innerJoin(
+						paymentMethods,
+						and(
+							eq(creditCardInvoicePayments.paymentMethodId, paymentMethods.id),
+							eq(creditCardInvoicePayments.userId, paymentMethods.userId),
+						),
+					)
+					.where(and(eq(creditCardInvoicePayments.userId, id), paymentAfter))
+					.orderBy(
+						desc(creditCardInvoicePayments.paidAt),
+						desc(creditCardInvoicePayments.createdAt),
+						desc(creditCardInvoicePayments.id),
+					)
+					.limit(fetchLimit + 1),
+			]);
+			return [
+				...transactionRows.map((row) => ({
+					kind: "transaction" as const,
+					id: row.id,
+					activityDate: row.activityDate,
+					createdAt: row.createdAt,
+				})),
+				...paymentRows.map((row) => ({
+					kind: "invoice_payment" as const,
+					id: row.payment.id,
+					activityDate: row.payment.paidAt,
+					createdAt: row.payment.createdAt,
+					row,
+				})),
+			]
+				.sort(
+					(a, b) =>
+						b.activityDate.localeCompare(a.activityDate) ||
+						b.createdAt - a.createdAt ||
+						b.id.localeCompare(a.id),
 				)
-				.orderBy(
-					desc(transactions.occurredAt),
-					desc(transactions.createdAt),
-					desc(transactions.id),
-				)
-				.limit(limit + 1),
-			db
-				.select({
-					payment: creditCardInvoicePayments,
-					paymentMethod: paymentMethods,
-				})
-				.from(creditCardInvoicePayments)
-				.innerJoin(
-					paymentMethods,
-					and(
-						eq(creditCardInvoicePayments.paymentMethodId, paymentMethods.id),
-						eq(creditCardInvoicePayments.userId, paymentMethods.userId),
-					),
-				)
-				.where(and(eq(creditCardInvoicePayments.userId, id), paymentAfter))
-				.orderBy(
-					desc(creditCardInvoicePayments.paidAt),
-					desc(creditCardInvoicePayments.createdAt),
-					desc(creditCardInvoicePayments.id),
-				)
-				.limit(limit + 1),
-		]);
-		const candidates = [
-			...transactionRows.map((row) => ({
-				kind: "transaction" as const,
-				id: row.id,
-				activityDate: row.activityDate,
-				createdAt: row.createdAt,
-			})),
-			...paymentRows.map((row) => ({
-				kind: "invoice_payment" as const,
-				id: row.payment.id,
-				activityDate: row.payment.paidAt,
-				createdAt: row.payment.createdAt,
-				row,
-			})),
-		]
-			.sort(
-				(a, b) =>
-					b.activityDate.localeCompare(a.activityDate) ||
-					b.createdAt - a.createdAt ||
-					b.id.localeCompare(a.id),
-			)
-			.slice(0, limit + 1);
-		const page = candidates.slice(0, limit);
+				.slice(0, fetchLimit * 2 + 2);
+		};
+		const candidates = await readCandidates(limit);
+		if (!expandToDay) {
+			const page = candidates.slice(0, limit);
+			const [transactionById, pageInvoices] = await Promise.all([
+				transactionDtos(
+					db,
+					id,
+					page
+						.filter((item) => item.kind === "transaction")
+						.map((item) => item.id),
+				),
+				buildInvoices(id, {
+					keys: page
+						.filter((item) => item.kind === "invoice_payment")
+						.map((item) => ({
+							paymentMethodId: item.row.payment.paymentMethodId,
+							referenceMonth: item.row.payment.referenceMonth,
+						})),
+				}),
+			]);
+			const invoiceByKey = new Map(
+				pageInvoices.map((invoice) => [
+					`${invoice.paymentMethodId}|${invoice.referenceMonth}`,
+					invoice,
+				]),
+			);
+			const items = page.map((item) =>
+				item.kind === "transaction"
+					? {
+							kind: "transaction" as const,
+							activityDate: item.activityDate,
+							transaction: transactionById.get(item.id)!,
+						}
+					: {
+							kind: "invoice_payment" as const,
+							activityDate: item.activityDate,
+							payment: invoicePaymentDto(item.row.payment),
+							paymentMethod: paymentDto(item.row.paymentMethod),
+							itemsTotalCents:
+								invoiceByKey.get(
+									`${item.row.payment.paymentMethodId}|${item.row.payment.referenceMonth}`,
+								)?.itemsTotalCents ?? 0,
+							unregisteredExpenseCents:
+								invoiceByKey.get(
+									`${item.row.payment.paymentMethodId}|${item.row.payment.referenceMonth}`,
+								)?.unregisteredExpenseCents ?? item.row.payment.amountCents,
+							declaredOverPaymentCents:
+								invoiceByKey.get(
+									`${item.row.payment.paymentMethodId}|${item.row.payment.referenceMonth}`,
+								)?.declaredOverPaymentCents ?? 0,
+						},
+			);
+			const last = page.at(-1);
+			return {
+				items,
+				nextCursor:
+					candidates.length > limit && last
+						? encodeCursor({
+								occurredAt: last.activityDate,
+								createdAt: last.createdAt,
+								id: last.id,
+							})
+						: null,
+			};
+		}
+		let fetchLimit = limit;
+		let expandedCandidates = candidates;
+		while (expandedCandidates.length > fetchLimit) {
+			const boundaryDate = expandedCandidates[limit - 1]?.activityDate;
+			const nextDifferent = expandedCandidates.findIndex(
+				(item, index) => index >= limit && item.activityDate !== boundaryDate,
+			);
+			if (nextDifferent !== -1) break;
+			fetchLimit *= 2;
+			expandedCandidates = await readCandidates(fetchLimit);
+		}
+		const boundaryDate = expandedCandidates[limit - 1]?.activityDate;
+		const nextDifferent = expandedCandidates.findIndex(
+			(item, index) => index >= limit && item.activityDate !== boundaryDate,
+		);
+		const pageLength =
+			nextDifferent === -1 ? expandedCandidates.length : nextDifferent;
+		const page = expandedCandidates.slice(0, pageLength);
 		const [transactionById, pageInvoices] = await Promise.all([
 			transactionDtos(
 				db,
@@ -1279,7 +1441,7 @@ export function createFinanceService({
 		return {
 			items,
 			nextCursor:
-				candidates.length > limit && last
+				expandedCandidates.length > page.length && last
 					? encodeCursor({
 							occurredAt: last.activityDate,
 							createdAt: last.createdAt,
@@ -1619,6 +1781,9 @@ export function createFinanceService({
 						timestamp,
 					),
 			];
+			statements.push(
+				...invoiceCycleStatements(id, method, schedule, timestamp),
+			);
 			for (const installment of schedule)
 				statements.push(
 					d1
@@ -1696,6 +1861,9 @@ export function createFinanceService({
 					)
 					.bind(data.id, id),
 			];
+			statements.push(
+				...invoiceCycleStatements(id, method, schedule, timestamp),
+			);
 			for (const installment of schedule)
 				statements.push(
 					d1
@@ -1715,6 +1883,7 @@ export function createFinanceService({
 							timestamp,
 						),
 				);
+			statements.push(pruneInvoiceCyclesStatement(id));
 			await d1.batch(statements);
 			return transactionDto(db, id, data.id);
 		},
@@ -1858,11 +2027,31 @@ export function createFinanceService({
 					)
 					.limit(1)
 			)[0];
+			const persistedCycle = (
+				await db
+					.select()
+					.from(creditCardInvoiceCycles)
+					.where(
+						and(
+							eq(creditCardInvoiceCycles.userId, id),
+							eq(creditCardInvoiceCycles.paymentMethodId, data.paymentMethodId),
+							eq(creditCardInvoiceCycles.referenceMonth, data.referenceMonth),
+						),
+					)
+					.limit(1)
+			)[0];
 			if (method.archivedAt && !existing) {
 				const installment = (
 					await db
 						.select({ id: transactionInstallments.id })
 						.from(transactionInstallments)
+						.innerJoin(
+							transactions,
+							and(
+								eq(transactionInstallments.transactionId, transactions.id),
+								eq(transactionInstallments.userId, transactions.userId),
+							),
+						)
 						.where(
 							and(
 								eq(transactionInstallments.userId, id),
@@ -1871,6 +2060,7 @@ export function createFinanceService({
 									data.paymentMethodId,
 								),
 								eq(transactionInstallments.referenceMonth, data.referenceMonth),
+								isNull(transactions.archivedAt),
 							),
 						)
 						.limit(1)
@@ -1886,11 +2076,16 @@ export function createFinanceService({
 						closingDate: existing.cycleClosingDate,
 						dueDate: existing.cycleDueDate,
 					}
-				: invoiceCycleForReferenceMonth(
-						data.referenceMonth,
-						method.closingDay,
-						method.dueDay,
-					);
+				: persistedCycle
+					? {
+							closingDate: persistedCycle.cycleClosingDate,
+							dueDate: persistedCycle.cycleDueDate,
+						}
+					: invoiceCycleForReferenceMonth(
+							data.referenceMonth,
+							method.closingDay,
+							method.dueDay,
+						);
 			const timestamp = now();
 			const paymentId = existing?.id ?? crypto.randomUUID();
 			await d1
@@ -2019,7 +2214,7 @@ export function createFinanceService({
 				]);
 				byPayment.set(key, item);
 			}
-			const recentActivity = await activityPage(id, undefined, 5);
+			const recentActivity = await activityPage(id, undefined, 5, false);
 			return {
 				period: { startDate, endDate },
 				month: {
@@ -2028,7 +2223,10 @@ export function createFinanceService({
 					balanceCents: sumMoneyCents([incomeCents, -expenseCents]),
 				},
 				incomeByPaymentMethod: [...byPayment.values()].sort(
-					(a, b) => b.amountCents - a.amountCents,
+					(a, b) =>
+						b.amountCents - a.amountCents ||
+						a.name.localeCompare(b.name) ||
+						(a.paymentMethodId ?? "").localeCompare(b.paymentMethodId ?? ""),
 				),
 				recentActivity: recentActivity.items,
 			};
@@ -2184,6 +2382,18 @@ export function createFinanceService({
 				]);
 				income.set(key, item);
 			}
+			const incomeByCategory = new Map<string, number>();
+			for (const row of rows.filter(
+				(item) => item.transaction.type === "income",
+			)) {
+				incomeByCategory.set(
+					row.category.id,
+					sumMoneyCents([
+						incomeByCategory.get(row.category.id) ?? 0,
+						row.transaction.amountCents,
+					]),
+				);
+			}
 			return {
 				period: {
 					granularity: data.granularity,
@@ -2196,8 +2406,23 @@ export function createFinanceService({
 				balanceCents: sumMoneyCents([incomeCents, -expenseCents]),
 				expenseByCategory,
 				expenseCategoryTree: roots,
+				incomeByCategory: [...incomeByCategory.entries()]
+					.map(([categoryId, amountCents]) => {
+						const category = map.get(categoryId)!;
+						return {
+							categoryId,
+							categoryName: category.name,
+							colorKey: category.colorKey,
+							iconKey: category.iconKey,
+							amountCents,
+						};
+					})
+					.sort((a, b) => b.amountCents - a.amountCents),
 				incomeByPaymentMethod: [...income.values()].sort(
-					(a, b) => b.amountCents - a.amountCents,
+					(a, b) =>
+						b.amountCents - a.amountCents ||
+						a.name.localeCompare(b.name) ||
+						(a.paymentMethodId ?? "").localeCompare(b.paymentMethodId ?? ""),
 				),
 			};
 		},

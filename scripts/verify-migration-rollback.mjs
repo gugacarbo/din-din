@@ -265,6 +265,13 @@ try {
 	run(["--command", "pragma foreign_key_check;", "--json"]);
 	for (const entry of migrations.filter((entry) => entry.idx > invoices.idx))
 		run(["--file", entry.file]);
+	const cycleBackfill = run([
+		"--command",
+		"select count(*) as invoice_cycle_count from credit_card_invoice_cycles where user_id='00000000-0000-4000-8000-000000000001' and payment_method_id='00000000-0000-4000-8000-000000000004' and reference_month='2024-02' and cycle_closing_date='2024-01-25' and cycle_due_date='2024-02-05';",
+		"--json",
+	]);
+	if (!/\"invoice_cycle_count\"\s*:\s*1/.test(cycleBackfill))
+		throw new Error("Invoice cycle migration did not backfill existing installments.");
 	run(["--command", "pragma foreign_key_check;", "--json"]);
 
 	for (const entry of migrations) run(["--file", entry.file], forwardScratch);

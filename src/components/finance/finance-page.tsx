@@ -99,6 +99,7 @@ import {
 	invoiceCycleFor,
 	isCivilDate,
 	saoPauloToday,
+	sumMoneyCents,
 } from "#/lib/finance.ts";
 import {
 	activityQueryOptions,
@@ -275,6 +276,10 @@ const money = new Intl.NumberFormat("pt-BR", {
 	currency: "BRL",
 });
 const moneyFromCents = (value: number) => money.format(value / 100);
+const formatCivilDate = (value: string) => {
+	const [year, month, day] = value.split("-");
+	return `${day}/${month}/${year}`;
+};
 const kindLabel = (kind: Kind) => (kind === "income" ? "Receita" : "Despesa");
 const errorMessage = (cause: unknown) =>
 	cause instanceof Error
@@ -481,96 +486,167 @@ function ActivityRows({
 				Nenhuma atividade por aqui.
 			</p>
 		);
-	return (
-		<ul className="divide-y divide-border">
-			{items.map((activity) => {
-				if (activity.kind === "transaction") {
-					const item = activity.transaction;
-					return (
-						<li className="flex items-center gap-3 py-3" key={`t:${item.id}`}>
-							<Button
-								aria-label={`Ver lançamento ${item.category.name}`}
-								className="h-auto min-w-0 flex-1 justify-start gap-3 p-0 text-left"
-								onClick={() => onView?.(item)}
-								type="button"
-								variant="ghost"
-							>
-								<CategoryMark
-									colorKey={item.category.colorKey}
-									iconKey={item.category.iconKey}
-								/>
-								<div className="min-w-0 flex-1">
-									<p className="font-semibold text-foreground">
-										{item.category.name}
-										{item.installmentPlan?.installmentCount &&
-										item.installmentPlan.installmentCount > 1
-											? ` · ${item.installmentPlan.installmentCount}x`
-											: ""}
-									</p>
-									<p className="truncate text-xs text-muted-foreground">
-										{item.occurredAt}
-										{item.description ? ` · ${item.description}` : ""}
-									</p>
-								</div>
-								<p
-									className={
-										item.type === "income"
-											? "font-bold text-emerald-600 dark:text-emerald-400"
-											: "font-bold text-destructive"
-									}
-								>
-									{item.type === "income" ? "+" : "−"}
-									{moneyFromCents(item.amountCents)}
-								</p>
-							</Button>
-							{mutationsAvailable && onEdit && (
-								<Button
-									aria-label="Editar lançamento"
-									onClick={() => onEdit(item)}
-									size="icon"
-									variant="ghost"
-								>
-									<Pencil />
-								</Button>
-							)}
-							{mutationsAvailable && onArchive && (
-								<Button
-									aria-label="Arquivar lançamento"
-									onClick={() => onArchive(item)}
-									size="icon"
-									variant="ghost"
-								>
-									<Trash2 />
-								</Button>
-							)}
-						</li>
-					);
-				}
-				return (
-					<li
-						className="flex items-center gap-3 py-3"
-						key={`p:${activity.payment.id}`}
+	const groups = new Map<string, FinanceActivityDto[]>();
+	for (const activity of items)
+		groups.set(activity.activityDate, [
+			...(groups.get(activity.activityDate) ?? []),
+			activity,
+		]);
+	const renderActivity = (activity: FinanceActivityDto) => {
+		if (activity.kind === "transaction") {
+			const item = activity.transaction;
+			return (
+				<li className="flex items-center gap-3 py-3" key={`t:${item.id}`}>
+					<Button
+						aria-label={`Ver lançamento ${item.category.name}`}
+						className="h-auto min-w-0 flex-1 justify-start gap-3 p-0 text-left"
+						onClick={() => onView?.(item)}
+						type="button"
+						variant="ghost"
 					>
 						<CategoryMark
-							colorKey={activity.paymentMethod.colorKey}
-							iconKey={activity.paymentMethod.iconKey}
+							colorKey={item.category.colorKey}
+							iconKey={item.category.iconKey}
 						/>
 						<div className="min-w-0 flex-1">
 							<p className="font-semibold text-foreground">
-								Pagamento da fatura · {activity.payment.referenceMonth}
+								{item.category.name}
+								{item.installmentPlan?.installmentCount &&
+								item.installmentPlan.installmentCount > 1
+									? ` · ${item.installmentPlan.installmentCount}x`
+									: ""}
 							</p>
 							<p className="truncate text-xs text-muted-foreground">
-								{activity.payment.paidAt} · {activity.paymentMethod.name} ·
-								liquidação, não é nova despesa
+								{item.occurredAt}
+								{item.description ? ` · ${item.description}` : ""}
 							</p>
 						</div>
-						<p className="font-bold text-foreground">
-							{moneyFromCents(activity.payment.amountCents)}
+						<p
+							className={
+								item.type === "income"
+									? "font-bold text-emerald-600 dark:text-emerald-400"
+									: "font-bold text-destructive"
+							}
+						>
+							{item.type === "income" ? "+" : "−"}
+							{moneyFromCents(item.amountCents)}
 						</p>
-					</li>
+					</Button>
+					{mutationsAvailable && onEdit && (
+						<Button
+							aria-label="Editar lançamento"
+							onClick={() => onEdit(item)}
+							size="icon"
+							variant="ghost"
+						>
+							<Pencil />
+						</Button>
+					)}
+					{mutationsAvailable && onArchive && (
+						<Button
+							aria-label="Arquivar lançamento"
+							onClick={() => onArchive(item)}
+							size="icon"
+							variant="ghost"
+						>
+							<Trash2 />
+						</Button>
+					)}
+				</li>
+			);
+		}
+		return (
+			<li
+				className="flex items-center gap-3 py-3"
+				key={`p:${activity.payment.id}`}
+			>
+				<CategoryMark
+					colorKey={activity.paymentMethod.colorKey}
+					iconKey={activity.paymentMethod.iconKey}
+				/>
+				<div className="min-w-0 flex-1">
+					<p className="font-semibold text-foreground">
+						Pagamento da fatura · {activity.payment.referenceMonth}
+					</p>
+					<p className="truncate text-xs text-muted-foreground">
+						{activity.payment.paidAt} · {activity.paymentMethod.name} ·
+						liquidação, não é nova despesa
+					</p>
+				</div>
+				<p className="font-bold text-foreground">
+					{moneyFromCents(activity.payment.amountCents)}
+				</p>
+			</li>
+		);
+	};
+	return (
+		<div className="space-y-6">
+			{[...groups.entries()].map(([date, dayItems]) => {
+				const incomes = dayItems.filter(
+					(
+						item,
+					): item is Extract<FinanceActivityDto, { kind: "transaction" }> =>
+						item.kind === "transaction" && item.transaction.type === "income",
+				);
+				const expenses = dayItems.filter(
+					(
+						item,
+					): item is Extract<FinanceActivityDto, { kind: "transaction" }> =>
+						item.kind === "transaction" && item.transaction.type === "expense",
+				);
+				const payments = dayItems.filter(
+					(item) => item.kind === "invoice_payment",
+				);
+				const incomeTotalCents = incomes.reduce(
+					(total, item) => sumMoneyCents([total, item.transaction.amountCents]),
+					0,
+				);
+				const expenseTotalCents = expenses.reduce(
+					(total, item) => sumMoneyCents([total, item.transaction.amountCents]),
+					0,
+				);
+				return (
+					<section aria-labelledby={`activity-day-${date}`} key={date}>
+						<h2
+							className="font-semibold text-foreground"
+							id={`activity-day-${date}`}
+						>
+							{formatCivilDate(date)}
+						</h2>
+						{incomes.length > 0 && (
+							<div>
+								<h3 className="mt-3 text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
+									Receitas: {moneyFromCents(incomeTotalCents)}
+								</h3>
+								<ul className="divide-y divide-border">
+									{incomes.map(renderActivity)}
+								</ul>
+							</div>
+						)}
+						{expenses.length > 0 && (
+							<div>
+								<h3 className="mt-3 text-xs font-bold uppercase tracking-widest text-destructive">
+									Despesas: {moneyFromCents(expenseTotalCents)}
+								</h3>
+								<ul className="divide-y divide-border">
+									{expenses.map(renderActivity)}
+								</ul>
+							</div>
+						)}
+						{payments.length > 0 && (
+							<div>
+								<h3 className="mt-3 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+									Liquidações
+								</h3>
+								<ul className="divide-y divide-border">
+									{payments.map(renderActivity)}
+								</ul>
+							</div>
+						)}
+					</section>
 				);
 			})}
-		</ul>
+		</div>
 	);
 }
 
@@ -2067,6 +2143,12 @@ function Payments() {
 	const methods = useQuery(paymentMethodsQueryOptions());
 	const invoices = useInfiniteQuery(invoicesQueryOptions());
 	const invoiceItems = invoices.data?.pages.flatMap((page) => page.items) ?? [];
+	const hasControlledCard = (methods.data ?? []).some(
+		(method) =>
+			method.kind === "credit_card" &&
+			method.invoiceControl &&
+			method.archivedAt === null,
+	);
 	const archiveMutation = useMutation({
 		mutationFn: (id: string) => archivePaymentMethod({ data: { id } }),
 		onSuccess: () =>
@@ -2106,7 +2188,9 @@ function Payments() {
 					</Button>
 					{tab === "invoices" && (
 						<Button
-							disabled={!mutationsAvailable}
+							disabled={
+								!mutationsAvailable || methods.isPending || !hasControlledCard
+							}
 							onClick={() => {
 								setPayingInvoice(null);
 								setPaymentOpen(true);
@@ -2222,6 +2306,12 @@ function Payments() {
 								<p className="text-sm text-muted-foreground">
 									Nenhuma fatura derivada no momento.
 								</p>
+								{!methods.isPending && !methods.error && !hasControlledCard && (
+									<p className="mt-2 text-sm text-muted-foreground">
+										Configure um cartão de crédito com controle de faturas para
+										registrar pagamentos.
+									</p>
+								)}
 							</FinanceCard>
 						) : (
 							invoiceItems.map((invoice) => (
@@ -2576,6 +2666,9 @@ function Reports() {
 	const [granularity, setGranularity] = useState<"day" | "week" | "month">(
 		"month",
 	);
+	const [incomeGrouping, setIncomeGrouping] = useState<"category" | "payment">(
+		"category",
+	);
 	const [anchorDate, setAnchorDate] = useState(saoPauloToday());
 	const [anchorDateInput, setAnchorDateInput] = useState(anchorDate);
 	const result = useQuery(reportQueryOptions(granularity, anchorDate));
@@ -2616,6 +2709,26 @@ function Reports() {
 							]
 						: []),
 				];
+	const incomeChartData =
+		report == null
+			? []
+			: incomeGrouping === "category"
+				? (report.incomeByCategory ?? []).map((item) => ({
+						amountCents: item.amountCents,
+						category: item.categoryName,
+						fill: chartColors[item.colorKey] ?? "#10b981",
+					}))
+				: report.incomeByPaymentMethod.map((item, index) => ({
+						amountCents: item.amountCents,
+						category: item.name,
+						fill: chartColors[
+							["emerald", "cyan", "violet", "blue", "orange", "amber"][
+								index % 6
+							]
+						],
+					}));
+	const incomeGroupingLabel =
+		incomeGrouping === "category" ? "categoria" : "forma de pagamento";
 	return (
 		<>
 			<PageTitle eyebrow="relatórios" title="Para onde foi seu dinheiro" />
@@ -2687,7 +2800,9 @@ function Reports() {
 								<Suspense fallback={<Skeleton className="mx-auto size-40" />}>
 									<ReportsChart
 										data={chartData}
-										expenseCents={report.expenseCents}
+										grouping="categoria"
+										kind="expense"
+										totalCents={report.expenseCents}
 									/>
 								</Suspense>
 								<div>
@@ -2709,6 +2824,44 @@ function Reports() {
 												{moneyFromCents(report.unregisteredExpenseCents)}
 											</strong>
 										</div>
+									)}
+								</div>
+							</FinanceCard>
+							<FinanceCard className="mt-7 grid gap-6 p-5 md:grid-cols-[180px_1fr]">
+								<Suspense fallback={<Skeleton className="mx-auto size-40" />}>
+									<ReportsChart
+										data={incomeChartData}
+										grouping={incomeGroupingLabel}
+										kind="income"
+										totalCents={report.incomeCents}
+									/>
+								</Suspense>
+								<div>
+									<div className="flex flex-wrap items-center justify-between gap-3">
+										<CardTitle className="text-2xl font-semibold text-foreground">
+											Receitas por {incomeGroupingLabel}
+										</CardTitle>
+										<Button
+											aria-label={`Agrupar receitas por ${incomeGrouping === "category" ? "forma de pagamento" : "categoria"}`}
+											aria-pressed={incomeGrouping === "category"}
+											onClick={() =>
+												setIncomeGrouping((value) =>
+													value === "category" ? "payment" : "category",
+												)
+											}
+											type="button"
+											variant="outline"
+										>
+											Agrupar por{" "}
+											{incomeGrouping === "category"
+												? "forma de pagamento"
+												: "categoria"}
+										</Button>
+									</div>
+									{incomeChartData.length === 0 && (
+										<p className="mt-3 text-sm text-muted-foreground">
+											Nenhuma receita no período.
+										</p>
 									)}
 								</div>
 							</FinanceCard>

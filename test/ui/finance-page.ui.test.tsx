@@ -505,6 +505,75 @@ describe("FinancePage", () => {
 		expect(screen.getByText("Entradas")).toBeInTheDocument();
 	});
 
+	it("renders report income sectors and switches their grouping", async () => {
+		api.getReport.mockResolvedValue({
+			period: { granularity: "month", anchorDate: "2024-02-10", startDate: "2024-02-01", endDate: "2024-03-01" },
+			incomeCents: 3000,
+			expenseCents: 1000,
+			unregisteredExpenseCents: 0,
+			balanceCents: 2000,
+			expenseByCategory: [{ categoryId: expenseCategory.id, categoryName: "Mercado", colorKey: "orange", iconKey: "Utensils", amountCents: 1000 }],
+			expenseCategoryTree: [],
+			incomeByCategory: [{ categoryId: incomeCategory.id, categoryName: "Salário", colorKey: "emerald", iconKey: "BriefcaseBusiness", amountCents: 3000 }],
+			incomeByPaymentMethod: [{ paymentMethodId: null, name: "Não informado", amountCents: 3000 }],
+		});
+		const user = userEvent.setup();
+		renderFinancePage("reports");
+		await screen.findByText("Receitas por categoria");
+		await screen.findByRole("img", { name: "Distribuição de receitas por categoria" });
+		const toggle = screen.getByRole("button", { name: "Agrupar receitas por forma de pagamento" });
+		expect(toggle).toHaveAttribute("aria-pressed", "true");
+		await user.click(toggle);
+		expect(screen.getByText("Receitas por forma de pagamento")).toBeInTheDocument();
+		const incomeChart = await screen.findByRole("img", { name: "Distribuição de receitas por forma de pagamento" });
+		expect(incomeChart.parentElement).toHaveTextContent("R$ 30,00");
+		expect(incomeChart.parentElement).toHaveTextContent("em receitas");
+		expect(api.getReport).toHaveBeenCalledOnce();
+	});
+
+	it("shows a clear empty state when the report has no income", async () => {
+		api.getReport.mockResolvedValue({
+			period: { granularity: "month", anchorDate: "2024-02-10", startDate: "2024-02-01", endDate: "2024-03-01" },
+			incomeCents: 0,
+			expenseCents: 0,
+			unregisteredExpenseCents: 0,
+			balanceCents: 0,
+			expenseByCategory: [],
+			expenseCategoryTree: [],
+			incomeByCategory: [],
+			incomeByPaymentMethod: [],
+		});
+		renderFinancePage("reports");
+		expect(await screen.findAllByText("Nenhuma receita no período.")).not.toHaveLength(0);
+	});
+
+	it("groups transaction activity by day with separate income and expense sections", async () => {
+		const incomeTransaction = { ...transaction, id: "99999999-9999-4999-8999-999999999999", type: "income" as const, category: incomeCategory, categoryId: incomeCategory.id, amountCents: 2500, occurredAt: "2024-02-10", description: "salário" };
+		const payment = {
+			kind: "invoice_payment" as const,
+			activityDate: "2024-02-10",
+			payment: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", paymentMethodId: creditCard.id, referenceMonth: "2024-02", paidAt: "2024-02-10", amountCents: 1000, cycleClosingDate: "2024-01-25", cycleDueDate: "2024-02-05", createdAt: "2024-02-10T00:00:00.000Z", updatedAt: "2024-02-10T00:00:00.000Z" },
+			paymentMethod: creditCard,
+			itemsTotalCents: 1000,
+			unregisteredExpenseCents: 0,
+			declaredOverPaymentCents: 0,
+		};
+		api.listActivity.mockResolvedValue({
+			items: [
+				{ kind: "transaction", activityDate: "2024-02-10", transaction: incomeTransaction },
+				{ kind: "transaction", activityDate: "2024-02-10", transaction },
+				payment,
+			],
+			nextCursor: null,
+		});
+		renderFinancePage("transactions");
+		await screen.findByText("10/02/2024");
+		expect(screen.getByText(/Receitas: R\$ 25,00/)).toBeInTheDocument();
+		expect(screen.getByText(/Despesas: R\$ 12,00/)).toBeInTheDocument();
+		expect(screen.getByText("Liquidações")).toBeInTheDocument();
+		expect(screen.queryByText(/Saldo/)).not.toBeInTheDocument();
+	});
+
 	it("shows the category hierarchy in the category manager", async () => {
 		const child = {
 			...expenseCategory,
@@ -620,6 +689,20 @@ describe("FinancePage", () => {
 			}),
 		);
 		expect(api.createTransaction).not.toHaveBeenCalled();
+	});
+
+	it("guides the user to configure a controlled card before registering a payment", async () => {
+		const user = userEvent.setup();
+		renderFinancePage("payments");
+		await user.click(screen.getByRole("tab", { name: "Faturas" }));
+		expect(
+			await screen.findByText(
+				"Configure um cartão de crédito com controle de faturas para registrar pagamentos.",
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "Registrar pagamento" }),
+		).toBeDisabled();
 	});
 
 	it("edits and removes an existing invoice settlement", async () => {

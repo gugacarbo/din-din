@@ -160,6 +160,57 @@ describe("payment methods and category hierarchy", () => {
 		});
 	});
 
+	it("keeps an existing unpaid invoice cycle when the card cycle changes", async () => {
+		const { a } = await createAuthedPair();
+		const service = serviceFor(a.cookieHeader);
+		const suffix = crypto.randomUUID().slice(0, 8);
+		const category = await service.createCategory({
+			type: "expense",
+			name: `Cycle snapshot ${suffix}`,
+			colorKey: "orange",
+			iconKey: "ReceiptText",
+		});
+		const card = await service.createPaymentMethod({
+			name: `Cycle card ${suffix}`,
+			kind: "credit_card",
+			colorKey: "indigo",
+			iconKey: "CreditCard",
+			invoiceControl: true,
+			closingDay: 25,
+			dueDay: 5,
+		});
+		await service.createTransaction({
+			type: "expense",
+			categoryId: category.id,
+			paymentMethodId: card.id,
+			amountCents: 1000,
+			occurredAt: "2024-06-20",
+			firstInvoiceReferenceMonth: "2024-07",
+		});
+
+		await service.updatePaymentMethod({
+			id: card.id,
+			name: card.name,
+			kind: "credit_card",
+			colorKey: "indigo",
+			iconKey: "CreditCard",
+			invoiceControl: true,
+			closingDay: 20,
+			dueDay: 10,
+		});
+
+		const invoice = (await listAllInvoices(service)).find(
+			(item) => item.paymentMethodId === card.id && item.referenceMonth === "2024-07",
+		);
+		expect(invoice).toMatchObject({
+			cycleClosingDate: "2024-06-25",
+			cycleDueDate: "2024-07-05",
+		});
+		await service.saveInvoicePayment({ paymentMethodId: card.id, referenceMonth: "2024-07", paidAt: "2024-07-05", amountCents: 1000 });
+		const paidInvoice = (await listAllInvoices(service)).find((item) => item.paymentMethodId === card.id && item.referenceMonth === "2024-07");
+		expect(paidInvoice).toMatchObject({ cycleClosingDate: "2024-06-25", cycleDueDate: "2024-07-05" });
+	});
+
 	it("upserts, removes and isolates invoice payments while archived purchases keep reconciling", async () => {
 		const { a, b } = await createAuthedPair();
 		const service = serviceFor(a.cookieHeader);
@@ -297,6 +348,46 @@ describe("payment methods and category hierarchy", () => {
 			effectiveExpenseCents: 1000,
 			unregisteredExpenseCents: 0,
 		});
+	});
+
+	it("rejects a new archived-card payment when its only purchase is archived", async () => {
+		const { a } = await createAuthedPair();
+		const service = serviceFor(a.cookieHeader);
+		const suffix = crypto.randomUUID().slice(0, 8);
+		const category = await service.createCategory({
+			type: "expense",
+			name: `Archived invoice ${suffix}`,
+			colorKey: "orange",
+			iconKey: "ReceiptText",
+		});
+		const card = await service.createPaymentMethod({
+			name: `Archived card ${suffix}`,
+			kind: "credit_card",
+			colorKey: "indigo",
+			iconKey: "CreditCard",
+			invoiceControl: true,
+			closingDay: 20,
+			dueDay: 28,
+		});
+		const purchase = await service.createTransaction({
+			type: "expense",
+			categoryId: category.id,
+			paymentMethodId: card.id,
+			amountCents: 1000,
+			occurredAt: "2024-09-10",
+			firstInvoiceReferenceMonth: "2024-10",
+		});
+		await service.archiveTransaction({ id: purchase.id });
+		await service.archivePaymentMethod({ id: card.id });
+
+		await expect(
+			service.saveInvoicePayment({
+				paymentMethodId: card.id,
+				referenceMonth: "2024-10",
+				paidAt: "2024-10-28",
+				amountCents: 1000,
+			}),
+		).rejects.toMatchObject({ code: "CONFLICT" });
 	});
 
 	it("rejects moves and restores that would make archived descendants exceed level three", async () => {

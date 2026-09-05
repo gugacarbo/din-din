@@ -503,6 +503,39 @@ export const transactionInstallments = sqliteTable(
 	],
 );
 
+export const creditCardInvoiceCycles = sqliteTable(
+	"credit_card_invoice_cycles",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id").notNull(),
+		paymentMethodId: text("payment_method_id").notNull(),
+		referenceMonth: text("reference_month").notNull(),
+		cycleClosingDate: text("cycle_closing_date").notNull(),
+		cycleDueDate: text("cycle_due_date").notNull(),
+		...financeTimestamps,
+	},
+	(table) => [
+		uniqueIndex("credit_card_invoice_cycles_invoice_unique").on(
+			table.userId,
+			table.paymentMethodId,
+			table.referenceMonth,
+		),
+		foreignKey({
+			columns: [table.paymentMethodId, table.userId],
+			foreignColumns: [paymentMethods.id, paymentMethods.userId],
+			name: "credit_card_invoice_cycles_owner_fk",
+		}),
+		check(
+			"credit_card_invoice_cycles_reference_month_check",
+			sql`${table.referenceMonth} glob '????-??' and substr(${table.referenceMonth}, 6, 2) between '01' and '12'`,
+		),
+		check(
+			"credit_card_invoice_cycles_dates_check",
+			sql`${table.cycleClosingDate} glob '????-??-??' and ${table.cycleDueDate} glob '????-??-??'`,
+		),
+	],
+);
+
 export const creditCardInvoicePayments = sqliteTable(
 	"credit_card_invoice_payments",
 	{
@@ -552,5 +585,6 @@ export const userRelations = relations(user, ({ many }) => ({
 	categories: many(categories),
 	paymentMethods: many(paymentMethods),
 	transactions: many(transactions),
+	creditCardInvoiceCycles: many(creditCardInvoiceCycles),
 	creditCardInvoicePayments: many(creditCardInvoicePayments),
 }));

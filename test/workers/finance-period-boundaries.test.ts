@@ -55,6 +55,8 @@ describe("finance periods through the test-only HTTP Worker", () => {
 		for (const [amountCents, description] of [[4000, "a-expense"], [1000, "a-extra-1"], [2000, "a-extra-2"], [3000, "a-extra-3"]] as const)
 			await create(aData.service, { type: "expense", categoryId: aData.expense.id, amountCents, occurredAt: "2024-02-29", description });
 		await create(aData.service, { type: "expense", categoryId: aData.expense.id, amountCents: 99900, occurredAt: "2024-03-01", description: "a-boundary" });
+		await create(aData.service, { type: "expense", categoryId: aData.expense.id, amountCents: 500, occurredAt: "2024-02-29", description: "a-extra-4" });
+		await create(aData.service, { type: "expense", categoryId: aData.expense.id, amountCents: 600, occurredAt: "2024-02-29", description: "a-extra-5" });
 		const archived = await create(aData.service, { type: "expense", categoryId: aData.expense.id, amountCents: 50000, occurredAt: "2024-02-15", description: "a-archived" });
 		await aData.service.archiveTransaction({ id: archived.id });
 		await create(bData.service, { type: "expense", categoryId: bData.expense.id, amountCents: 80000, occurredAt: "2024-02-15", description: "b-internal" });
@@ -67,7 +69,7 @@ describe("finance periods through the test-only HTTP Worker", () => {
 		const result = (await response.json()) as Dashboard;
 		expect(result).toMatchObject({
 			period: { startDate: "2024-02-10", endDate: "2024-03-01" },
-			month: { incomeCents: 0, expenseCents: 10000, balanceCents: -10000 },
+			month: { incomeCents: 0, expenseCents: 11100, balanceCents: -11100 },
 			incomeByPaymentMethod: [],
 		});
 		expect(result.recentActivity).toHaveLength(5);
@@ -76,6 +78,103 @@ describe("finance periods through the test-only HTTP Worker", () => {
 			.map((item) => item.transaction);
 		expect(recentTransactions.map((item) => item.description)).toContain("a-boundary");
 		expect(recentTransactions.every((item) => item.description?.startsWith("a-") && item.description !== "a-archived")).toBe(true);
+	});
+
+	it("returns income grouped by category and payment method", async () => {
+		const { a } = await createAuthedPair();
+		const data = await seed(a, "2024-02-10", "income-groups");
+		const paymentMethod = await data.service.createPaymentMethod({
+			name: "Pix",
+			kind: "pix",
+			colorKey: "blue",
+			iconKey: "QrCode",
+			invoiceControl: false,
+		});
+		await create(data.service, {
+			type: "income",
+			categoryId: data.income.id,
+			amountCents: 1200,
+			occurredAt: "2024-02-10",
+			paymentMethodId: paymentMethod.id,
+		});
+		await create(data.service, {
+			type: "income",
+			categoryId: data.income.id,
+			amountCents: 800,
+			occurredAt: "2024-02-11",
+		});
+
+		const report = await data.service.getReport({
+			granularity: "month",
+			anchorDate: "2024-02-10",
+		});
+
+		expect(report.incomeByCategory).toEqual([
+			expect.objectContaining({
+				categoryId: data.income.id,
+				categoryName: "income-groups income",
+				amountCents: 2000,
+			}),
+		]);
+		expect(report.incomeByPaymentMethod).toEqual([
+			expect.objectContaining({
+				paymentMethodId: paymentMethod.id,
+				name: "Pix",
+				amountCents: 1200,
+			}),
+			expect.objectContaining({
+				paymentMethodId: null,
+				name: "Não informado",
+				amountCents: 800,
+			}),
+		]);
+	});
+
+	it("does not split a day across activity pages", async () => {
+		const { a } = await createAuthedPair();
+		const data = await seed(a, "2024-02-10", "activity-page-boundary");
+		for (let index = 0; index < 31; index++)
+			await create(data.service, {
+				type: "expense",
+				categoryId: data.expense.id,
+				amountCents: index + 1,
+				occurredAt: "2024-02-10",
+				description: `same-day-${index}`,
+			});
+		await create(data.service, {
+			type: "expense",
+			categoryId: data.expense.id,
+			amountCents: 999,
+			occurredAt: "2024-02-09",
+			description: "previous-day",
+		});
+
+		const first = await data.service.listActivity({});
+		const second = first.nextCursor
+			? await data.service.listActivity({ cursor: first.nextCursor })
+			: null;
+		expect(first.items).toHaveLength(31);
+		expect(new Set(first.items.map((item) => item.activityDate))).toEqual(
+			new Set(["2024-02-10"]),
+		);
+		expect(second?.items.map((item) => item.activityDate)).toEqual(["2024-02-09"]);
+	});
+
+	it("does not create an empty cursor when the final day exceeds the page size", async () => {
+		const { a } = await createAuthedPair();
+		const data = await seed(a, "2024-02-10", "final-day-boundary");
+		for (let index = 0; index < 31; index++)
+			await create(data.service, {
+				type: "expense",
+				categoryId: data.expense.id,
+				amountCents: index + 1,
+				occurredAt: "2024-02-10",
+				description: `final-day-${index}`,
+			});
+
+		const page = await data.service.listActivity({});
+		expect(page.items).toHaveLength(31);
+		expect(page.nextCursor).toBeNull();
 	});
 
 	it("recognizes controlled card purchases only when their installments are due", async () => {

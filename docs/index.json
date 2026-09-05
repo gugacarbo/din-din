@@ -56,5 +56,27 @@
       "src/server/finance-service.ts",
       "src/server/finance.ts"
     ]
+  },
+  {
+    "id": "SPEC-0013",
+    "path": "docs/specs/0013-agrupar-lancamentos-por-dia-com-receitas-e-despesas-separadas.md",
+    "layer": "specs",
+    "title": "Agrupar lançamentos por dia com receitas e despesas separadas",
+    "status": "accepted",
+    "builds-on": [
+      "SPEC-0011"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
+    "id": "SPEC-0014",
+    "path": "docs/specs/0014-graficos-de-receitas-por-categoria-e-forma-de-pagamento.md",
+    "layer": "specs",
+    "title": "Alternar gráfico de receitas por categoria e forma de pagamento",
+    "status": "accepted",
+    "builds-on": [],
+    "superseded-by": null,
+    "implemented-by": []
   }
 ]

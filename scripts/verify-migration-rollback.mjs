@@ -45,6 +45,7 @@ const supportReservations = migration("0006_support_publication_reservations");
 const aiLogging = migration("0007_ai_usage_logging");
 const admin = migration("0008_admin_support_review");
 const invoices = migration("0009_sturdy_dust");
+const invoicesEntry = migrations.find((entry) => entry.tag === "0009_sturdy_dust");
 const downFile = path.join(scratch, "down.sql");
 
 function run(args, persistTo = scratch) {
@@ -263,7 +264,7 @@ try {
 	if (!/"installment_count"\s*:\s*1/.test(invoiceMigration) || !/"removed_columns"\s*:\s*0/.test(invoiceMigration))
 		throw new Error("Invoice migration did not backfill 1/1 or remove legacy cycle columns.");
 	run(["--command", "pragma foreign_key_check;", "--json"]);
-	for (const entry of migrations.filter((entry) => entry.idx > invoices.idx))
+	for (const entry of migrations.filter((entry) => entry.idx > invoicesEntry.idx))
 		run(["--file", entry.file]);
 	const cycleBackfill = run([
 		"--command",

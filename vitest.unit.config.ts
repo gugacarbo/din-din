@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { coverageOptions } from "./vitest.coverage.ts";
 
 /**
  * Vitest configuration for pure unit tests that do not require the Workers
@@ -14,6 +15,7 @@ export default defineConfig({
 		},
 	},
 	test: {
+		coverage: { ...coverageOptions, reportsDirectory: "./coverage/unit" },
 		include: ["src/**/*.test.ts"],
 		exclude: ["test/workers/**", "node_modules/**"],
 	},

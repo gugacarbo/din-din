@@ -33,4 +33,15 @@ describe("ThemeToggle", () => {
 		expect(window.localStorage.getItem("din-din-theme")).toBe("light");
 		expect(document.documentElement).not.toHaveClass("dark");
 	});
+
+	it("cycles through light, dark, and system themes", async () => {
+		const user = userEvent.setup();
+		renderThemeToggle();
+
+		await user.click(await screen.findByRole("menuitem", { name: "Tema: Sistema" }));
+		await user.click(await screen.findByRole("menuitem", { name: "Tema: Claro" }));
+		expect(document.documentElement).toHaveClass("dark");
+		await user.click(await screen.findByRole("menuitem", { name: "Tema: Escuro" }));
+		expect(window.localStorage.getItem("din-din-theme")).toBe("system");
+	});
 });

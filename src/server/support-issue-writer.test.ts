@@ -100,4 +100,78 @@ describe("supportIssueWriterOptions", () => {
 			}),
 		).toContain('"tool_calls"');
 	});
+
+	it("fails validation for anything that is not exactly one issue tool call", () => {
+		expect(() => parseSupportIssueWriterToolCall(null)).toThrow(
+			"invalid_ai_tool_call",
+		);
+		expect(() => parseSupportIssueWriterToolCall("text")).toThrow(
+			"invalid_ai_tool_call",
+		);
+		expect(() => parseSupportIssueWriterToolCall({ tool_calls: [] })).toThrow(
+			"invalid_ai_tool_call",
+		);
+		expect(() =>
+			parseSupportIssueWriterToolCall({
+				tool_calls: [
+					{ name: "other_tool", arguments: {} },
+					{
+						function: {
+							name: "other_tool",
+							arguments: JSON.stringify({}),
+						},
+					},
+				],
+			}),
+		).toThrow("invalid_ai_tool_call");
+		expect(() => parseSupportIssueWriterToolCall({ tool_calls: [42] })).toThrow(
+			"invalid_ai_tool_call",
+		);
+		expect(() =>
+			parseSupportIssueWriterToolCall({
+				tool_calls: [
+					{
+						function: {
+							name: supportIssueWriterToolName,
+							arguments: "{not-json",
+						},
+					},
+				],
+			}),
+		).toThrow(SyntaxError);
+	});
+
+	it("serializes long and unserializable responses without throwing", () => {
+		const long = "x".repeat(32_001);
+		const serialised = serialiseSupportIssueWriterResponse({ response: long });
+		expect(serialised).toHaveLength(32_000);
+		expect(serialiseSupportIssueWriterResponse("plain")).toBe("plain");
+
+		const circular: Record<string, unknown> = {
+			response: { title: "Issue" },
+		};
+		circular.self = circular;
+		const object = circular.response as Record<string, unknown>;
+		// response is a plain object, so circularity must come from it
+		object.self = object;
+		expect(serialiseSupportIssueWriterResponse(circular)).toBe(
+			"[unserializable_ai_response]",
+		);
+	});
+
+	it("feeds the manual-review result back as a tool message", () => {
+		const call = {
+			name: supportIssueWriterToolName,
+			arguments: { title: "Falha genérica" },
+		} as const;
+		const options = supportIssueWriterFeedbackOptions("Relato", "{}", call, {
+			success: false,
+			status: "manual_review",
+		});
+		expect(options.max_tokens).toBe(120);
+		expect(options.messages.at(-1)).toEqual({
+			role: "tool",
+			content: JSON.stringify({ success: false, status: "manual_review" }),
+		});
+	});
 });

@@ -154,4 +154,94 @@ describe("publishSupportIssue", () => {
 			);
 		}
 	});
+	it("rejects a missing, mismatched or non-decodable private key", () => {
+		expect(() =>
+			pemBytes(
+				"-----BEGIN RSA PRIVATE KEY-----\\nsecret\\n-----END PRIVATE KEY-----",
+			),
+		).toThrow("github_private_key_format");
+		expect(() =>
+			pemBytes(
+				"-----BEGIN PRIVATE KEY-----\\n!!!!\\n-----END PRIVATE KEY-----",
+			),
+		).toThrow("github_private_key_format");
+	});
+	it("keeps the HTTP status fallback when GitHub returns a non-JSON error", async () => {
+		const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+			if (String(input).includes("access_tokens"))
+				return new Response("gateway error", {
+					status: 502,
+					headers: { "x-github-request-id": "GH-REQ-9" },
+				});
+			return Response.json({ token: "unused" });
+		});
+		let failure: unknown;
+		try {
+			await publishSupportIssue(
+				{
+					GITHUB_APP_ID: "1",
+					GITHUB_APP_INSTALLATION_ID: "2",
+					GITHUB_APP_PRIVATE_KEY: await privateKey(),
+				},
+				"report-1",
+				issue,
+				fetcher as typeof fetch,
+			);
+		} catch (error) {
+			failure = error;
+		}
+		expect(failure).toMatchObject({
+			message: "github_installation_token_failed",
+		});
+		expect(githubRequestFailuresFromError(failure)).toEqual([
+			{
+				stage: "installation_token",
+				method: "POST",
+				endpoint: "/app/installations/[installation-id]/access_tokens",
+				status: 502,
+				requestId: "GH-REQ-9",
+				message: "GitHub respondeu HTTP 502.",
+			},
+		]);
+	});
+	it("rejects ambiguous POST when reconciliation also fails", async () => {
+		const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url.includes("access_tokens"))
+				return Response.json({ token: "installation-token" });
+			if (url.includes("/search/issues"))
+				return new Response("boom", { status: 500 });
+			throw new Error("post timeout after request reached GitHub");
+		});
+		await expect(
+			publishSupportIssue(
+				{
+					GITHUB_APP_ID: "1",
+					GITHUB_APP_INSTALLATION_ID: "2",
+					GITHUB_APP_PRIVATE_KEY: await privateKey(),
+				},
+				"report-1",
+				issue,
+				fetcher as typeof fetch,
+			),
+		).rejects.toMatchObject({ message: "github_reconciliation_unavailable" });
+	});
+	it("rejects an installation-token failure without a response (network)", async () => {
+		const fetcher = vi.fn(async () => {
+			throw new Error("fetch failed connection refused");
+		});
+		const promise = publishSupportIssue(
+			{
+				GITHUB_APP_ID: "1",
+				GITHUB_APP_INSTALLATION_ID: "2",
+				GITHUB_APP_PRIVATE_KEY: await privateKey(),
+			},
+			"report-1",
+			issue,
+			fetcher as typeof fetch,
+		);
+		await expect(promise).rejects.toMatchObject({
+			message: "github_installation_token_failed",
+		});
+	});
 });

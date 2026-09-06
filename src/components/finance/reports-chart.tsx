@@ -51,6 +51,10 @@ export function ReportsChart({
 				aria-label={`Distribuição de ${noun} por ${grouping}`}
 				className="size-40"
 				config={config}
+				responsiveContainerProps={{
+					height: 160,
+					width: 160,
+				}}
 				role="img"
 			>
 				<PieChart>

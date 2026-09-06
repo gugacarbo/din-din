@@ -1,5 +1,6 @@
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
+import { coverageOptions } from "./vitest.coverage.ts";
 
 export default defineConfig({
 	plugins: [viteReact()],
@@ -13,6 +14,7 @@ export default defineConfig({
 		},
 	},
 	test: {
+		coverage: { ...coverageOptions, reportsDirectory: "./coverage/ui" },
 		environment: "jsdom",
 		include: ["test/ui/**/*.test.tsx"],
 		setupFiles: ["./test/ui/setup.ts"],

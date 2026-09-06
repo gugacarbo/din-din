@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { publicIssueFromModel } from "#/server/support-publication-policy.ts";
+import type { PublicIssue } from "#/server/support-publication-policy.ts";
+import {
+	issueMarkdown,
+	publicIssueFromModel,
+} from "#/server/support-publication-policy.ts";
 
-const valid = {
+const valid: PublicIssue = {
 	title: "Falha ao salvar lançamento",
 	summary: "O salvamento retorna uma falha sem expor dados privados.",
 	technicalCategory: "bug",
@@ -86,5 +90,63 @@ describe("publicIssueFromModel", () => {
 		expect(
 			publicIssueFromModel({ ...valid, summary: secret }, [secret]),
 		).toEqual({ ok: false, reason: "unsafe_public_content" });
+	});
+	it("rejeita saídas fora do schema estrito com motivo explícito", () => {
+		expect(publicIssueFromModel(null, [])).toEqual({
+			ok: false,
+			reason: "invalid_ai_output",
+		});
+		expect(publicIssueFromModel({ ...valid, title: "   " }, [])).toMatchObject({
+			ok: false,
+		});
+		expect(
+			publicIssueFromModel({ ...valid, title: "x".repeat(121) }, []),
+		).toMatchObject({ ok: false });
+		expect(
+			publicIssueFromModel({ ...valid, technicalCategory: "incident" }, []),
+		).toMatchObject({ ok: false });
+		expect(
+			publicIssueFromModel(
+				{ ...valid, labels: [...valid.labels, "bug", "bug", "bug"] },
+				[],
+			),
+		).toMatchObject({ ok: false });
+		expect(
+			publicIssueFromModel(
+				{ ...valid, probableSteps: ["passo", "x".repeat(241)] },
+				[],
+			),
+		).toMatchObject({ ok: false });
+		expect(
+			publicIssueFromModel(
+				{
+					...valid,
+					probableSteps: Array.from({ length: 6 }, (_, i) => `passo ${i}`),
+				},
+				[],
+			),
+		).toMatchObject({ ok: false });
+		expect(
+			publicIssueFromModel(
+				{
+					...valid,
+					technicalSignals: Array.from({ length: 9 }, (_, i) => `sinal ${i}`),
+				},
+				[],
+			),
+		).toMatchObject({ ok: false });
+		expect(
+			publicIssueFromModel(
+				{ ...valid, extraField: "campos extra são rejeitados" },
+				[],
+			),
+		).toMatchObject({ ok: false });
+	});
+	it("renderiza a issue pública com o marcador do relato", () => {
+		const markdown = issueMarkdown(valid, "report-42");
+		expect(markdown).toContain("<!-- support-report:report-42 -->");
+		expect(markdown).toContain("## Resumo");
+		expect(markdown).toContain("- Abrir lançamentos");
+		expect(markdown).toContain("- Uma requisição retornou erro 500");
 	});
 });

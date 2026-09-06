@@ -33,4 +33,8 @@ describe("MoneyInput", () => {
 		expect(formatMoneyInputFromCents(18890)).toBe("188,90");
 		expect(moneyInputToCents("0,33")).toBe(33);
 	});
+
+	it("rejects malformed persisted values", () => {
+		expect(moneyInputToCents("123,4")).toBeNaN();
+	});
 });

@@ -61,9 +61,14 @@ As migrações versionadas ficam em `drizzle/`. Gere uma nova após alterar
 as migrações remotas antes de construir e publicar o Worker; confira o
 `database_id` em `wrangler.jsonc` e configure os secrets no Cloudflare antes de usá-lo.
 
-O domínio de produção configurado é `dindin.gugacarbo.space`. Configure o Cloudflare
-Build para construir apenas a branch `main` e rode `pnpm run deploy` como comando de
-deploy, para que a migration seja aplicada antes da versão do app.
+O domínio de produção configurado é `dindin.gugacarbo.space`. Pushes para `main`
+publicam automaticamente pelo workflow `deploy`: ele aplica a migration remota,
+valida a release completa e só então publica o Worker, preservando a ordem exigida.
+
+O workflow exige os secrets do repositório `CLOUDFLARE_API_TOKEN` e
+`CLOUDFLARE_ACCOUNT_ID`. Crie um API token dedicado com permissões mínimas de
+**Workers Scripts:Edit**, **D1:Edit** e **Queues:Edit** — não reutilize o token
+OAuth do Wrangler.
 
 ## Convites de administrador
 

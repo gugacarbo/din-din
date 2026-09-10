@@ -67,8 +67,8 @@ valida a release completa e só então publica o Worker, preservando a ordem exi
 
 O workflow exige os secrets do repositório `CLOUDFLARE_API_TOKEN` e
 `CLOUDFLARE_ACCOUNT_ID`. Crie um API token dedicado com permissões mínimas de
-**Workers Scripts:Edit**, **D1:Edit** e **Queues:Edit** — não reutilize o token
-OAuth do Wrangler.
+**Workers Scripts:Edit**, **D1:Edit**, **Queues:Edit** e **Workers Routes:Edit**
+(zone `gugacarbo.space`) — não reutilize o token OAuth do Wrangler.
 
 ## Convites de administrador
 

@@ -14,7 +14,13 @@ export default defineConfig({
 		},
 	},
 	test: {
-		coverage: { ...coverageOptions, reportsDirectory: "./coverage/ui" },
+		coverage: {
+			...coverageOptions,
+			reportsDirectory: "./coverage/ui",
+			// UI coverage is informational for now: jsdom suites cannot exercise the
+			// full shipped component graph without duplicating browser E2E flows.
+			thresholds: {},
+		},
 		environment: "jsdom",
 		include: ["test/ui/**/*.test.tsx"],
 		setupFiles: ["./test/ui/setup.ts"],

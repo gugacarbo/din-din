@@ -14,7 +14,8 @@
 			"**/vite.config.ts",
 			"!**/src/routeTree.gen.ts",
 			"!**/src/worker-configuration.d.ts",
-			"!**/src/styles.css"
+			"!**/src/styles.css",
+			"!coverage"
 		]
 	},
 	"formatter": {
